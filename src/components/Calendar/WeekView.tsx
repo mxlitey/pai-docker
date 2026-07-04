@@ -72,9 +72,15 @@ export function WeekView({ currentDate, schedules, onScheduleClick }: WeekViewPr
               >
                 {format(day, 'd')}
               </div>
-              {/* 小屏隐藏数量提示（列表已显示），大屏保留 */}
+              {/* 大屏：显示节数文字 */}
               <div className="text-[10px] text-slate-400 mt-0.5 hidden sm:block">
                 {daySchedules.length > 0 ? `${daySchedules.length}节` : ''}
+              </div>
+              {/* 小屏：有课显示品牌色圆点，无课占位保持高度一致 */}
+              <div className="sm:hidden h-2 mt-0.5 flex items-center justify-center">
+                {daySchedules.length > 0 && (
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-500" />
+                )}
               </div>
             </button>
           )
