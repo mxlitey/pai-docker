@@ -151,6 +151,30 @@ export async function updateSchedule(oldSchedule, newSchedule) {
   return { moved: true, fromKey: oldKey, toKey: newKey }
 }
 
+// 新增单条排课记录
+// 若同 id 已存在则拒绝（返回 exists:true），避免重复写入
+// 返回 { created:boolean, key, exists:boolean }
+export async function addSchedule(schedule) {
+  const studentId = schedule.studentId
+  const month = schedule.date.slice(0, 7)
+  const key = `schedules/${studentId}/${month}.json`
+
+  const list = await getSchedulesByMonth(studentId, month)
+  // 去重保护：同 id 已存在则拒绝
+  if (list.some((s) => s.id === schedule.id)) {
+    return { created: false, key, exists: true }
+  }
+
+  list.push({ ...schedule })
+  // 按日期+时间排序
+  list.sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date)
+    return (a.startTime || '').localeCompare(b.startTime || '')
+  })
+  await saveSchedulesByMonth(studentId, month, list)
+  return { created: true, key, exists: false }
+}
+
 // 删除单条排课记录
 export async function deleteSchedule(scheduleId, studentId, date) {
   const month = date.slice(0, 7)

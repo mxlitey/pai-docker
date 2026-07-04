@@ -137,6 +137,21 @@ export async function updateSchedule(
   })
 }
 
+// 新增排课
+export async function addSchedule(
+  schedule: Schedule,
+): Promise<ApiResult<{
+  created: boolean
+  key: string
+  exists: boolean
+  schedule: Schedule
+}>> {
+  return request(`${API_BASE}/schedule-add`, {
+    method: 'POST',
+    body: JSON.stringify({ schedule }),
+  })
+}
+
 // 删除排课
 export async function deleteSchedule(
   id: string,

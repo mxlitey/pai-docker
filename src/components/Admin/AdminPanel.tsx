@@ -104,6 +104,8 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
 
   // 编辑器
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
+  // 新增排课弹窗
+  const [addingSchedule, setAddingSchedule] = useState(false)
 
   // 显示 toast
   const showToast = (type: Toast['type'], message: string) => {
@@ -667,10 +669,20 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
 
         {/* 排课管理 */}
         <section className="card p-5">
-          <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <span className="w-1 h-4 bg-brand-500 rounded"></span>
-            排课管理
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+              <span className="w-1 h-4 bg-brand-500 rounded"></span>
+              排课管理
+            </h2>
+            <button
+              onClick={() => setAddingSchedule(true)}
+              disabled={busy || students.length === 0}
+              className="btn-primary text-sm py-1.5 px-3 disabled:opacity-50"
+              title={students.length === 0 ? '请先添加学员数据' : '新增单条排课'}
+            >
+              + 新增排课
+            </button>
+          </div>
 
           {/* 学员搜索 */}
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
@@ -755,6 +767,17 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
         onClose={() => setEditingSchedule(null)}
         onUpdated={handleEditorUpdated}
       />
+
+      {/* 新增弹窗 */}
+      {addingSchedule && (
+        <ScheduleEditor
+          schedule={null}
+          students={students}
+          mode="add"
+          onClose={() => setAddingSchedule(false)}
+          onUpdated={handleEditorUpdated}
+        />
+      )}
     </div>
   )
 }

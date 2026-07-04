@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import type { Schedule, Student } from '@/types'
-import { updateSchedule, deleteSchedule } from '@/api/admin'
+import { updateSchedule, deleteSchedule, addSchedule } from '@/api/admin'
 import { cn } from '@/utils/cn'
 
 interface ScheduleEditorProps {
+  // schedule 非空 = 编辑模式；schedule 为空且 mode='add' = 新增模式
   schedule: Schedule | null
   students: Student[]
+  mode?: 'edit' | 'add'
   onClose: () => void
   onUpdated: () => void
 }
@@ -28,12 +30,21 @@ function createForm(schedule: Schedule | null): Schedule {
   )
 }
 
+// 生成简易唯一 id：时间戳+随机串，前端预生成，后端会校验重复
+function genScheduleId(): string {
+  const ts = Date.now().toString(36)
+  const rand = Math.random().toString(36).slice(2, 6)
+  return `s_${ts}${rand}`
+}
+
 export function ScheduleEditor({
   schedule,
   students,
+  mode = 'edit',
   onClose,
   onUpdated,
 }: ScheduleEditorProps) {
+  const isAdd = mode === 'add'
   const [form, setForm] = useState<Schedule>(createForm(schedule))
   const [original, setOriginal] = useState<Schedule | null>(schedule)
   const [saving, setSaving] = useState(false)
@@ -42,17 +53,38 @@ export function ScheduleEditor({
   const [success, setSuccess] = useState('')
 
   useEffect(() => {
-    setForm(createForm(schedule))
-    setOriginal(schedule)
+    // 新增模式：预生成 id，默认日期为今天
+    if (isAdd && !schedule) {
+      const today = new Date().toISOString().slice(0, 10)
+      const initForm: Schedule = {
+        id: genScheduleId(),
+        studentId: '',
+        studentName: '',
+        courseName: '',
+        teacher: '',
+        location: '',
+        date: today,
+        startTime: '',
+        endTime: '',
+        note: '',
+      }
+      setForm(initForm)
+      setOriginal(null)
+    } else {
+      setForm(createForm(schedule))
+      setOriginal(schedule)
+    }
     setError('')
     setSuccess('')
-  }, [schedule])
+  }, [schedule, isAdd])
 
-  if (!schedule) return null
+  if (!schedule && !isAdd) return null
 
-  // 是否跨月/跨学员
+  // 是否跨月/跨学员（仅编辑模式有意义）
   const isCrossMonth =
-    original && (original.studentId !== form.studentId || original.date.slice(0, 7) !== form.date.slice(0, 7))
+    !isAdd &&
+    original &&
+    (original.studentId !== form.studentId || original.date.slice(0, 7) !== form.date.slice(0, 7))
 
   const handleChange = (field: keyof Schedule, value: string) => {
     setForm((f) => {
@@ -88,19 +120,34 @@ export function ScheduleEditor({
 
     setSaving(true)
     try {
-      const result = await updateSchedule(original!, form)
-      if (result.code === 0) {
-        setSuccess(
-          result.data.moved
-            ? `已跨月迁移：${result.data.fromKey} → ${result.data.toKey}`
-            : '排课已更新',
-        )
-        setTimeout(() => {
-          onUpdated()
-          onClose()
-        }, 800)
+      if (isAdd) {
+        // 新增模式
+        const result = await addSchedule(form)
+        if (result.code === 0) {
+          setSuccess('排课已新增')
+          setTimeout(() => {
+            onUpdated()
+            onClose()
+          }, 800)
+        } else {
+          setError(result.message)
+        }
       } else {
-        setError(result.message)
+        // 编辑模式
+        const result = await updateSchedule(original!, form)
+        if (result.code === 0) {
+          setSuccess(
+            result.data.moved
+              ? `已跨月迁移：${result.data.fromKey} → ${result.data.toKey}`
+              : '排课已更新',
+          )
+          setTimeout(() => {
+            onUpdated()
+            onClose()
+          }, 800)
+        } else {
+          setError(result.message)
+        }
       }
     } catch (e) {
       setError('请求失败：' + (e as Error).message)
@@ -147,7 +194,9 @@ export function ScheduleEditor({
       >
         {/* 头部 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 sticky top-0 bg-white rounded-t-xl">
-          <h3 className="font-semibold text-base text-slate-800">编辑排课</h3>
+          <h3 className="font-semibold text-base text-slate-800">
+            {isAdd ? '新增排课' : '编辑排课'}
+          </h3>
           <button
             onClick={onClose}
             className="text-slate-400 hover:text-slate-600 transition-colors p-1"
@@ -164,7 +213,7 @@ export function ScheduleEditor({
           {/* 不可编辑的 id */}
           <div className="flex items-center gap-4">
             <span className="text-sm text-slate-400 w-20 flex-shrink-0">排课ID</span>
-            <span className="text-sm text-slate-600 font-mono bg-slate-50 px-2 py-1 rounded">
+            <span className="text-sm text-slate-600 font-mono bg-slate-50 px-2 py-1 rounded break-all">
               {form.id}
             </span>
           </div>
@@ -265,7 +314,7 @@ export function ScheduleEditor({
             />
           </div>
 
-          {/* 跨月提示 */}
+          {/* 跨月提示（仅编辑模式） */}
           {isCrossMonth && (
             <div className="bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-xs text-amber-700">
               ⚠ 检测到跨月/跨学员变更，系统将自动迁移存储路径：
@@ -295,13 +344,18 @@ export function ScheduleEditor({
 
         {/* 底部操作 */}
         <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex justify-between sticky bottom-0">
-          <button
-            onClick={handleDelete}
-            disabled={deleting || saving}
-            className="btn text-rose-600 hover:bg-rose-50"
-          >
-            {deleting ? '删除中…' : '删除排课'}
-          </button>
+          {/* 新增模式不显示删除按钮 */}
+          {isAdd ? (
+            <span />
+          ) : (
+            <button
+              onClick={handleDelete}
+              disabled={deleting || saving}
+              className="btn text-rose-600 hover:bg-rose-50"
+            >
+              {deleting ? '删除中…' : '删除排课'}
+            </button>
+          )}
           <div className="flex gap-2">
             <button onClick={onClose} className="btn-ghost">
               取消
@@ -311,7 +365,7 @@ export function ScheduleEditor({
               disabled={saving || deleting}
               className={cn('btn-primary', (saving || deleting) && 'opacity-50')}
             >
-              {saving ? '保存中…' : '保存'}
+              {saving ? '保存中…' : isAdd ? '新增' : '保存'}
             </button>
           </div>
         </div>
