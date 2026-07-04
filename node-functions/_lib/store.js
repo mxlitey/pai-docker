@@ -54,9 +54,10 @@ export async function saveSchedulesByMonth(studentId, month, schedules) {
 export async function listScheduleMonths(studentId) {
   const store = getBlobStore()
   const prefix = `schedules/${studentId}/`
-  const result = await store.list({ prefix, limit: 100 })
-  // result.items 为 [{ key, ... }]
-  const months = (result.items || [])
+  // EdgeOne Pages Blob 的 list 返回 { blobs: [{ key, etag }], directories: [] }
+  // 且默认会自动聚合所有分页，无需手动翻页
+  const result = await store.list({ prefix })
+  const months = (result.blobs || [])
     .map((item) => item.key)
     .filter((k) => k.endsWith('.json') && !k.includes('_index'))
     .map((k) => k.replace(prefix, '').replace('.json', ''))
@@ -171,21 +172,18 @@ export async function clearAllData() {
   const store = getBlobStore()
   const deletedKeys = []
 
-  // 列出所有对象并逐个删除（分页处理）
-  let cursor
-  do {
-    const result = await store.list({ limit: 100, cursor })
-    const items = result.items || []
-    for (const item of items) {
-      try {
-        await store.delete(item.key)
-        deletedKeys.push(item.key)
-      } catch {
-        // 单个删除失败不中断
-      }
+  // EdgeOne Pages Blob 的 list 默认会自动聚合所有分页
+  // 返回结构为 { blobs: [{ key, etag }], directories: [] }
+  const result = await store.list()
+  const items = result.blobs || []
+  for (const item of items) {
+    try {
+      await store.delete(item.key)
+      deletedKeys.push(item.key)
+    } catch {
+      // 单个删除失败不中断
     }
-    cursor = result.cursor || result.nextCursor
-  } while (cursor)
+  }
 
   return { deletedCount: deletedKeys.length, keys: deletedKeys }
 }
