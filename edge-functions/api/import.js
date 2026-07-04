@@ -4,9 +4,11 @@
 import {
   getStudents,
   saveStudents,
+  getSchedulesByMonth,
   saveSchedulesByMonth,
   json,
 } from '../_lib/store.js'
+import { requireAuth } from '../_lib/auth.js'
 
 // 处理 JSON 请求体
 async function readBody(request) {
@@ -57,7 +59,7 @@ function groupByStudentMonth(schedules) {
   return map
 }
 
-export async function onRequestPost({ request }) {
+export default async function onRequestPost({ request }) {
   const body = await readBody(request)
   const { students, schedules, mode } = body
 

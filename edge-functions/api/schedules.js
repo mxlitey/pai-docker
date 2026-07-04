@@ -9,7 +9,7 @@ import {
   json,
 } from '../_lib/store.js'
 
-export async function onRequestGet({ request }) {
+export default async function onRequestGet({ request }) {
   const url = new URL(request.url)
   const studentId = url.searchParams.get('studentId')
   const studentName = url.searchParams.get('studentName')

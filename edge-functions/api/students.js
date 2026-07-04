@@ -3,7 +3,7 @@
 // GET /api/students?q=张伟   -> 按姓名搜索（精确+模糊）
 import { getStudents, json } from '../_lib/store.js'
 
-export async function onRequestGet({ request }) {
+export default async function onRequestGet({ request }) {
   const url = new URL(request.url)
   const q = (url.searchParams.get('q') || '').trim()
 

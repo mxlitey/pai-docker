@@ -1,8 +1,9 @@
-// 后台管理 API 调用层
-// 管理类操作不回退 mock（避免误操作本地数据），直接请求后端
+// 后台管理 API 调用层 —— 直接请求后端 Edge Functions
+// 所有管理类请求需携带登录 token（Authorization: Bearer <token>）
 import type { Schedule } from '@/types'
 
 const API_BASE = '/api'
+const TOKEN_KEY = 'admin_token'
 
 interface ApiResult<T> {
   code: number
@@ -10,33 +11,76 @@ interface ApiResult<T> {
   data: T
 }
 
+// ========== Token 管理 ==========
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function setToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
+// ========== 登录 ==========
+export async function login(password: string): Promise<ApiResult<{ token: string }>> {
+  let resp: Response
+  try {
+    resp = await fetch(`${API_BASE}/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+      signal: AbortSignal.timeout(10000),
+    })
+  } catch {
+    throw new Error('网络请求失败，请检查网络连接')
+  }
+
+  const contentType = resp.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    throw new Error('服务暂不可用，请稍后重试')
+  }
+
+  const result = await resp.json()
+  if (result.code === 0) {
+    setToken(result.data.token)
+  }
+  return result
+}
+
+// ========== 通用请求（带鉴权） ==========
 async function request<T>(
   url: string,
   options: RequestInit = {},
 ): Promise<ApiResult<T>> {
+  const token = getToken()
   let resp: Response
   try {
     resp = await fetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.headers || {}),
       },
       signal: AbortSignal.timeout(15000),
     })
-  } catch (e) {
-    // 网络错误、超时、代理失败
-    throw new Error(
-      '无法连接后端服务。本地开发需先启动 Edge Functions（edgeone pages dev），或在部署后的线上环境使用此功能。',
-    )
+  } catch {
+    throw new Error('网络请求失败，请检查网络连接')
   }
 
-  // 检查响应是否为 JSON（非 JSON 通常是 HTML 错误页）
   const contentType = resp.headers.get('content-type') || ''
   if (!contentType.includes('application/json')) {
-    throw new Error(
-      '后端服务未就绪。本地开发需先启动 Edge Functions（edgeone pages dev），或在部署后的线上环境使用此功能。',
-    )
+    throw new Error('服务暂不可用，请稍后重试')
+  }
+
+  // 401 未授权：清除本地 token
+  if (resp.status === 401) {
+    clearToken()
+    const result = await resp.json()
+    throw new Error(result.message || '未登录或登录已过期')
   }
 
   return resp.json()
@@ -62,7 +106,7 @@ export async function clearAllData(): Promise<ApiResult<{
 // JSON 数据导入
 export async function importData(body: {
   mode?: 'merge' | 'replace'
-  students?: Schedule[] | any[]
+  students?: any[]
   schedules?: Schedule[]
 }): Promise<ApiResult<{
   mode: string

@@ -1,6 +1,7 @@
 // 排课删除 API
 // DELETE /api/schedule  body: { id, studentId, date }
 import { deleteSchedule, json } from '../_lib/store.js'
+import { requireAuth } from '../_lib/auth.js'
 
 async function readBody(request) {
   try {
@@ -10,7 +11,10 @@ async function readBody(request) {
   }
 }
 
-export async function onRequestDelete({ request }) {
+export default async function onRequestDelete(context) {
+  const authFail = await requireAuth(context)
+  if (authFail) return authFail
+  const { request } = context
   const body = await readBody(request)
   const { id, studentId, date } = body
 

@@ -24,6 +24,7 @@ export default function App() {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [detailSchedule, setDetailSchedule] = useState<Schedule | null>(null)
 
   // 根据当前视图计算日期范围
@@ -40,6 +41,7 @@ export default function App() {
       return
     }
     setLoading(true)
+    setLoadError('')
     try {
       const data = await getSchedules(
         selectedStudent.id,
@@ -47,8 +49,9 @@ export default function App() {
         formatDate(dateRange.end),
       )
       setSchedules(data)
-    } catch {
+    } catch (e) {
       setSchedules([])
+      setLoadError((e as Error).message || '加载排课数据失败')
     } finally {
       setLoading(false)
     }
@@ -201,6 +204,16 @@ export default function App() {
               <div className="card p-16 flex flex-col items-center justify-center">
                 <div className="w-10 h-10 border-2 border-slate-200 border-t-brand-500 rounded-full animate-spin mb-3" />
                 <span className="text-sm text-slate-400">加载排课数据…</span>
+              </div>
+            ) : loadError ? (
+              <div className="card p-16 flex flex-col items-center justify-center">
+                <div className="text-rose-500 mb-2">
+                  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <p className="text-sm text-rose-600 mb-1">加载失败</p>
+                <p className="text-xs text-slate-400">{loadError}</p>
               </div>
             ) : (
               <>

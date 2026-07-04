@@ -1,13 +1,14 @@
 // 种子数据初始化 API
-// POST /api/seed -> 写入示例学员与排课数据到 Blob 存储
+// POST /api/seed 或 GET /api/seed -> 写入示例学员与排课数据到 Blob 存储
 import {
   saveStudents,
   saveSchedulesByMonth,
   json,
 } from '../_lib/store.js'
 import { getSeedData } from '../_lib/seed-data.js'
+import { requireAuth } from '../_lib/auth.js'
 
-export async function onRequestPost() {
+async function handleSeed() {
   const { students, schedulesByStudentMonth } = getSeedData()
 
   // 写入学员列表
@@ -32,7 +33,13 @@ export async function onRequestPost() {
   })
 }
 
-// 也支持 GET 方便浏览器直接触发
-export async function onRequestGet() {
-  return onRequestPost()
+// 支持 POST 和 GET 两种方式触发（需鉴权）
+export default async function onRequest(context) {
+  const authFail = await requireAuth(context)
+  if (authFail) return authFail
+  const { request } = context
+  if (request.method === 'POST' || request.method === 'GET') {
+    return handleSeed()
+  }
+  return json({ code: 1, message: '不支持的请求方法', data: null }, 405)
 }

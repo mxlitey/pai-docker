@@ -1,32 +1,45 @@
-// API 调用层 —— 优先请求后端 Edge Functions，失败时回退到本地 mock 数据
+// API 调用层 —— 直接请求后端 Edge Functions
 import type { Schedule, Student } from '@/types'
-import { mockSearchStudents, mockGetSchedules } from './mock-data'
 
 const API_BASE = '/api'
 
-// 通用请求封装：尝试后端，失败回退 mock
-async function fetchWithFallback<T>(
+// 通用请求封装：校验响应并提取数据
+async function request<T>(
   url: string,
-  mockFn: () => T,
+  options?: RequestInit,
 ): Promise<T> {
+  let resp: Response
   try {
-    const resp = await fetch(url, { signal: AbortSignal.timeout(3000) })
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const json = await resp.json()
-    if (json.code !== 0) throw new Error(json.message)
-    return json.data as T
-  } catch {
-    // 后端不可用（本地开发），回退 mock
-    return mockFn()
+    resp = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options?.headers || {}),
+      },
+      signal: AbortSignal.timeout(10000),
+    })
+  } catch (e) {
+    throw new Error('网络请求失败，请检查网络连接')
   }
+
+  const contentType = resp.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    throw new Error('服务暂不可用，请稍后重试')
+  }
+
+  const json = await resp.json()
+  if (json.code !== 0) {
+    throw new Error(json.message || '请求失败')
+  }
+  return json.data as T
 }
 
 // 学员搜索（精确+模糊）
 export async function searchStudents(q: string): Promise<Student[]> {
-  return fetchWithFallback(
+  const data = await request<{ students: Student[] }>(
     `${API_BASE}/students?q=${encodeURIComponent(q)}`,
-    () => ({ students: mockSearchStudents(q) }),
-  ).then((d) => d.students)
+  )
+  return data.students
 }
 
 // 排课查询（按学员ID + 可选日期范围）
@@ -38,10 +51,10 @@ export async function getSchedules(
   const params = new URLSearchParams({ studentId })
   if (startDate) params.set('startDate', startDate)
   if (endDate) params.set('endDate', endDate)
-  return fetchWithFallback(
+  const data = await request<{ schedules: Schedule[] }>(
     `${API_BASE}/schedules?${params}`,
-    () => ({ schedules: mockGetSchedules(studentId, startDate, endDate) }),
-  ).then((d) => d.schedules)
+  )
+  return data.schedules
 }
 
 // 按学员姓名查询排课
@@ -53,24 +66,8 @@ export async function getSchedulesByName(
   const params = new URLSearchParams({ studentName })
   if (startDate) params.set('startDate', startDate)
   if (endDate) params.set('endDate', endDate)
-  return fetchWithFallback(
+  const data = await request<{ schedules: Schedule[] }>(
     `${API_BASE}/schedules?${params}`,
-    () => {
-      const students = mockSearchStudents(studentName)
-      const exact = students.find((s) => s.name === studentName)
-      if (exact) return { schedules: mockGetSchedules(exact.id, startDate, endDate) }
-      return { schedules: [] }
-    },
-  ).then((d) => d.schedules)
-}
-
-// 种子数据初始化（部署后调用一次）
-export async function seedData(): Promise<boolean> {
-  try {
-    const resp = await fetch(`${API_BASE}/seed`, { method: 'POST' })
-    const json = await resp.json()
-    return json.code === 0
-  } catch {
-    return false
-  }
+  )
+  return data.schedules
 }

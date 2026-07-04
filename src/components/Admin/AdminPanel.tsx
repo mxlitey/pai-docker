@@ -6,10 +6,12 @@ import {
   clearAllData,
   importData,
   deleteSchedule,
+  getToken,
+  clearToken,
 } from '@/api/admin'
-import { mockSearchStudents, mockGetSchedules } from '@/api/mock-data'
 import { ScheduleEditor } from './ScheduleEditor'
 import { SearchBar } from '@/components/SearchBar'
+import { AdminLogin } from './AdminLogin'
 import { cn } from '@/utils/cn'
 
 interface AdminPanelProps {
@@ -19,6 +21,8 @@ interface AdminPanelProps {
 type Toast = { type: 'success' | 'error' | 'info'; message: string } | null
 
 export function AdminPanel({ onExit }: AdminPanelProps) {
+  // 登录状态：有 token 视为已登录
+  const [authed, setAuthed] = useState<boolean>(() => !!getToken())
   const [students, setStudents] = useState<Student[]>([])
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [schedules, setSchedules] = useState<Schedule[]>([])
@@ -42,13 +46,23 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     setTimeout(() => setToast(null), 3500)
   }
 
+  // 统一错误处理：401 时清除 token 并回到登录页
+  const handleApiError = (e: Error) => {
+    const msg = e.message || ''
+    if (msg.includes('未登录') || msg.includes('登录已过期') || msg.includes('401')) {
+      clearToken()
+      setAuthed(false)
+    }
+    showToast('error', msg.includes('请求失败') ? msg : '请求失败：' + msg)
+  }
+
   // 加载学员列表（后台默认展示全部）
   const loadStudents = useCallback(async () => {
     try {
       const list = await searchStudents('')
       setStudents(list)
-    } catch {
-      setStudents(mockSearchStudents(''))
+    } catch (e) {
+      showToast('error', '加载学员列表失败：' + (e as Error).message)
     }
   }, [])
 
@@ -62,8 +76,9 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     try {
       const list = await getSchedules(studentId)
       setSchedules(list)
-    } catch {
-      setSchedules(mockGetSchedules(studentId))
+    } catch (e) {
+      showToast('error', '加载排课失败：' + (e as Error).message)
+      setSchedules([])
     } finally {
       setLoadingSchedules(false)
     }
@@ -94,7 +109,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
         showToast('error', result.message)
       }
     } catch (e) {
-      showToast('error', '请求失败：' + (e as Error).message)
+      handleApiError(e as Error)
     } finally {
       setBusy(false)
     }
@@ -120,7 +135,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
         showToast('error', result.message)
       }
     } catch (e) {
-      showToast('error', '请求失败：' + (e as Error).message)
+      handleApiError(e as Error)
     } finally {
       setBusy(false)
     }
@@ -168,7 +183,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
         showToast('error', result.message)
       }
     } catch (e) {
-      showToast('error', '请求失败：' + (e as Error).message)
+      handleApiError(e as Error)
     } finally {
       setBusy(false)
     }
@@ -241,7 +256,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
         showToast('error', result.message)
       }
     } catch (e) {
-      showToast('error', '请求失败：' + (e as Error).message)
+      handleApiError(e as Error)
     }
   }
 
@@ -253,6 +268,16 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
 
   const inputClass =
     'w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent'
+
+  // 未登录：渲染登录页
+  if (!authed) {
+    return (
+      <AdminLogin
+        onSuccess={() => setAuthed(true)}
+        onExit={onExit}
+      />
+    )
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -271,12 +296,27 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
               <p className="text-xs text-slate-400 hidden sm:block">数据管理 · 排课维护</p>
             </div>
           </div>
-          <button onClick={onExit} className="btn-ghost">
-            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            返回日历
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                clearToken()
+                setAuthed(false)
+              }}
+              className="btn-ghost"
+              title="退出登录"
+            >
+              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              <span className="hidden sm:inline">退出登录</span>
+            </button>
+            <button onClick={onExit} className="btn-ghost">
+              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              <span className="hidden sm:inline">返回日历</span>
+            </button>
+          </div>
         </div>
       </header>
 

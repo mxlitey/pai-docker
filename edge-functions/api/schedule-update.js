@@ -2,6 +2,7 @@
 // PUT /api/schedule  body: { old: Schedule, new: Schedule }
 // 处理跨月/跨学员的存储路径迁移
 import { updateSchedule, json } from '../_lib/store.js'
+import { requireAuth } from '../_lib/auth.js'
 
 async function readBody(request) {
   try {
@@ -23,7 +24,10 @@ function validateSchedule(s, prefix) {
   }
 }
 
-export async function onRequestPut({ request }) {
+export default async function onRequestPut(context) {
+  const authFail = await requireAuth(context)
+  if (authFail) return authFail
+  const { request } = context
   const body = await readBody(request)
   const { old: oldSchedule, new: newSchedule } = body
 
