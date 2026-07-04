@@ -1,25 +1,18 @@
 // 鉴权工具 —— 基于 HMAC-SHA256 的 token 签发与验证
 // 密码通过环境变量 ADMIN_PASSWORD 注入，代码中不硬编码
-// token 格式: base64url(HMAC-SHA256(password, timestamp)) + "." + timestamp
+// token 格式: hex(HMAC-SHA256(password, timestamp)) + "." + timestamp
 
-// base64url 编码（兼容 Web Crypto 的 ArrayBuffer 输入）
-function bufToB64url(buf) {
+// ArrayBuffer 转十六进制字符串（不依赖 btoa/atob，兼容 Edge Runtime）
+function bufToHex(buf) {
   const bytes = new Uint8Array(buf)
-  let bin = ''
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  let hex = ''
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, '0')
+  }
+  return hex
 }
 
-// base64url 解码为字符串
-function b64urlToStr(b64url) {
-  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/')
-  const bin = atob(b64)
-  let str = ''
-  for (let i = 0; i < bin.length; i++) str += String.fromCharCode(bin.charCodeAt(i))
-  return str
-}
-
-// 用密码对消息做 HMAC-SHA256，返回 base64url 签名
+// 用密码对消息做 HMAC-SHA256，返回十六进制签名
 async function hmacSign(password, message) {
   const enc = new TextEncoder()
   const key = await crypto.subtle.importKey(
@@ -30,7 +23,7 @@ async function hmacSign(password, message) {
     ['sign'],
   )
   const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message))
-  return bufToB64url(sig)
+  return bufToHex(sig)
 }
 
 // 签发 token：用密码签名当前时间戳
