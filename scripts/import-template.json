@@ -1,0 +1,52 @@
+{
+  "mode": "merge",
+  "students": [
+    {
+      "id": "s101",
+      "name": "陈小明",
+      "phone": "13900001111",
+      "grade": "高二"
+    },
+    {
+      "id": "s102",
+      "name": "林晓雨",
+      "phone": "13900002222",
+      "grade": "高一"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "imp_0001",
+      "studentId": "s101",
+      "courseName": "数学一对一",
+      "teacher": "张老师",
+      "location": "A教室301",
+      "date": "2026-08-03",
+      "startTime": "09:00",
+      "endTime": "10:30",
+      "note": "函数与导数专题"
+    },
+    {
+      "id": "imp_0002",
+      "studentId": "s101",
+      "courseName": "英语小班课",
+      "teacher": "李老师",
+      "location": "B教室205",
+      "date": "2026-08-05",
+      "startTime": "14:00",
+      "endTime": "15:30",
+      "note": ""
+    },
+    {
+      "id": "imp_0003",
+      "studentId": "s102",
+      "courseName": "物理精品课",
+      "teacher": "王老师",
+      "location": "C教室102",
+      "date": "2026-08-03",
+      "startTime": "10:00",
+      "endTime": "11:30",
+      "note": ""
+    }
+  ]
+}
