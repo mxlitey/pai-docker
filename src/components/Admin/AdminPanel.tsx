@@ -175,7 +175,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
       if (result.code === 0) {
         showToast(
           'success',
-          `种子数据已写入：${result.data.studentCount} 名学员，${result.data.scheduleCount} 条排课`,
+          `测试数据已导入：${result.data.studentCount} 名学员，${result.data.scheduleCount} 条排课`,
         )
         await loadStudents()
         if (selectedStudent) await loadSchedules(selectedStudent.id)
@@ -702,6 +702,24 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
           onUpdated={handleEditorUpdated}
         />
       )}
+    </div>
+  )
+}
+
+// Toast 视图组件（二级页面复用）
+function ToastView({ toast }: { toast: NonNullable<Toast> }) {
+  return (
+    <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 animate-[fadeIn_0.2s]">
+      <div
+        className={cn(
+          'px-4 py-2.5 rounded-lg shadow-lg text-sm text-white',
+          toast.type === 'success' && 'bg-green-600',
+          toast.type === 'error' && 'bg-rose-600',
+          toast.type === 'info' && 'bg-slate-700',
+        )}
+      >
+        {toast.message}
+      </div>
     </div>
   )
 }
