@@ -40,7 +40,7 @@ export function WeekView({ currentDate, schedules, onScheduleClick }: WeekViewPr
     <div className="card overflow-hidden">
       {/* 小屏提示：日期切换说明 + 圆点图例 */}
       <div className="sm:hidden flex items-center justify-center gap-3 px-3 py-2 text-xs text-amber-700 bg-amber-50 border-b border-amber-100">
-        <span>点击上方日期切换查看</span>
+        <span>点击下方日期切换查看</span>
         <span className="flex items-center gap-1 text-slate-500">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-500" />
           表示当天有排课
