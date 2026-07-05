@@ -275,6 +275,67 @@ export async function getSchedulesByDateRange(studentId, startDate, endDate) {
   return all.filter((s) => s.date >= startDate && s.date <= endDate)
 }
 
+// 跨学员搜索排课：按日期范围 + 可选 courseId 过滤
+// 服务端遍历所有学员的所有月份文件，返回聚合后的排课列表
+// 性能：当前数据量级（百名学员 × 数十月份）可接受；按日期范围限定月份切片可显著减少读取次数
+export async function searchSchedules({ startDate, endDate, courseId } = {}) {
+  const students = await getStudents()
+
+  // 计算需要读取的月份列表（yyyy-MM）
+  // 若未指定日期范围，则对每个学员遍历其全部月份文件
+  let monthList = null
+  if (startDate && endDate) {
+    monthList = enumerateMonths(startDate, endDate)
+  }
+
+  const tasks = students.map(async (stu) => {
+    const months = monthList || (await listScheduleMonths(stu.id))
+    const fileTasks = months.map(async (m) => {
+      // 月份文件可能不存在；若指定了日期范围，再做一次月内裁剪
+      const list = await getSchedulesByMonth(stu.id, m)
+      return list
+    })
+    const results = await Promise.all(fileTasks)
+    return results.flat()
+  })
+
+  const byStudent = await Promise.all(tasks)
+  let all = byStudent.flat()
+
+  // 过滤
+  if (startDate) all = all.filter((s) => s.date >= startDate)
+  if (endDate) all = all.filter((s) => s.date <= endDate)
+  if (courseId) all = all.filter((s) => s.courseId === courseId)
+
+  // 排序：日期升序 → 开始时间升序
+  all.sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date)
+    return (a.startTime || '').localeCompare(b.startTime || '')
+  })
+
+  return all
+}
+
+// 枚举 startDate..endDate 之间的所有 yyyy-MM（闭区间）
+// 例：2026-07-29 ~ 2026-09-03 -> ['2026-07', '2026-08', '2026-09']
+function enumerateMonths(startDate, endDate) {
+  const months = []
+  let [y, m] = startDate.slice(0, 7).split('-').map(Number)
+  const [ey, em] = endDate.slice(0, 7).split('-').map(Number)
+  // 安全上限，避免异常输入导致死循环
+  let guard = 0
+  while ((y < ey || (y === ey && m <= em)) && guard < 1200) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`)
+    m++
+    if (m > 12) {
+      m = 1
+      y++
+    }
+    guard++
+  }
+  return months
+}
+
 // ========== 排课修改（含跨月/跨学员处理） ==========
 
 // 计算排课记录的存储路径
