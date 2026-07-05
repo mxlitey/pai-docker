@@ -72,6 +72,32 @@ export function ScheduleDetail({ schedule, onClose }: ScheduleDetailProps) {
               <span className="text-sm text-slate-600 flex-1">{schedule.note}</span>
             </div>
           )}
+          {/* 出勤状态 */}
+          <div className="flex items-start gap-4">
+            <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-0.5">出勤状态</span>
+            <span className="text-sm font-medium flex-1">
+              {schedule.attended === true ? (
+                <span className="inline-flex items-center gap-1 text-green-700">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                  到课
+                </span>
+              ) : schedule.attended === false ? (
+                <span className="inline-flex items-center gap-1 text-rose-600">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  缺勤
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-slate-400">
+                  <span className="w-2 h-2 rounded-full bg-slate-300" />
+                  未点名
+                </span>
+              )}
+            </span>
+          </div>
         </div>
 
         {/* 底部 */}

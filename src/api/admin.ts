@@ -278,3 +278,25 @@ export async function saveAnnouncement(
     body: JSON.stringify({ content }),
   })
 }
+
+// ========== 点名管理 ==========
+
+// 获取指定日期所有排课（含 attended 状态），供点名页加载
+export async function getAttendanceList(
+  date: string,
+): Promise<ApiResult<{ schedules: Schedule[]; total: number }>> {
+  const qs = new URLSearchParams({ date })
+  return request(`${API_BASE}/attendance?${qs}`, { method: 'GET' })
+}
+
+// 批量设置点名
+// items: [{ scheduleId, studentId, attended }]
+export async function setAttendance(
+  date: string,
+  items: { scheduleId: string; studentId: string; attended: boolean }[],
+): Promise<ApiResult<{ updatedSchedules: number; updatedStudents: number; errors: string[] }>> {
+  return request(`${API_BASE}/attendance`, {
+    method: 'POST',
+    body: JSON.stringify({ date, items }),
+  })
+}

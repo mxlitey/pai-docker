@@ -5,6 +5,8 @@ import {
   seedData,
   clearAllData,
   saveAnnouncement,
+  getAttendanceList,
+  setAttendance,
   deleteStudent,
   addStudent,
   updateStudent,
@@ -19,6 +21,7 @@ import { AdvancedAdmin } from './AdvancedAdmin'
 import { StudentAdmin } from './StudentAdmin'
 import { CourseAdmin } from './CourseAdmin'
 import { ScheduleAdmin } from './ScheduleAdmin'
+import { AttendanceAdmin } from './AttendanceAdmin'
 import { AdminLogin } from './AdminLogin'
 import { cn } from '@/utils/cn'
 
@@ -50,6 +53,8 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
   const [showCourseAdmin, setShowCourseAdmin] = useState(false)
   // 排课管理二级页面
   const [showScheduleAdmin, setShowScheduleAdmin] = useState(false)
+  // 点名管理二级页面
+  const [showAttendance, setShowAttendance] = useState(false)
 
   // 显示 toast
   const showToast = (type: Toast['type'], message: string) => {
@@ -388,6 +393,31 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     )
   }
 
+  // 点名管理二级页面
+  if (showAttendance) {
+    return (
+      <>
+        <AttendanceAdmin
+          busy={busy}
+          onBack={() => setShowAttendance(false)}
+          onLoad={async (d) => {
+            const r = await getAttendanceList(d)
+            if (r.code !== 0) throw new Error(r.message)
+            return r.data
+          }}
+          onSave={async (d, items) => {
+            const r = await setAttendance(d, items)
+            if (r.code !== 0) throw new Error(r.message)
+            // 保存后刷新学员列表（remainingHours 已更新）
+            await loadStudents()
+            return r.data
+          }}
+        />
+        {toast && <ToastView toast={toast} />}
+      </>
+    )
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* 顶部栏 */}
@@ -498,6 +528,27 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
               className="btn-primary text-sm py-1.5 px-3"
             >
               进入排课管理 →
+            </button>
+          </div>
+        </section>
+
+        {/* 点名管理入口 */}
+        <section className="card p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+                <span className="w-1 h-4 bg-brand-500 rounded"></span>
+                点名管理
+              </h2>
+              <div className="text-xs text-slate-500 mt-1.5 ml-3">
+                按日期批量设置学员出勤，到课自动扣减课时
+              </div>
+            </div>
+            <button
+              onClick={() => setShowAttendance(true)}
+              className="btn-primary text-sm py-1.5 px-3"
+            >
+              进入点名管理 →
             </button>
           </div>
         </section>

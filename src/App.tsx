@@ -229,6 +229,29 @@ export default function App() {
                   <div className="font-semibold text-brand-600">{stats.teachers}</div>
                   <div className="text-xs text-slate-400">教师</div>
                 </div>
+                {selectedStudent.hours !== undefined && (
+                  <>
+                    <div className="w-px h-8 bg-slate-100" />
+                    <div className="text-center">
+                      <div
+                        className={
+                          selectedStudent.remainingHours === 0
+                            ? 'font-semibold text-rose-600'
+                            : selectedStudent.remainingHours !== undefined &&
+                              selectedStudent.remainingHours < 0
+                            ? 'font-semibold text-rose-600'
+                            : 'font-semibold text-brand-600'
+                        }
+                      >
+                        {selectedStudent.remainingHours ?? selectedStudent.hours}
+                        <span className="text-slate-400 font-normal text-xs"> / {selectedStudent.hours}</span>
+                      </div>
+                      <div className="text-xs text-slate-400">
+                        {selectedStudent.remainingHours === 0 ? '课时已用完' : '剩余课时'}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

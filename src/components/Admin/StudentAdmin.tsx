@@ -11,7 +11,7 @@ interface StudentAdminProps {
   onUpdate: (student: Student) => Promise<boolean>
 }
 
-const PAGE_SIZE = 15
+const PAGE_SIZE = 10
 
 export function StudentAdmin({ students, busy, onBack, onDelete, onAdd, onUpdate }: StudentAdminProps) {
   const [page, setPage] = useState(1)
@@ -79,6 +79,7 @@ export function StudentAdmin({ students, busy, onBack, onDelete, onAdd, onUpdate
                     <th className="text-left py-2 px-2 font-medium">ID</th>
                     <th className="text-left py-2 px-2 font-medium">年级</th>
                     <th className="text-left py-2 px-2 font-medium">电话</th>
+                    <th className="text-left py-2 px-2 font-medium">课时</th>
                     <th className="text-right py-2 px-2 font-medium">操作</th>
                   </tr>
                 </thead>
@@ -95,6 +96,29 @@ export function StudentAdmin({ students, busy, onBack, onDelete, onAdd, onUpdate
                       </td>
                       <td className="py-2.5 px-2 text-slate-600">
                         {s.phone || <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="py-2.5 px-2 text-slate-600 whitespace-nowrap">
+                        {s.hours !== undefined ? (
+                          <span>
+                            <span
+                              className={
+                                s.remainingHours === 0
+                                  ? 'text-rose-600 font-medium'
+                                  : s.remainingHours !== undefined && s.remainingHours < 0
+                                  ? 'text-rose-600 font-medium'
+                                  : 'text-slate-700 font-medium'
+                              }
+                            >
+                              {s.remainingHours ?? s.hours}
+                            </span>
+                            <span className="text-slate-400"> / {s.hours}</span>
+                            {s.remainingHours === 0 && (
+                              <span className="ml-1 text-xs text-rose-500">已用完</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
                       </td>
                       <td className="py-2.5 px-2 text-right whitespace-nowrap">
                         <button
@@ -257,13 +281,51 @@ function StudentEditModal({ student, onClose, onSubmit }: StudentEditModalProps)
       return
     }
 
+    // 课时校验：选填，需为非负整数
+    const hoursRaw = (form.hours ?? '') as number | string
+    if (hoursRaw !== '' && hoursRaw !== undefined && hoursRaw !== null) {
+      const n = Number(hoursRaw)
+      if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+        setError('总课时需为非负整数')
+        return
+      }
+    }
+    if (isEdit && form.remainingHours !== undefined && form.remainingHours !== ('' as any)) {
+      const r = Number(form.remainingHours)
+      if (!Number.isFinite(r) || r < 0 || !Number.isInteger(r)) {
+        setError('剩余课时需为非负整数')
+        return
+      }
+    }
+
     setSaving(true)
+    // 课时字段处理：
+    // - 新增：设置 hours，remainingHours = hours
+    // - 编辑：显式 remainingHours 用之；否则后端按 hours 差值自动调整
     const finalStudent: Student = {
       id: form.id.trim(),
       name: form.name.trim(),
       phone: form.phone.trim(),
       grade: form.grade.trim(),
     }
+    const hoursVal =
+      form.hours !== undefined && form.hours !== null && (form.hours as any) !== ''
+        ? Number(form.hours)
+        : undefined
+    if (hoursVal !== undefined) {
+      finalStudent.hours = hoursVal
+      if (!isEdit) {
+        finalStudent.remainingHours = hoursVal
+      } else if (
+        form.remainingHours !== undefined &&
+        form.remainingHours !== null &&
+        (form.remainingHours as any) !== ''
+      ) {
+        finalStudent.remainingHours = Number(form.remainingHours)
+      }
+      // 编辑时若未显式传 remainingHours，后端按差值调整
+    }
+
     const ok = await onSubmit(finalStudent)
     setSaving(false)
     if (ok) {
@@ -363,6 +425,48 @@ function StudentEditModal({ student, onClose, onSubmit }: StudentEditModalProps)
               placeholder="可选，如：13800001001"
             />
           </div>
+
+          {/* 总课时 */}
+          <div className="flex items-start gap-4">
+            <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">总课时</span>
+            <div className="flex-1 space-y-1">
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={form.hours ?? ''}
+                onChange={(e) => handleChange('hours', e.target.value)}
+                className={inputClass}
+                placeholder="可选，如：40"
+              />
+              <div className="text-xs text-slate-400">
+                {isEdit
+                  ? '修改总课时后，剩余课时会按差额自动调整（如新增 10 节，剩余 +10）'
+                  : '新增学员时，剩余课时 = 总课时'}
+              </div>
+            </div>
+          </div>
+
+          {/* 剩余课时（仅编辑模式可见，可手动校正） */}
+          {isEdit && (
+            <div className="flex items-start gap-4">
+              <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">剩余课时</span>
+              <div className="flex-1 space-y-1">
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={form.remainingHours ?? ''}
+                  onChange={(e) => handleChange('remainingHours', e.target.value)}
+                  className={inputClass}
+                  placeholder="留空则按总课时差额自动调整"
+                />
+                <div className="text-xs text-slate-400">
+                  点名到课会自动扣减；如需手动校正可在此修改，留空则按总课时差额调整
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 错误提示 */}
           {error && (

@@ -29,6 +29,13 @@ function validateStudent(s) {
   if (s.grade && typeof s.grade !== 'string') {
     throw new Error('grade 需为字符串')
   }
+  // 课时校验：选填，需为非负整数
+  if (s.hours !== undefined && s.hours !== null && s.hours !== '') {
+    const n = Number(s.hours)
+    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+      throw new Error('hours 需为非负整数')
+    }
+  }
 }
 
 export default async function onRequestPost(context) {
@@ -53,11 +60,17 @@ export default async function onRequestPost(context) {
 
   try {
     // 规整字段，避免脏数据落库
+    // 课时：新增时 remainingHours = hours（无 hours 则两者都不设置）
+    const hours =
+      student.hours !== undefined && student.hours !== null && student.hours !== ''
+        ? Number(student.hours)
+        : undefined
     const finalStudent = {
       id: student.id.trim(),
       name: student.name.trim(),
       phone: student.phone ? student.phone.trim() : '',
       grade: student.grade ? student.grade.trim() : '',
+      ...(hours !== undefined ? { hours, remainingHours: hours } : {}),
     }
 
     const result = await addStudent(finalStudent)

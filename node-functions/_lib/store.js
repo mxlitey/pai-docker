@@ -480,6 +480,84 @@ export async function deleteStudentWithSchedules(studentId) {
   }
 }
 
+// ========== 点名管理（出勤 + 课时扣减） ==========
+
+// 批量设置点名
+// items: [{ scheduleId, studentId, date, attended }]
+// 规则：
+//   - attended=true  → 该排课 attended=true，学员 remainingHours -1
+//   - attended=false → 该排课 attended=false，学员 remainingHours +1（回退）
+//   - 仅当新旧 attended 值不同时才扣减/回退
+//   - 学员 remainingHours 为 undefined 时按 0 处理；为负数时不阻止（前端展示提示）
+//   - 排课按月分文件，需按 (studentId, month) 分组读取-修改-写入
+// 返回 { updatedSchedules, updatedStudents, errors }
+export async function batchSetAttendance(items) {
+  const errors = []
+  let updatedSchedules = 0
+  const studentDeltaMap = new Map() // studentId -> 课时净变化（负=扣减，正=回退）
+
+  // 按 (studentId, month) 分组处理排课
+  const groups = new Map() // key: `${studentId}|${month}` -> { studentId, month, items: [{scheduleId, attended}] }
+  for (const item of items) {
+    const month = String(item.date).slice(0, 7) // yyyy-MM
+    const key = `${item.studentId}|${month}`
+    if (!groups.has(key)) {
+      groups.set(key, { studentId: item.studentId, month, items: [] })
+    }
+    groups.get(key).items.push({ scheduleId: item.scheduleId, attended: item.attended })
+  }
+
+  for (const [, group] of groups) {
+    try {
+      const list = await getSchedulesByMonth(group.studentId, group.month)
+      let changed = false
+      for (const gi of group.items) {
+        const s = list.find((x) => x.id === gi.scheduleId)
+        if (!s) {
+          errors.push(`排课 ${gi.scheduleId} 在 ${group.studentId}/${group.month} 中未找到`)
+          continue
+        }
+        const oldAttended = s.attended
+        const newAttended = !!gi.attended
+        if (oldAttended === newAttended) continue // 值未变化，跳过
+        s.attended = newAttended
+        changed = true
+        updatedSchedules++
+        // 计算课时净变化：到课→扣 1，缺勤→回退 +1
+        const delta = newAttended ? -1 : 1
+        studentDeltaMap.set(
+          group.studentId,
+          (studentDeltaMap.get(group.studentId) || 0) + delta,
+        )
+      }
+      if (changed) {
+        await saveSchedulesByMonth(group.studentId, group.month, list)
+      }
+    } catch (e) {
+      errors.push(`处理 ${group.studentId}/${group.month} 失败: ${e?.message || String(e)}`)
+    }
+  }
+
+  // 批量更新学员剩余课时
+  const students = await getStudents()
+  let updatedStudents = 0
+  for (const [studentId, delta] of studentDeltaMap) {
+    const s = students.find((x) => x.id === studentId)
+    if (!s) {
+      errors.push(`学员 ${studentId} 未找到，无法更新课时`)
+      continue
+    }
+    const cur = typeof s.remainingHours === 'number' ? s.remainingHours : 0
+    s.remainingHours = cur + delta
+    updatedStudents++
+  }
+  if (updatedStudents > 0) {
+    await saveStudents(students)
+  }
+
+  return { updatedSchedules, updatedStudents, errors }
+}
+
 // ========== 清空所有数据 ==========
 
 // 清空 Blob 存储中的全部数据（学员 + 排课）

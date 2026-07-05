@@ -42,18 +42,27 @@
 ### 排课详情
 
 - 点击任意排课卡片弹出详情弹窗
-- 展示课程名称、教师、地点、日期、时间、学员等完整信息
+- 展示课程名称、教师、地点、日期、时间、学员、出勤状态等完整信息
 - 支持 ESC 键关闭、点击遮罩关闭
+
+### 课时统计
+
+- **学员剩余课时**：学员信息栏展示「剩余 / 总」课时，剩余为 0 时红色高亮并提示「课时已用完」
+- **点名自动扣减**：点名「到课」自动扣减 1 课时，改「缺勤」自动回退 1 课时
+- **日历出勤标识**：排课卡片右上角显示出勤徽章（到课✓ / 缺勤✗ / 未点名灰点）
+- **总课时调整**：后台编辑学员修改总课时，剩余课时按差额自动调整
 
 ### 后台管理
 
 - **密码登录**：基于环境变量注入密码，HMAC-SHA256 签名 token，常量时间比较防时序攻击，token 有效期 24 小时
 - **种子数据初始化**：一键写入 8 名示例学员及对应月份排课，用于演示验证
 - **一键清空数据**：二次确认防误操作
-- **公告设置**：进阶管理页内编辑公告内容（多行文本，上限 5000 字），保存即生效，前端异步加载展示
+- **公告设置**：进阶管理页内编辑公告内容（支持 Markdown 语法，多行文本，上限 5000 字），保存即生效，前端异步加载展示
+- **学员管理**：查看全部学员列表，支持新增、编辑、删除学员。可设置「总课时」，新增时剩余课时 = 总课时；编辑时修改总课时会按差额自动调整剩余课时
+- **课程管理**：查看全部课程列表，支持新增、编辑、删除课程
 - **排课列表管理**：按学员查看排课，支持单条编辑与删除
 - **新增单条排课**：弹窗表单快速新增少量排课，自动生成 ID、默认今日日期、校验学员关联与重复 ID
-- **学员管理**：查看全部学员列表，支持删除学员及其所有排课数据（二次确认）
+- **点名管理**：按日期批量设置学员出勤（到课 / 缺勤 / 未点名三态），支持「全选到课」「全选缺勤」快捷按钮，保存时后端自动扣减 / 回退学员剩余课时
 - **跨月/跨学员迁移**：修改排课日期或学员时自动处理存储路径迁移，空文件自动清理
 
 ### 性能优化
@@ -165,6 +174,8 @@ git push -u origin main
 | POST | `/api/seed` | 是 | 初始化种子数据 |
 | POST | `/api/clear` | 是 | 清空所有数据 |
 | POST | `/api/announcement` | 是 | 保存公告内容（后台进阶管理页） |
+| GET | `/api/attendance?date=` | 是 | 获取指定日期所有排课（含出勤状态），供点名页加载 |
+| POST | `/api/attendance` | 是 | 批量设置点名，自动扣减/回退学员剩余课时 |
 | PUT | `/api/schedule-update` | 是 | 修改排课（含跨月/跨学员迁移） |
 | POST | `/api/schedule-add` | 是 | 新增单条排课（含字段格式与跨表关联校验、重复 ID 拒绝） |
 | DELETE | `/api/schedule-delete` | 是 | 删除单条排课 |
@@ -182,6 +193,8 @@ git push -u origin main
 | `name` | string | 是 | 学员姓名 |
 | `phone` | string | 否 | 联系电话 |
 | `grade` | string | 否 | 年级，如 `高三` |
+| `hours` | number | 否 | 总课时（购课总数），非负整数 |
+| `remainingHours` | number | 否 | 剩余课时，点名到课时自动扣减，改缺勤自动回退 |
 
 存储位置：`students/index.json`，内容为 `Student[]`。
 
@@ -215,6 +228,7 @@ git push -u origin main
 | `endTime` | string | 是 | 结束时间，格式 `HH:mm` |
 | `note` | string | 否 | 备注 |
 | `color` | string | 否 | 颜色标签 key，从课程带过来，用于日历卡片配色 |
+| `attended` | boolean | 否 | 出勤状态：`true`=到课，`false`=缺勤，`undefined`=未点名 |
 
 存储位置：`schedules/{studentId}/{yyyy-MM}.json`，按学员 ID + 月份分文件存储，内容为 `Schedule[]`。该设计的优势：
 
@@ -238,6 +252,8 @@ git push -u origin main
 - 排课 `date` 必须匹配 `yyyy-MM-dd`，`startTime`/`endTime` 必须匹配 `HH:mm`
 - 排课按 `date` 升序、`startTime` 升序持久化存储
 - 公告 `content` 长度上限 5000 字
+- 学员 `hours` / `remainingHours` 需为非负整数（选填）
+- 点名事务：仅当新旧 `attended` 值不同时才扣减/回退课时；`remainingHours` 为 undefined 时按 0 处理
 
 ## 项目结构
 
@@ -250,6 +266,7 @@ pai/
 │   │   └── seed-data.js         # 种子数据生成
 │   └── api/
 │       ├── announcement.js        # 公告读取（GET 公开）/ 保存（POST 鉴权）
+│       ├── attendance.js          # 点名管理（GET 当日排课 / POST 批量设置）
 │       ├── auth.js              # 登录验证
 │       ├── students.js          # 学员查询
 │       ├── schedules.js         # 排课查询
@@ -265,7 +282,14 @@ pai/
 │   ├── api/                     # API 调用层
 │   ├── components/
 │   │   ├── Admin/               # 后台管理组件
-│   │   ├── Announcement/        # 公告栏组件（环境变量注入内容）
+│   │   │   ├── AdminPanel.tsx   # 后台主面板
+│   │   │   ├── AdminLogin.tsx   # 登录页
+│   │   │   ├── StudentAdmin.tsx # 学员管理（含课时字段）
+│   │   │   ├── CourseAdmin.tsx  # 课程管理
+│   │   │   ├── ScheduleAdmin.tsx # 排课管理
+│   │   │   ├── AttendanceAdmin.tsx # 点名管理
+│   │   │   └── AdvancedAdmin.tsx # 进阶管理（公告设置 / 数据管理）
+│   │   ├── Announcement/        # 公告栏组件（Markdown 渲染）
 │   │   ├── Calendar/            # 日历视图组件
 │   │   └── Home/                # 简洁首页组件（类百度）
 │   ├── config.ts                # 环境变量集中导出（项目名/公告/GitHub 链接/页脚）
