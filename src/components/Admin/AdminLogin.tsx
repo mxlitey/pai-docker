@@ -82,7 +82,7 @@ export function AdminLogin({ onSuccess, onExit }: AdminLoginProps) {
             onClick={onExit}
             className="btn-ghost w-full"
           >
-            返回日历
+            返回首页
           </button>
         </form>
       </div>

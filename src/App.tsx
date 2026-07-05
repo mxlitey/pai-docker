@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import type { Schedule, Student, ViewMode } from '@/types'
-import { searchStudents, getSchedules } from '@/api'
+import { getSchedules, getAnnouncement } from '@/api'
 import {
   getViewTitle,
   navigateDate,
@@ -15,10 +15,15 @@ import { MonthView } from '@/components/Calendar/MonthView'
 import { WeekView } from '@/components/Calendar/WeekView'
 import { DayView } from '@/components/Calendar/DayView'
 import { AdminPanel } from '@/components/Admin/AdminPanel'
+import { Home } from '@/components/Home/Home'
+import { Announcement } from '@/components/Announcement/Announcement'
+import { APP_NAME, FOOTER_TEXT, GITHUB_URL } from '@/config'
+
+// 页面模式：首页 / 日历视图（二级页） / 后台管理
+type PageMode = 'home' | 'calendar' | 'admin'
 
 export default function App() {
-  // 页面模式：日历视图 / 后台管理
-  const [page, setPage] = useState<'calendar' | 'admin'>('calendar')
+  const [page, setPage] = useState<PageMode>('home')
   const [view, setView] = useState<ViewMode>('month')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
@@ -26,6 +31,19 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [detailSchedule, setDetailSchedule] = useState<Schedule | null>(null)
+  // 公告内容：启动时异步从后端加载，失败时静默为空
+  const [announcement, setAnnouncement] = useState('')
+
+  // 启动时异步加载公告（无需鉴权，不阻塞主流程）
+  useEffect(() => {
+    let active = true
+    getAnnouncement().then((info) => {
+      if (active) setAnnouncement(info.content)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   // 根据当前视图计算日期范围
   const dateRange = useMemo(() => {
@@ -73,6 +91,13 @@ export default function App() {
     setView(v)
   }
 
+  // 首页搜索选中学员 → 跳转日历页并加载该学员排课
+  const handleSelectStudentFromHome = (student: Student) => {
+    setSelectedStudent(student)
+    setPage('calendar')
+  }
+
+  // 日历页内搜索选中学员
   const handleSelectStudent = (student: Student) => {
     setSelectedStudent(student)
   }
@@ -86,24 +111,47 @@ export default function App() {
     return { count, courses, teachers }
   }, [selectedStudent, schedules])
 
+  // 首页：类百度简洁首页
+  if (page === 'home') {
+    return (
+      <Home
+        announcement={announcement}
+        onSelectStudent={handleSelectStudentFromHome}
+        onEnterCalendar={() => setPage('calendar')}
+        onEnterAdmin={() => setPage('admin')}
+      />
+    )
+  }
+
+  // 后台管理
+  if (page === 'admin') {
+    return <AdminPanel onExit={() => setPage('home')} />
+  }
+
+  // 日历视图（二级页）
   return (
     <div className="min-h-screen flex flex-col">
-      {page === 'admin' ? (
-        <AdminPanel onExit={() => setPage('calendar')} />
-      ) : (
-        <>
       {/* 顶部栏 */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => setPage('home')}
+                className="btn-ghost -ml-2 px-2"
+                title="返回首页"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+              </button>
               <div className="w-9 h-9 rounded-lg bg-brand-500 flex items-center justify-center text-white">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
               <div>
-                <h1 className="text-lg font-semibold text-slate-800">排课日历系统</h1>
+                <h1 className="text-lg font-semibold text-slate-800">{APP_NAME}</h1>
                 <p className="text-xs text-slate-400 hidden sm:block">
                   日历视角 · 学员排课查询
                 </p>
@@ -181,6 +229,9 @@ export default function App() {
           </div>
         )}
 
+        {/* 公告栏：位于学员信息与日历之间，内容为空时不展示 */}
+        <Announcement content={announcement} />
+
         {/* 日历区 */}
         {selectedStudent && (
           <>
@@ -246,13 +297,32 @@ export default function App() {
 
       {/* 底部 */}
       <footer className="border-t border-slate-200 py-3 text-center text-xs text-slate-400">
-        排课日历系统 · 部署于腾讯云 EdgeOne Makers
+        <span>{FOOTER_TEXT}</span>
+        {GITHUB_URL && (
+          <>
+            <span className="mx-2">·</span>
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-slate-400 hover:text-brand-500 transition-colors inline-flex items-center gap-1 align-middle"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.21 3.44 9.63 8.21 11.19.6.11.82-.26.82-.58 0-.29-.01-1.04-.02-2.05-3.34.72-4.04-1.59-4.04-1.59-.55-1.38-1.34-1.75-1.34-1.75-1.09-.74.08-.73.08-.73 1.21.09 1.85 1.23 1.85 1.23 1.07 1.8 2.81 1.28 3.5.98.11-.77.42-1.28.76-1.58-2.67-.3-5.47-1.31-5.47-5.83 0-1.29.47-2.34 1.23-3.17-.12-.3-.53-1.52.12-3.17 0 0 1-.32 3.3 1.21a11.6 11.6 0 016 0c2.3-1.53 3.3-1.21 3.3-1.21.65 1.65.24 2.87.12 3.17.77.83 1.23 1.88 1.23 3.17 0 4.53-2.81 5.52-5.49 5.81.43.36.81 1.08.81 2.18 0 1.58-.01 2.85-.01 3.24 0 .32.21.7.82.58A12.04 12.04 0 0024 12.29C24 5.78 18.63.5 12 .5z" />
+              </svg>
+              GitHub
+            </a>
+          </>
+        )}
       </footer>
 
       {/* 详情弹窗 */}
       <ScheduleDetail schedule={detailSchedule} onClose={() => setDetailSchedule(null)} />
-        </>
-      )}
     </div>
   )
 }

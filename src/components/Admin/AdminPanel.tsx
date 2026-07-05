@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Schedule, Student, Course } from '@/types'
-import { searchStudents } from '@/api'
+import { useState, useEffect, useCallback } from 'react'
+import type { Student, Course } from '@/types'
+import { searchStudents, getAnnouncement } from '@/api'
 import {
   seedData,
   clearAllData,
-  importData,
+  saveAnnouncement,
   deleteStudent,
   addStudent,
   updateStudent,
@@ -28,68 +28,6 @@ interface AdminPanelProps {
 
 type Toast = { type: 'success' | 'error' | 'info'; message: string } | null
 
-// 客户端数据完整性校验（与服务端 validateAll 规则一致）
-// 用于「校验数据完整性」按钮，导入前预检
-function validateImportData(data: {
-  students?: any[]
-  schedules?: any[]
-}): string[] {
-  const errors: string[] = []
-  const studentIdSet = new Set<string>()
-  const scheduleIdSet = new Set<string>()
-  const studentIds = new Set<string>(
-    (data.students || []).map((s) => s?.id).filter(Boolean),
-  )
-
-  // 校验学员
-  ;(data.students || []).forEach((s, i) => {
-    const row = i + 1
-    if (!s || typeof s !== 'object') {
-      errors.push(`学员第${row}条不是有效对象`)
-      return
-    }
-    if (!s.id) errors.push(`学员第${row}条缺少 id`)
-    if (!s.name) errors.push(`学员第${row}条缺少 name`)
-    if (s.id) {
-      if (studentIdSet.has(s.id)) errors.push(`学员第${row}条 id 重复: "${s.id}"`)
-      else studentIdSet.add(s.id)
-    }
-  })
-
-  // 校验排课
-  ;(data.schedules || []).forEach((s, i) => {
-    const row = i + 1
-    if (!s || typeof s !== 'object') {
-      errors.push(`排课第${row}条不是有效对象`)
-      return
-    }
-    if (!s.id) errors.push(`排课第${row}条缺少 id`)
-    if (!s.studentId) errors.push(`排课第${row}条缺少 studentId`)
-    if (!s.courseName) errors.push(`排课第${row}条缺少 courseName`)
-    if (!s.date) {
-      errors.push(`排课第${row}条缺少 date`)
-    } else if (!/^\d{4}-\d{2}-\d{2}$/.test(s.date)) {
-      errors.push(`排课第${row}条 date 格式应为 yyyy-MM-dd，当前为 "${s.date}"`)
-    }
-    if (s.startTime && !/^\d{2}:\d{2}$/.test(s.startTime)) {
-      errors.push(`排课第${row}条 startTime 格式应为 HH:mm，当前为 "${s.startTime}"`)
-    }
-    if (s.endTime && !/^\d{2}:\d{2}$/.test(s.endTime)) {
-      errors.push(`排课第${row}条 endTime 格式应为 HH:mm，当前为 "${s.endTime}"`)
-    }
-    if (s.id) {
-      if (scheduleIdSet.has(s.id)) errors.push(`排课第${row}条 id 重复: "${s.id}"`)
-      else scheduleIdSet.add(s.id)
-    }
-    // 跨表关联：studentId 必须在学员表中存在
-    if (s.studentId && studentIds.size > 0 && !studentIds.has(s.studentId)) {
-      errors.push(`排课第${row}条 studentId="${s.studentId}" 在学员表中不存在`)
-    }
-  })
-
-  return errors
-}
-
 export function AdminPanel({ onExit }: AdminPanelProps) {
   // 登录状态：有 token 视为已登录
   const [authed, setAuthed] = useState<boolean>(() => !!getToken())
@@ -100,12 +38,9 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<Toast>(null)
 
-  // JSON 导入
-  const [jsonText, setJsonText] = useState('')
-  const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge')
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  // 数据完整性校验结果（null 表示未校验，空数组表示通过，非空为问题列表）
-  const [validationResults, setValidationResults] = useState<string[] | null>(null)
+  // 公告设置（进阶管理页编辑 + 保存）
+  const [announcementText, setAnnouncementText] = useState('')
+  const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState('')
 
   // 进阶管理二级页面
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -206,50 +141,26 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     }
   }
 
-  // JSON 文本解析
-  function parseJsonText(): {
-    mode?: 'merge' | 'replace'
-    students?: Student[]
-    schedules?: Schedule[]
-  } | null {
+  // 公告：进入进阶管理页时加载当前内容
+  const handleLoadAnnouncement = useCallback(async () => {
     try {
-      const obj = JSON.parse(jsonText)
-      if (!Array.isArray(obj.students) && !Array.isArray(obj.schedules)) {
-        showToast('error', 'JSON 需包含 students 或 schedules 数组')
-        return null
-      }
-      return obj
-    } catch (e) {
-      showToast('error', 'JSON 格式错误：' + (e as Error).message)
-      return null
+      const info = await getAnnouncement()
+      setAnnouncementText(info.content)
+      setAnnouncementUpdatedAt(info.updatedAt)
+    } catch {
+      // 加载失败不阻塞，保留空内容供管理员写入
     }
-  }
+  }, [])
 
-  // JSON 导入
-  const handleImport = async () => {
-    const body = parseJsonText()
-    if (!body) return
+  // 公告：保存
+  const handleSaveAnnouncement = async () => {
     setBusy(true)
     try {
-      const result = await importData({
-        mode: importMode,
-        students: body.students,
-        schedules: body.schedules,
-      })
+      const result = await saveAnnouncement(announcementText)
       if (result.code === 0) {
-        showToast(
-          'success',
-          `导入成功：学员 ${result.data.importedStudents} 条，排课 ${result.data.importedSchedules} 条`,
-        )
-        setJsonText('')
-        setValidationResults(null)
-        await loadStudents()
+        setAnnouncementUpdatedAt(result.data.updatedAt)
+        showToast('success', '公告已保存')
       } else {
-        // 服务端校验失败时，展示详细错误列表
-        const serverErrors = (result.data as any)?.errors
-        if (Array.isArray(serverErrors) && serverErrors.length > 0) {
-          setValidationResults(serverErrors)
-        }
         showToast('error', result.message)
       }
     } catch (e) {
@@ -257,74 +168,6 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     } finally {
       setBusy(false)
     }
-  }
-
-  // 数据完整性校验（仅本地预检，不发起导入请求）
-  const handleValidate = () => {
-    const body = parseJsonText()
-    if (!body) return
-    const errors = validateImportData(body)
-    setValidationResults(errors)
-    if (errors.length === 0) {
-      showToast('success', '数据校验通过，可以导入')
-    } else {
-      showToast('error', `发现 ${errors.length} 个问题，请查看详情`)
-    }
-  }
-
-  // 文件上传
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const text = String(ev.target?.result || '')
-      setJsonText(text)
-      // 自动识别 mode
-      try {
-        const obj = JSON.parse(text)
-        if (obj.mode === 'merge' || obj.mode === 'replace') {
-          setImportMode(obj.mode)
-        }
-      } catch {
-        // 解析失败不处理，等用户点导入时再报错
-      }
-    }
-    reader.readAsText(file)
-    // 重置 input 以便重复上传同一文件
-    e.target.value = ''
-  }
-
-  // 下载 JSON 模板
-  const handleDownloadTemplate = () => {
-    const template = {
-      mode: 'merge',
-      students: [
-        { id: 's001', name: '张伟', phone: '13800001001', grade: '高三' },
-      ],
-      schedules: [
-        {
-          id: 'c0001',
-          studentId: 's001',
-          courseName: '数学提高班',
-          teacher: '张老师',
-          location: 'A教室201',
-          date: '2026-08-03',
-          startTime: '09:00',
-          endTime: '10:30',
-          note: '',
-        },
-      ],
-    }
-    const blob = new Blob([JSON.stringify(template, null, 2)], {
-      type: 'application/json',
-    })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'import-template.json'
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   // 删除学员及其所有排课
@@ -486,17 +329,10 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
           onSeed={handleSeed}
           onClear={handleClear}
           busy={busy}
-          jsonText={jsonText}
-          setJsonText={setJsonText}
-          importMode={importMode}
-          setImportMode={setImportMode}
-          fileInputRef={fileInputRef}
-          onFileUpload={handleFileUpload}
-          onDownloadTemplate={handleDownloadTemplate}
-          onValidate={handleValidate}
-          onImport={handleImport}
-          validationResults={validationResults}
-          setValidationResults={setValidationResults}
+          announcementText={announcementText}
+          setAnnouncementText={setAnnouncementText}
+          announcementUpdatedAt={announcementUpdatedAt}
+          onSaveAnnouncement={handleSaveAnnouncement}
         />
         {toast && <ToastView toast={toast} />}
       </>
@@ -587,7 +423,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
               <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
-              <span className="hidden sm:inline">返回日历</span>
+              <span className="hidden sm:inline">返回首页</span>
             </button>
           </div>
         </div>
@@ -693,7 +529,10 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
               </div>
             </div>
             <button
-              onClick={() => setShowAdvanced(true)}
+              onClick={() => {
+                handleLoadAnnouncement()
+                setShowAdvanced(true)
+              }}
               className="btn border border-amber-300 bg-white text-amber-700 hover:bg-amber-100 text-sm"
             >
               进入进阶管理 →

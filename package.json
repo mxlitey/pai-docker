@@ -8,17 +8,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "seed": "node scripts/seed-data.mjs",
-    "gen:template": "node scripts/generate-excel-template.mjs",
-    "excel2json": "node scripts/excel-to-json.mjs",
-    "import:data": "node scripts/import-data.mjs"
+    "seed": "node scripts/seed-data.mjs"
   },
   "dependencies": {
     "@edgeone/pages-blob": "^0.0.12",
     "date-fns": "^3.6.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "xlsx": "^0.18.5"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",

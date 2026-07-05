@@ -1,5 +1,4 @@
-import type { ReactNode, RefObject } from 'react'
-import { cn } from '@/utils/cn'
+import type { ReactNode } from 'react'
 
 interface AdvancedAdminProps {
   // 顶部返回按钮
@@ -8,18 +7,11 @@ interface AdvancedAdminProps {
   onSeed: () => void
   onClear: () => void
   busy: boolean
-  // JSON 导入
-  jsonText: string
-  setJsonText: (v: string) => void
-  importMode: 'merge' | 'replace'
-  setImportMode: (v: 'merge' | 'replace') => void
-  fileInputRef: RefObject<HTMLInputElement>
-  onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
-  onDownloadTemplate: () => void
-  onValidate: () => void
-  onImport: () => void
-  validationResults: string[] | null
-  setValidationResults: (v: string[] | null) => void
+  // 公告设置
+  announcementText: string
+  setAnnouncementText: (v: string) => void
+  announcementUpdatedAt: string
+  onSaveAnnouncement: () => void
   // 可选：额外提示节点（如 toast 由父级管理）
   children?: ReactNode
 }
@@ -30,19 +22,23 @@ export function AdvancedAdmin(props: AdvancedAdminProps) {
     onSeed,
     onClear,
     busy,
-    jsonText,
-    setJsonText,
-    importMode,
-    setImportMode,
-    fileInputRef,
-    onFileUpload,
-    onDownloadTemplate,
-    onValidate,
-    onImport,
-    validationResults,
-    setValidationResults,
+    announcementText,
+    setAnnouncementText,
+    announcementUpdatedAt,
+    onSaveAnnouncement,
     children,
   } = props
+
+  // 格式化更新时间
+  const updatedAtLabel = announcementUpdatedAt
+    ? new Date(announcementUpdatedAt).toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : ''
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -62,7 +58,7 @@ export function AdvancedAdmin(props: AdvancedAdminProps) {
             <span className="text-slate-300">/</span>
             <h1 className="text-base font-semibold text-slate-800">进阶管理</h1>
           </div>
-          <span className="text-xs text-slate-400 hidden sm:block">数据管理 · JSON 导入</span>
+          <span className="text-xs text-slate-400 hidden sm:block">数据管理 · 公告设置</span>
         </div>
       </header>
 
@@ -128,109 +124,40 @@ export function AdvancedAdmin(props: AdvancedAdminProps) {
           </div>
         </section>
 
-        {/* JSON 导入 */}
+        {/* 公告设置 */}
         <section className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-              <span className="w-1 h-4 bg-brand-500 rounded"></span>
-              JSON 数据导入
+              <span className="w-1 h-4 bg-amber-400 rounded"></span>
+              公告设置
             </h2>
-            <button onClick={onDownloadTemplate} className="btn-ghost text-xs">
-              下载模板
-            </button>
+            {updatedAtLabel && (
+              <span className="text-xs text-slate-400">最近更新：{updatedAtLabel}</span>
+            )}
           </div>
 
-          {/* 导入模式 */}
-          <div className="flex items-center gap-4 mb-3">
-            <span className="text-sm text-slate-500">导入模式：</span>
-            <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-              <input
-                type="radio"
-                checked={importMode === 'merge'}
-                onChange={() => setImportMode('merge')}
-                className="accent-brand-500"
-              />
-              <span>追加合并（按 id 去重覆盖）</span>
-            </label>
-            <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-              <input
-                type="radio"
-                checked={importMode === 'replace'}
-                onChange={() => setImportMode('replace')}
-                className="accent-brand-500"
-              />
-              <span>替换清空后写入</span>
-            </label>
-          </div>
-
-          {/* 文件上传 + 文本框 */}
-          <div className="flex items-center gap-3 mb-3">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json,application/json"
-              onChange={onFileUpload}
-              className="hidden"
-            />
-            <button onClick={() => fileInputRef.current?.click()} className="btn-ghost border border-slate-200">
-              选择 .json 文件
-            </button>
-            <span className="text-xs text-slate-400">
-              或直接在下方粘贴 JSON 内容
-            </span>
+          <div className="text-xs text-slate-500 mb-2 leading-relaxed">
+            公告内容将展示在首页与日历页中学员信息与日历之间。支持多行文本（按回车换行）。
+            内容为空时公告栏自动隐藏。保存后所有用户下次加载页面时即可看到最新公告。
           </div>
 
           <textarea
-            value={jsonText}
-            onChange={(e) => {
-              setJsonText(e.target.value)
-              setValidationResults(null)
-            }}
-            placeholder='粘贴 JSON，例如：&#10;{&#10;  "mode": "merge",&#10;  "students": [{ "id": "s001", "name": "张伟" }],&#10;  "schedules": [{ "id": "c0001", "studentId": "s001", "courseName": "数学", "date": "2026-08-03" }]&#10;}'
-            className="w-full h-48 px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-400 resize-y"
+            value={announcementText}
+            onChange={(e) => setAnnouncementText(e.target.value)}
+            placeholder="请输入公告内容，例如：&#10;1. 7 月 15 日（周一）全天停课，请学员按补课通知安排时间。&#10;2. 暑期班报名已开启，详情咨询前台。"
+            maxLength={5000}
+            className="w-full h-48 px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-400 resize-y"
           />
-
-          {/* 校验结果面板 */}
-          {validationResults !== null && (
-            <div
-              className={cn(
-                'mt-3 rounded-md border px-3 py-2.5 text-sm',
-                validationResults.length === 0
-                  ? 'bg-green-50 border-green-200 text-green-700'
-                  : 'bg-rose-50 border-rose-200 text-rose-700',
-              )}
-            >
-              {validationResults.length === 0 ? (
-                <div>✓ 数据校验通过，可以导入</div>
-              ) : (
-                <div>
-                  <div className="font-medium mb-1">
-                    发现 {validationResults.length} 个问题：
-                  </div>
-                  <ul className="list-disc list-inside space-y-0.5 text-xs max-h-40 overflow-y-auto">
-                    {validationResults.map((err, i) => (
-                      <li key={i}>{err}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="flex justify-end mt-3 gap-2">
+          <div className="flex items-center justify-between mt-3">
+            <span className="text-xs text-slate-400">
+              {announcementText.length}/5000 字
+            </span>
             <button
-              onClick={onValidate}
-              disabled={!jsonText.trim()}
-              className="btn-ghost border border-slate-200"
-            >
-              校验数据完整性
-            </button>
-            <button
-              onClick={onImport}
-              disabled={busy || !jsonText.trim()}
+              onClick={onSaveAnnouncement}
+              disabled={busy}
               className="btn-primary"
             >
-              {busy ? '导入中…' : '导入数据'}
+              {busy ? '保存中…' : '保存公告'}
             </button>
           </div>
         </section>

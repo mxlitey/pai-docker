@@ -504,22 +504,37 @@ export async function clearAllData() {
   return { deletedCount: deletedKeys.length, keys: deletedKeys }
 }
 
-// 清空所有排课数据（保留学员数据）
-// 用于 import 的 replace 模式：先清空排课再写入新数据
-export async function clearAllSchedules() {
+// ========== 公告管理 ==========
+
+// 公告存储键：单文件存储公告内容 + 更新时间
+// 结构：{ content: string, updatedAt: string }
+
+// 读取公告（公开，未设置时返回空内容）
+export async function getAnnouncement() {
   const store = getBlobStore()
-  const deletedKeys = []
-  const result = await store.list({ prefix: 'schedules/' })
-  const items = result.blobs || []
-  for (const item of items) {
-    try {
-      await store.delete(item.key)
-      deletedKeys.push(item.key)
-    } catch {
-      // 单个删除失败不中断
+  const raw = await store.get('config/announcement.json')
+  if (!raw) return { content: '', updatedAt: '' }
+  try {
+    const obj = JSON.parse(raw)
+    return {
+      content: typeof obj.content === 'string' ? obj.content : '',
+      updatedAt: typeof obj.updatedAt === 'string' ? obj.updatedAt : '',
     }
+  } catch {
+    return { content: '', updatedAt: '' }
   }
-  return { deletedCount: deletedKeys.length, keys: deletedKeys }
+}
+
+// 保存公告（鉴权写入）
+// content 为空字符串等价于清空公告（前端将不展示）
+export async function saveAnnouncement(content) {
+  const store = getBlobStore()
+  const payload = {
+    content: String(content || ''),
+    updatedAt: new Date().toISOString(),
+  }
+  await store.set('config/announcement.json', JSON.stringify(payload))
+  return payload
 }
 
 // JSON 响应工具

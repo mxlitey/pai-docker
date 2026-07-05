@@ -103,24 +103,6 @@ export async function clearAllData(): Promise<ApiResult<{
   return request(`${API_BASE}/clear`, { method: 'POST' })
 }
 
-// JSON 数据导入
-export async function importData(body: {
-  mode?: 'merge' | 'replace'
-  students?: any[]
-  schedules?: Schedule[]
-}): Promise<ApiResult<{
-  mode: string
-  studentCount: number
-  importedStudents: number
-  importedSchedules: number
-  monthFiles: number
-}>> {
-  return request(`${API_BASE}/import`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
 // 修改排课（含跨月处理）
 export async function updateSchedule(
   oldSchedule: Schedule,
@@ -285,4 +267,14 @@ export async function searchSchedules(params: {
   if (params.courseId) qs.set('courseId', params.courseId)
   const query = qs.toString()
   return request(`${API_BASE}/schedules-search${query ? '?' + query : ''}`, { method: 'GET' })
+}
+
+// 保存公告（鉴权写入）
+export async function saveAnnouncement(
+  content: string,
+): Promise<ApiResult<{ content: string; updatedAt: string }>> {
+  return request(`${API_BASE}/announcement`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  })
 }

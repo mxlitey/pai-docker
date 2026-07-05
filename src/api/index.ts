@@ -71,3 +71,20 @@ export async function getSchedulesByName(
   )
   return data.schedules
 }
+
+// 公告信息
+export interface AnnouncementInfo {
+  content: string
+  updatedAt: string
+}
+
+// 公开读取公告（首页与日历页异步加载，无需鉴权）
+// 失败时静默返回空内容，前端按「无公告」处理，不阻塞主流程
+export async function getAnnouncement(): Promise<AnnouncementInfo> {
+  try {
+    const data = await request<AnnouncementInfo>(`${API_BASE}/announcement`)
+    return data
+  } catch {
+    return { content: '', updatedAt: '' }
+  }
+}
