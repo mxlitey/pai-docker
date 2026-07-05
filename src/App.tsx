@@ -64,8 +64,7 @@ export default function App() {
     return { start: currentDate, end: currentDate }
   }, [view, currentDate])
 
-  // 加载排课数据
-  // 同时刷新学员最新信息（含 hours/remainingHours），避免 localStorage 旧快照导致课时不显示
+  // 加载排课数据（仅依赖学员 id 与日期范围，避免学员对象引用变化导致重渲染循环）
   const loadSchedules = useCallback(async () => {
     if (!selectedStudent) {
       setSchedules([])
@@ -74,32 +73,45 @@ export default function App() {
     setLoading(true)
     setLoadError('')
     try {
-      const [data, latestStudents] = await Promise.all([
-        getSchedules(
-          selectedStudent.id,
-          formatDate(dateRange.start),
-          formatDate(dateRange.end),
-        ),
-        searchStudents(selectedStudent.name),
-      ])
+      const data = await getSchedules(
+        selectedStudent.id,
+        formatDate(dateRange.start),
+        formatDate(dateRange.end),
+      )
       setSchedules(data)
-      // 用最新学员信息覆盖（按 id 匹配），并同步 localStorage
-      const latest = latestStudents.find((s) => s.id === selectedStudent.id)
-      if (latest) {
-        setSelectedStudent(latest)
-        try {
-          localStorage.setItem('lastStudent', JSON.stringify(latest))
-        } catch {
-          // localStorage 不可用时静默忽略
-        }
-      }
     } catch (e) {
       setSchedules([])
       setLoadError((e as Error).message || '加载排课数据失败')
     } finally {
       setLoading(false)
     }
-  }, [selectedStudent, dateRange])
+  }, [selectedStudent?.id, dateRange])
+
+  // 选中学员变化时，拉取最新学员信息（含 hours/remainingHours）
+  // 依赖仅 id 字符串，更新为同 id 的新对象不会重触发，避免循环
+  useEffect(() => {
+    if (!selectedStudent?.id) return
+    let active = true
+    searchStudents(selectedStudent.name)
+      .then((list) => {
+        if (!active) return
+        const latest = list.find((s) => s.id === selectedStudent.id)
+        if (latest) {
+          setSelectedStudent(latest)
+          try {
+            localStorage.setItem('lastStudent', JSON.stringify(latest))
+          } catch {
+            // localStorage 不可用时静默忽略
+          }
+        }
+      })
+      .catch(() => {
+        // 刷新失败时静默，保留现有学员信息
+      })
+    return () => {
+      active = false
+    }
+  }, [selectedStudent?.id, selectedStudent?.name])
 
   useEffect(() => {
     loadSchedules()
