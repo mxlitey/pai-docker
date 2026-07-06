@@ -86,21 +86,33 @@ async function request<T>(
   return resp.json()
 }
 
-// 种子数据初始化
-export async function seedData(): Promise<ApiResult<{
-  studentCount: number
-  scheduleCount: number
-  monthFiles: number
-}>> {
-  return request(`${API_BASE}/seed`, { method: 'POST' })
-}
+// 校验 token 有效性（进入管理页时调用后端验证，防止本地伪造 token 绕过登录页）
+export async function verifyAuth(): Promise<ApiResult<{ valid: boolean }>> {
+  let resp: Response
+  try {
+    resp = await fetch(`${API_BASE}/auth`, {
+      method: 'GET',
+      headers: {
+        ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+      },
+      signal: AbortSignal.timeout(10000),
+    })
+  } catch {
+    return { code: -1, message: '网络请求失败，请检查网络连接', data: null as any }
+  }
 
-// 清空所有数据
-export async function clearAllData(): Promise<ApiResult<{
-  deletedCount: number
-  keys: string[]
-}>> {
-  return request(`${API_BASE}/clear`, { method: 'POST' })
+  if (resp.status === 401) {
+    clearToken()
+    const result = await resp.json().catch(() => ({ code: 401, message: '未登录或登录已过期' }))
+    return { code: 401, message: result.message || '未登录或登录已过期', data: null as any }
+  }
+
+  const contentType = resp.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    return { code: -1, message: '服务暂不可用，请稍后重试', data: null as any }
+  }
+
+  return resp.json()
 }
 
 // 修改排课（含跨月处理）

@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { Student, Course } from '@/types'
 import { searchStudents, getAnnouncement } from '@/api'
 import {
-  seedData,
-  clearAllData,
+  verifyAuth,
   saveAnnouncement,
   getAttendanceList,
   setAttendance,
@@ -32,8 +31,9 @@ interface AdminPanelProps {
 type Toast = { type: 'success' | 'error' | 'info'; message: string } | null
 
 export function AdminPanel({ onExit }: AdminPanelProps) {
-  // 登录状态：有 token 视为已登录
-  const [authed, setAuthed] = useState<boolean>(() => !!getToken())
+  // 登录状态：进入时调用后端校验 token，不依赖 localStorage 是否存在 token
+  const [authed, setAuthed] = useState<boolean>(false)
+  const [checking, setChecking] = useState<boolean>(true)
   const [students, setStudents] = useState<Student[]>([])
   const [courses, setCourses] = useState<Course[]>([])
 
@@ -95,56 +95,42 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     }
   }, [])
 
+  // 进入管理页时调用后端校验 token 有效性
+  // 防止攻击者在 localStorage 写入伪造 token 绕过前端登录页
   useEffect(() => {
+    let cancelled = false
+    async function checkAuth() {
+      if (!getToken()) {
+        setChecking(false)
+        setAuthed(false)
+        return
+      }
+      try {
+        const result = await verifyAuth()
+        if (cancelled) return
+        if (result.code === 0) {
+          setAuthed(true)
+        } else {
+          setAuthed(false)
+        }
+      } catch {
+        if (!cancelled) setAuthed(false)
+      } finally {
+        if (!cancelled) setChecking(false)
+      }
+    }
+    checkAuth()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // 鉴权通过后再加载数据
+  useEffect(() => {
+    if (!authed) return
     loadStudents()
     loadCourses()
-  }, [loadStudents, loadCourses])
-
-  // 测试数据导入
-  const handleSeed = async () => {
-    if (!confirm('确认导入测试数据？这将写入 8 名示例学员及 7 月排课数据。')) return
-    setBusy(true)
-    try {
-      const result = await seedData()
-      if (result.code === 0) {
-        showToast(
-          'success',
-          `测试数据已导入：${result.data.studentCount} 名学员，${result.data.scheduleCount} 条排课`,
-        )
-        await loadStudents()
-      } else {
-        showToast('error', result.message)
-      }
-    } catch (e) {
-      handleApiError(e as Error)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  // 清空所有数据
-  const handleClear = async () => {
-    const step1 = confirm(
-      '⚠ 危险操作：将清空 Blob 中所有学员与排课数据，且不可恢复！\n\n确认继续？',
-    )
-    if (!step1) return
-    const step2 = confirm('再次确认：真的要清空全部数据吗？')
-    if (!step2) return
-    setBusy(true)
-    try {
-      const result = await clearAllData()
-      if (result.code === 0) {
-        showToast('success', `已清空 ${result.data.deletedCount} 个对象`)
-        await loadStudents()
-      } else {
-        showToast('error', result.message)
-      }
-    } catch (e) {
-      handleApiError(e as Error)
-    } finally {
-      setBusy(false)
-    }
-  }
+  }, [authed, loadStudents, loadCourses])
 
   // 公告：进入进阶管理页时加载当前内容
   const handleLoadAnnouncement = useCallback(async () => {
@@ -315,6 +301,21 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
   const inputClass =
     'w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent'
 
+  // 校验中：显示加载状态
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-sm text-slate-500 flex items-center gap-2">
+          <svg className="animate-spin w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          校验登录状态…
+        </div>
+      </div>
+    )
+  }
+
   // 未登录：渲染登录页
   if (!authed) {
     return (
@@ -331,8 +332,6 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
       <>
         <AdvancedAdmin
           onBack={() => setShowAdvanced(false)}
-          onSeed={handleSeed}
-          onClear={handleClear}
           busy={busy}
           announcementText={announcementText}
           setAnnouncementText={setAnnouncementText}

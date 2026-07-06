@@ -6,9 +6,6 @@ import remarkGfm from 'remark-gfm'
 interface AdvancedAdminProps {
   // 顶部返回按钮
   onBack: () => void
-  // 数据管理
-  onSeed: () => void
-  onClear: () => void
   busy: boolean
   // 公告设置
   announcementText: string
@@ -22,8 +19,6 @@ interface AdvancedAdminProps {
 export function AdvancedAdmin(props: AdvancedAdminProps) {
   const {
     onBack,
-    onSeed,
-    onClear,
     busy,
     announcementText,
     setAnnouncementText,
@@ -201,53 +196,6 @@ export function AdvancedAdmin(props: AdvancedAdminProps) {
             >
               {busy ? '保存中…' : '保存公告'}
             </button>
-          </div>
-        </section>
-
-        {/* 数据管理 */}
-        <section className="card p-5">
-          <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <span className="w-1 h-4 bg-brand-500 rounded"></span>
-            数据管理
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* 测试数据 */}
-            <div className="border border-slate-200 rounded-lg p-4">
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <div className="font-medium text-sm text-slate-700">导入测试数据</div>
-                  <div className="text-xs text-slate-400 mt-1">
-                    写入 8 名示例学员及 7 月排课，用于演示验证
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={onSeed}
-                disabled={busy}
-                className="btn-primary w-full mt-2"
-              >
-                {busy ? '处理中…' : '导入测试数据'}
-              </button>
-            </div>
-
-            {/* 清空数据 */}
-            <div className="border border-rose-200 rounded-lg p-4 bg-rose-50/30">
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <div className="font-medium text-sm text-rose-700">一键清空所有数据</div>
-                  <div className="text-xs text-rose-400 mt-1">
-                    删除 Blob 中全部学员与排课，不可恢复
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={onClear}
-                disabled={busy}
-                className="btn w-full mt-2 bg-rose-600 text-white hover:bg-rose-700"
-              >
-                {busy ? '处理中…' : '清空全部数据'}
-              </button>
-            </div>
           </div>
         </section>
 
