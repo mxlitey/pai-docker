@@ -160,7 +160,7 @@ export function Announcement({ content, updatedAt, bare = false }: AnnouncementP
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth={2}
-            d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6a1 1 0 001 1v11.5a.5.5 0 01-1 0V8.83a4 4 0 00-1.564 4.853zM11 5.882A4 4 0 0116 6v0a4 4 0 014 4v6.5a.5.5 0 01-1 0V10a3 3 0 00-3-3 4 4 0 00-4 0"
+            d="M3 11l13-5v12L3 13v-2zm13-4.5a3.5 3.5 0 010 9M6 13v5a1 1 0 001 1h1a1 1 0 001-1v-4"
           />
         </svg>
         <span className="text-sm font-semibold text-slate-700">公告</span>
