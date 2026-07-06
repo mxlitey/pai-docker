@@ -21,12 +21,33 @@ import { APP_NAME, FOOTER_TEXT, GITHUB_URL } from '@/config'
 // 页面模式：首页 / 日历视图（二级页） / 后台管理
 type PageMode = 'home' | 'calendar' | 'admin'
 
-// 清除 URL 中的 ?s= 参数（主动返回首页 / 进入后台时调用）
-function clearScheduleParam() {
+// 清除 URL 中的 ?s= 参数与 #admin hash（主动返回首页时调用）
+function clearNavState() {
   try {
     const url = new URL(window.location.href)
+    let changed = false
     if (url.searchParams.has('s')) {
       url.searchParams.delete('s')
+      changed = true
+    }
+    if (url.hash === '#admin') {
+      url.hash = ''
+      changed = true
+    }
+    if (changed) {
+      window.history.replaceState({}, '', url.toString())
+    }
+  } catch {
+    // 忽略
+  }
+}
+
+// 写入 #admin hash（进入后台时调用）
+function setAdminHash() {
+  try {
+    const url = new URL(window.location.href)
+    if (url.hash !== '#admin') {
+      url.hash = 'admin'
       window.history.replaceState({}, '', url.toString())
     }
   } catch {
@@ -36,10 +57,14 @@ function clearScheduleParam() {
 
 export default function App() {
   // 启动时从 localStorage 恢复上次搜索的学员，实现首页刷新后回显
-  // page 初始值：URL 含 ?s= 时直接进入日历页，避免刷新时被重置回首页
+  // page 初始值：根据 URL 状态决定，避免刷新时被重置回首页
+  // - #admin → 后台管理
+  // - ?s= → 日历视图（学员排课页）
+  // - 其他 → 首页
   const [page, setPage] = useState<PageMode>(() => {
     try {
       const url = new URL(window.location.href)
+      if (url.hash === '#admin') return 'admin'
       if (url.searchParams.get('s')) return 'calendar'
     } catch {
       // 忽略
@@ -240,7 +265,8 @@ export default function App() {
         onQueryChange={handleHomeQueryChange}
         onViewSchedule={handleViewSchedule}
         onEnterAdmin={() => {
-          clearScheduleParam()
+          clearNavState()
+          setAdminHash()
           setPage('admin')
         }}
       />
@@ -250,7 +276,7 @@ export default function App() {
   // 后台管理
   if (page === 'admin') {
     return <AdminPanel onExit={() => {
-      clearScheduleParam()
+      clearNavState()
       setPage('home')
     }} />
   }
@@ -265,7 +291,7 @@ export default function App() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
-                  clearScheduleParam()
+                  clearNavState()
                   setPage('home')
                 }}
                 className="btn-ghost -ml-2 px-2"
