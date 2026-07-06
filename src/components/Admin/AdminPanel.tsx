@@ -17,6 +17,7 @@ import {
   clearToken,
 } from '@/api/admin'
 import { AnnouncementAdmin } from './AnnouncementAdmin'
+import { ShareLinksAdmin } from './ShareLinksAdmin'
 import { StudentAdmin } from './StudentAdmin'
 import { CourseAdmin } from './CourseAdmin'
 import { ScheduleAdmin } from './ScheduleAdmin'
@@ -47,6 +48,8 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
 
   // 公告管理二级页面
   const [showAnnouncement, setShowAnnouncement] = useState(false)
+  // 分享链接二级页面
+  const [showShareLinks, setShowShareLinks] = useState(false)
   // 学员管理二级页面
   const [showStudentAdmin, setShowStudentAdmin] = useState(false)
   // 课程管理二级页面
@@ -343,6 +346,19 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     )
   }
 
+  // 分享链接二级页面
+  if (showShareLinks) {
+    return (
+      <>
+        <ShareLinksAdmin
+          students={students}
+          onBack={() => setShowShareLinks(false)}
+        />
+        {toast && <ToastView toast={toast} />}
+      </>
+    )
+  }
+
   // 学员管理二级页面
   if (showStudentAdmin) {
     return (
@@ -572,6 +588,27 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
               className="btn-primary text-sm py-1.5 px-3"
             >
               进入公告管理 →
+            </button>
+          </div>
+        </section>
+
+        {/* 分享链接入口 */}
+        <section className="card p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+                <span className="w-1 h-4 bg-brand-500 rounded"></span>
+                分享链接
+              </h2>
+              <div className="text-xs text-slate-500 mt-1.5 ml-3">
+                查看和生成分享链接
+              </div>
+            </div>
+            <button
+              onClick={() => setShowShareLinks(true)}
+              className="btn-primary text-sm py-1.5 px-3"
+            >
+              进入分享链接 →
             </button>
           </div>
         </section>
