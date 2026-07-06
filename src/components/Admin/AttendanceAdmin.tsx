@@ -67,7 +67,7 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
     setSuccessMsg('')
   }
 
-  // 按课程分组，便于分班级/分课程点名
+  // 按课程分组，便于分班级/分课程点名；课程内再按时间段二级分组
   const groupedByCourse = useMemo(() => {
     const map = new Map<
       string,
@@ -78,6 +78,12 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
         location?: string
         color?: string
         schedules: Schedule[]
+        timeGroups: {
+          timeKey: string
+          startTime: string
+          endTime: string
+          schedules: Schedule[]
+        }[]
       }
     >()
     for (const s of schedules) {
@@ -91,14 +97,38 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
           location: s.location,
           color: s.color,
           schedules: [],
+          timeGroups: [],
         }
         map.set(key, g)
       }
       g.schedules.push(s)
     }
     const groups = Array.from(map.values())
-    // 组内按开始时间升序
     for (const g of groups) {
+      // 课程内按时间段聚合
+      const tgMap = new Map<
+        string,
+        { timeKey: string; startTime: string; endTime: string; schedules: Schedule[] }
+      >()
+      for (const s of g.schedules) {
+        const st = s.startTime || '--:--'
+        const et = s.endTime || '--:--'
+        const tk = `${st}-${et}`
+        let tg = tgMap.get(tk)
+        if (!tg) {
+          tg = { timeKey: tk, startTime: st, endTime: et, schedules: [] }
+          tgMap.set(tk, tg)
+        }
+        tg.schedules.push(s)
+      }
+      const tgs = Array.from(tgMap.values())
+      // 时间段按开始时间升序，同时间段内按学员名排序
+      tgs.sort((a, b) => a.startTime.localeCompare(b.startTime))
+      for (const tg of tgs) {
+        tg.schedules.sort((a, b) => (a.studentName || '').localeCompare(b.studentName || ''))
+      }
+      g.timeGroups = tgs
+      // 保留 schedules 整体排序，供组间排序与课程级批量操作使用
       g.schedules.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''))
     }
     // 组间按首节课时间升序
@@ -331,69 +361,77 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
                     </div>
                   </div>
 
-                  {/* 该课程的排课列表 */}
-                  <div className="space-y-2">
-                    {group.schedules.map((s) => {
-                      const cur = editMap[s.id]
-                      return (
-                        <div
-                          key={s.id}
-                          className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border border-slate-100 rounded-lg px-3 py-2 hover:bg-slate-50/50"
-                        >
-                          {/* 时间 + 学员（移动端横向排列，桌面端同行） */}
-                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                            <div className="text-xs text-slate-500 font-mono flex-shrink-0">
-                              <span>{s.startTime || '--:--'}</span>
-                              <span className="text-slate-300 mx-1 hidden sm:inline">→</span>
-                              <span className="text-slate-300 hidden sm:inline">
-                                {s.endTime || '--:--'}
-                              </span>
-                            </div>
-                            <div className="text-sm text-slate-800 font-medium truncate">
-                              {s.studentName}
-                            </div>
-                          </div>
-
-                          {/* 三态按钮：移动端占满宽度均分，桌面端右对齐 */}
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => setItem(s.id, true)}
-                              className={cn(
-                                'flex-1 sm:flex-initial px-2.5 py-1 text-xs rounded transition-colors',
-                                cur === true
-                                  ? 'bg-green-600 text-white'
-                                  : 'bg-slate-100 text-slate-500 hover:bg-green-100 hover:text-green-700',
-                              )}
-                            >
-                              到课
-                            </button>
-                            <button
-                              onClick={() => setItem(s.id, false)}
-                              className={cn(
-                                'flex-1 sm:flex-initial px-2.5 py-1 text-xs rounded transition-colors',
-                                cur === false
-                                  ? 'bg-rose-600 text-white'
-                                  : 'bg-slate-100 text-slate-500 hover:bg-rose-100 hover:text-rose-700',
-                              )}
-                            >
-                              缺勤
-                            </button>
-                            <button
-                              onClick={() => setItem(s.id, undefined)}
-                              className={cn(
-                                'flex-1 sm:flex-initial px-2.5 py-1 text-xs rounded transition-colors',
-                                cur === undefined
-                                  ? 'bg-slate-400 text-white'
-                                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200',
-                              )}
-                              title="标记为未点名"
-                            >
-                              未点名
-                            </button>
-                          </div>
+                  {/* 该课程的排课列表（按时间段二级分组） */}
+                  <div className="space-y-3">
+                    {group.timeGroups.map((tg) => (
+                      <div key={tg.timeKey}>
+                        {/* 时间段子标题 */}
+                        <div className="flex items-center gap-2 mb-1.5 px-1">
+                          <span className="text-xs font-mono text-slate-600 font-medium">
+                            {tg.startTime}
+                            <span className="text-slate-300 mx-1">→</span>
+                            {tg.endTime}
+                          </span>
+                          <span className="text-xs text-slate-400">
+                            {tg.schedules.length} 人
+                          </span>
                         </div>
-                      )
-                    })}
+                        {/* 该时间段的学员列表（时间已上移到子标题，不再逐条显示） */}
+                        <div className="space-y-2">
+                          {tg.schedules.map((s) => {
+                            const cur = editMap[s.id]
+                            return (
+                              <div
+                                key={s.id}
+                                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border border-slate-100 rounded-lg px-3 py-2 hover:bg-slate-50/50"
+                              >
+                                <div className="text-sm text-slate-800 font-medium truncate min-w-0">
+                                  {s.studentName}
+                                </div>
+
+                                {/* 三态按钮：移动端占满宽度均分，桌面端右对齐 */}
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => setItem(s.id, true)}
+                                    className={cn(
+                                      'flex-1 sm:flex-initial px-2.5 py-1 text-xs rounded transition-colors',
+                                      cur === true
+                                        ? 'bg-green-600 text-white'
+                                        : 'bg-slate-100 text-slate-500 hover:bg-green-100 hover:text-green-700',
+                                    )}
+                                  >
+                                    到课
+                                  </button>
+                                  <button
+                                    onClick={() => setItem(s.id, false)}
+                                    className={cn(
+                                      'flex-1 sm:flex-initial px-2.5 py-1 text-xs rounded transition-colors',
+                                      cur === false
+                                        ? 'bg-rose-600 text-white'
+                                        : 'bg-slate-100 text-slate-500 hover:bg-rose-100 hover:text-rose-700',
+                                    )}
+                                  >
+                                    缺勤
+                                  </button>
+                                  <button
+                                    onClick={() => setItem(s.id, undefined)}
+                                    className={cn(
+                                      'flex-1 sm:flex-initial px-2.5 py-1 text-xs rounded transition-colors',
+                                      cur === undefined
+                                        ? 'bg-slate-400 text-white'
+                                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200',
+                                    )}
+                                    title="标记为未点名"
+                                  >
+                                    未点名
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )
