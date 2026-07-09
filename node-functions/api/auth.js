@@ -1,12 +1,16 @@
-// 认证 API
-// POST /api/auth  body: { password: string } -> 登录验证，返回 token
-// GET  /api/auth  (Authorization: Bearer <token>) -> 校验 token 有效性
+// 认证 API（Docker 版）
+// POST /api/auth          登录验证，返回 token
+// GET  /api/auth          校验 token 有效性
+// POST /api/auth/bootstrap 引导创建超管账号（仅在系统未初始化时可用）
 import {
   signToken,
   verifyToken,
-  verifyPassword,
+  authenticate,
   getTokenSecret,
   extractToken,
+  isBootstrapMode,
+  hashPassword,
+  createSuperAdmin,
 } from '../_lib/auth.js'
 import { json } from '../_lib/store.js'
 
@@ -22,14 +26,6 @@ async function readBody(request) {
 async function handleLogin(context) {
   try {
     const { request, env } = context
-    const password = env?.ADMIN_PASSWORD
-    if (!password) {
-      return json(
-        { code: 1, message: '服务端未配置管理密码', data: null },
-        500,
-      )
-    }
-
     const body = await readBody(request)
     const { password: input } = body
 
@@ -37,12 +33,19 @@ async function handleLogin(context) {
       return json({ code: 1, message: '请输入密码', data: null }, 400)
     }
 
-    // 恒定时间比较，防止时序侧信道
-    if (!verifyPassword(input, env)) {
-      return json({ code: 1, message: '密码错误', data: null }, 401)
+    // 引导阶段：拒绝登录，前端应跳转到引导页
+    if (await isBootstrapMode()) {
+      return json(
+        { code: 1, message: '系统尚未初始化，请先完成超管账号创建引导', data: null, bootstrap: true },
+        412,
+      )
     }
 
-    // token 使用独立的 ADMIN_TOKEN_SECRET 签名（与登录密码解耦）
+    const result = await authenticate(input, env)
+    if (!result.ok) {
+      return json({ code: 1, message: result.message || '密码错误', data: null }, 401)
+    }
+
     const secret = getTokenSecret(env)
     if (!secret) {
       return json(
@@ -57,7 +60,6 @@ async function handleLogin(context) {
       data: { token },
     })
   } catch (e) {
-    // 仅记录到日志，不向客户端回显内部异常详情，避免泄露实现细节
     console.error('[auth] 登录异常:', e?.message || String(e))
     return json(
       { code: 1, message: '服务暂不可用，请稍后重试', data: null },
@@ -66,15 +68,14 @@ async function handleLogin(context) {
   }
 }
 
-// 校验 token 有效性（前端进入管理页时调用，防止本地伪造 token 绕过登录页）
+// 校验 token 有效性
 async function handleVerify(context) {
   try {
     const { request, env } = context
     const secret = getTokenSecret(env)
-    const password = env?.ADMIN_PASSWORD
-    if (!password || !secret) {
+    if (!secret) {
       return json(
-        { code: 1, message: '服务端未配置管理密码', data: null },
+        { code: 1, message: '服务端未配置 token 密钥', data: null },
         500,
       )
     }
@@ -86,7 +87,15 @@ async function handleVerify(context) {
         401,
       )
     }
-    return json({ code: 0, message: 'ok', data: { valid: true } })
+    return json({
+      code: 0,
+      message: 'ok',
+      data: {
+        valid: true,
+        // 附加引导状态，供前端决定是否跳转引导页
+        bootstrap: await isBootstrapMode(),
+      },
+    })
   } catch (e) {
     console.error('[auth] 校验异常:', e?.message || String(e))
     return json(
@@ -96,9 +105,79 @@ async function handleVerify(context) {
   }
 }
 
+// 引导创建超管账号
+// body: { password: string, confirmPassword?: string }
+// 仅在 admin 表为空时可用；创建后即退出引导模式
+async function handleBootstrap(context) {
+  try {
+    const { request } = context
+    if (!(await isBootstrapMode())) {
+      return json(
+        { code: 1, message: '系统已初始化，引导接口已关闭', data: null },
+        409,
+      )
+    }
+    const body = await readBody(request)
+    const { password, confirmPassword } = body
+    if (!password || typeof password !== 'string') {
+      return json({ code: 1, message: '请输入密码', data: null }, 400)
+    }
+    if (password.length < 6) {
+      return json({ code: 1, message: '密码至少 6 位', data: null }, 400)
+    }
+    if (confirmPassword !== undefined && confirmPassword !== password) {
+      return json({ code: 1, message: '两次输入的密码不一致', data: null }, 400)
+    }
+    const hash = await hashPassword(password)
+    await createSuperAdmin('admin', hash)
+    return json({
+      code: 0,
+      message: '超管账号创建成功，请使用该密码登录',
+      data: { username: 'admin' },
+    })
+  } catch (e) {
+    console.error('[auth] 引导创建异常:', e?.message || String(e))
+    return json(
+      { code: 1, message: '创建失败，请稍后重试', data: null },
+      500,
+    )
+  }
+}
+
+// 查询当前是否处于引导模式（前端用于决定是否展示引导页）
+async function handleBootstrapStatus() {
+  return json({
+    code: 0,
+    message: 'ok',
+    data: { bootstrap: await isBootstrapMode() },
+  })
+}
+
 export default async function onRequest(context) {
   const { request } = context
-  if (request.method === 'POST') return handleLogin(context)
-  if (request.method === 'GET') return handleVerify(context)
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    })
+  }
+  if (request.method === 'POST') {
+    const url = new URL(request.url)
+    if (url.pathname.endsWith('/bootstrap')) {
+      return handleBootstrap(context)
+    }
+    return handleLogin(context)
+  }
+  if (request.method === 'GET') {
+    const url = new URL(request.url)
+    if (url.pathname.endsWith('/bootstrap')) {
+      return handleBootstrapStatus()
+    }
+    return handleVerify(context)
+  }
   return json({ code: 1, message: '不支持的请求方法', data: null }, 405)
 }

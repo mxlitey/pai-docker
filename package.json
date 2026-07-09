@@ -3,14 +3,16 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "基于日历视角的排课表系统，部署于腾讯云 EdgeOne Makers",
+  "description": "基于日历视角的排课表系统（Docker 版：Node + SQLite）",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "node server.js",
+    "start": "npm run build && node server.js"
   },
   "dependencies": {
-    "@edgeone/pages-blob": "^0.0.12",
+    "better-sqlite3": "^11.3.0",
     "date-fns": "^3.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

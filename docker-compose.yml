@@ -1,0 +1,21 @@
+services:
+  pai:
+    build: .
+    image: pai:latest
+    container_name: pai
+    restart: unless-stopped
+    ports:
+      - "8788:8788"
+    volumes:
+      - pai-data:/app/data
+    environment:
+      # 超管账号密码：首次启动时通过引导页设置，无需在此配置
+      # 仅 token 签名密钥建议配置，与登录密码解耦
+      ADMIN_TOKEN_SECRET: "change-me-to-a-random-secret"
+      # 构建期注入的项目名称（需重新 build 镜像才生效）
+      VITE_APP_NAME: "排课系统"
+      # 可选：自定义端口
+      PORT: "8788"
+
+volumes:
+  pai-data:

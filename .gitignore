@@ -5,3 +5,5 @@ dist
 .env.local
 *.log
 .DS_Store
+# SQLite 数据目录（运行时生成）
+data/
