@@ -34,8 +34,3 @@ export const genMembershipId = () => makeId('mem_')
 export const genStudentMembershipId = () => makeId('smm_')
 export const genLeadId = () => makeId('led_')
 export const genFollowupId = () => makeId('fol_')
-
-// 校验 id 是否符合指定前缀（防止前端误传错误前缀的 id）
-export function assertIdPrefix(id, prefix) {
-  return typeof id === 'string' && id.startsWith(prefix)
-}

@@ -1,7 +1,7 @@
 // 新增结转 API
 // POST /api/transfer-add  body: { transfer: { studentId, fromEnrollmentId, toEnrollmentId, mode, note } }
 // mode: 'amount'(默认，按金额折算) / 'hours'(按课时平移)
-import { addTransfer, getStudents, json } from '../_lib/store.js'
+import { addTransfer, getStudentById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 import { genTransferId } from '../_lib/id.js'
@@ -60,8 +60,7 @@ export default async function onRequestPost(context) {
     // 获取学员名用于审计
     let studentName = finalTransfer.studentId
     try {
-      const students = await getStudents()
-      const found = students.find((s) => s.id === finalTransfer.studentId)
+      const found = await getStudentById(finalTransfer.studentId)
       if (found) studentName = found.name
     } catch {}
     await writeAudit(context, {

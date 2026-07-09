@@ -2,7 +2,7 @@
 // GET  /api/config   公开接口，返回 appName 等前端需要的配置（首屏加载用）
 // PUT  /api/config    需鉴权，修改 appName 等配置（后台系统设置页调用）
 import { getAllConfig, getAppName, setAppName, setRenewalThreshold, setBackupKeepDays } from '../_lib/config-file.js'
-import { requireAuth } from '../_lib/auth.js'
+import { requirePermission } from '../_lib/auth.js'
 import { json } from '../_lib/store.js'
 
 // 公开读取配置：前端首屏加载时调用，无需鉴权
@@ -19,7 +19,7 @@ function handleGet() {
 // 修改配置：需鉴权
 // body: { appName?: string }
 async function handlePut(context) {
-  const authFail = await requireAuth(context)
+  const authFail = await requirePermission(context, 'settings:manage')
   if (authFail) return authFail
 
   try {

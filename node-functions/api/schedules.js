@@ -1,15 +1,20 @@
 // 排课查询 API
 // GET /api/schedules?studentId=s001&startDate=2026-07-01&endDate=2026-07-31
 // GET /api/schedules?studentName=张伟&startDate=2026-07-01&endDate=2026-07-31
-// 未传日期范围时返回该学员所有排课
+// 未传日期范围时返回该学员所有排课（需 schedules:view 权限）
 import {
   getStudents,
   getAllSchedulesByStudent,
   getSchedulesByDateRange,
   json,
 } from '../_lib/store.js'
+import { requirePermission } from '../_lib/auth.js'
 
-export default async function onRequestGet({ request }) {
+export async function onRequestGet(context) {
+  const authFail = await requirePermission(context, 'schedules:view')
+  if (authFail) return authFail
+
+  const { request } = context
   const url = new URL(request.url)
   const studentId = url.searchParams.get('studentId')
   const studentName = url.searchParams.get('studentName')

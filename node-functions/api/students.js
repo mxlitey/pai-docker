@@ -1,9 +1,14 @@
 // 学员查询 API
-// GET /api/students          -> 获取所有学员
+// GET /api/students          -> 获取所有学员（需 students:view 权限）
 // GET /api/students?q=张伟   -> 按姓名搜索（精确+模糊）
 import { getStudents, json } from '../_lib/store.js'
+import { requirePermission } from '../_lib/auth.js'
 
-export default async function onRequestGet({ request }) {
+export async function onRequestGet(context) {
+  const authFail = await requirePermission(context, 'students:view')
+  if (authFail) return authFail
+
+  const { request } = context
   const url = new URL(request.url)
   const q = (url.searchParams.get('q') || '').trim()
 

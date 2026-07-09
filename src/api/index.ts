@@ -2,18 +2,21 @@
 import type { Schedule, Student } from '@/types'
 
 const API_BASE = '/api'
+const TOKEN_KEY = 'admin_token'
 
-// 通用请求封装：校验响应并提取数据
+// 通用请求封装：校验响应并提取数据（自动携带后台 token）
 async function request<T>(
   url: string,
   options?: RequestInit,
 ): Promise<T> {
+  const token = localStorage.getItem(TOKEN_KEY)
   let resp: Response
   try {
     resp = await fetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options?.headers || {}),
       },
       signal: AbortSignal.timeout(10000),

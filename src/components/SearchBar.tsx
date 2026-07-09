@@ -95,6 +95,13 @@ export function SearchBar({ onSelectStudent, initialValue, onQueryChange }: Sear
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  // 卸载时清理防抖定时器，避免 setState on unmounted
+  useEffect(() => {
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current)
+    }
+  }, [])
+
   return (
     <div ref={containerRef} className="relative w-full max-w-md">
       <div className="relative">

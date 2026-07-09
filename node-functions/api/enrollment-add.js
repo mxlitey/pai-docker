@@ -1,6 +1,6 @@
 // 新增报名 API
 // POST /api/enrollment-add  body: { enrollment }
-import { addEnrollment, getStudents, getCourses, json } from '../_lib/store.js'
+import { addEnrollment, getStudentById, getCourseById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 import { genEnrollmentId } from '../_lib/id.js'
@@ -86,13 +86,11 @@ export default async function onRequestPost(context) {
     let studentName = finalEnrollment.studentId
     let courseName = finalEnrollment.courseId
     try {
-      const students = await getStudents()
-      const s = students.find((x) => x.id === finalEnrollment.studentId)
+      const s = await getStudentById(finalEnrollment.studentId)
       if (s) studentName = s.name
     } catch {}
     try {
-      const courses = await getCourses()
-      const c = courses.find((x) => x.id === finalEnrollment.courseId)
+      const c = await getCourseById(finalEnrollment.courseId)
       if (c) courseName = c.name
     } catch {}
     await writeAudit(context, {

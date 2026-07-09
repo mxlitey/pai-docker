@@ -172,20 +172,6 @@ function FeedbackPanel() {
 
   return (
     <>
-      {/* 提交反馈指引 */}
-      <section className="card p-4 bg-brand-50/40 border-brand-100">
-        <div className="flex items-start gap-2 text-xs text-slate-600 leading-relaxed">
-          <svg className="w-4 h-4 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <div>
-            <strong className="text-slate-700">课后反馈提交入口：</strong>
-            登录后台 → 教务管理 → 教师与反馈 → 课后反馈，点击右上角「新增反馈」，
-            选择日期与对应排课记录后填写反馈内容与评分即可提交。
-          </div>
-        </div>
-      </section>
-
       {/* 操作栏 */}
       <div className="flex justify-end">
         <Button variant="primary" onClick={() => setAdding(true)}>

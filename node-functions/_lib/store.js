@@ -665,6 +665,14 @@ export async function getCourses() {
   return rows.map(rowToCourse)
 }
 
+// 按 id 取单个课程（不存在返回 null）
+export async function getCourseById(courseId) {
+  if (!courseId) return null
+  const db = getDb()
+  const row = db.prepare('SELECT * FROM courses WHERE id=?').get(courseId)
+  return row ? rowToCourse(row) : null
+}
+
 export async function addCourse(course) {
   const db = getDb()
   const id = course?.id || genCourseId()
@@ -2016,10 +2024,10 @@ export function getTeacherPerformance({ startDate, endDate } = {}) {
       (SELECT AVG(f.rating) FROM feedback f WHERE f.teacher_id=c.teacher ${startDate ? 'AND f.date >= ?' : ''} ${endDate ? 'AND f.date <= ?' : ''}) AS avg_rating,
       (SELECT COUNT(*) FROM feedback f WHERE f.teacher_id=c.teacher ${startDate ? 'AND f.date >= ?' : ''} ${endDate ? 'AND f.date <= ?' : ''}) AS feedback_count
     FROM courses c
-    LEFT JOIN schedules s ON s.course_id=c.id ${dateFilter.replace('s.date', 's.date')}
+    LEFT JOIN schedules s ON s.course_id=c.id ${dateFilter}
     WHERE c.teacher <> ''
     GROUP BY c.teacher
-    ORDER BY attended_count DESC
+    ORDER BY COALESCE(attended_count, 0) DESC
   `).all(...params, ...(startDate ? [startDate] : []), ...(endDate ? [endDate] : []), ...(startDate ? [startDate] : []), ...(endDate ? [endDate] : []))
   return rows
 }

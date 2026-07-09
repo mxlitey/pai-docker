@@ -37,9 +37,16 @@ export default async function onRequestPut(context) {
     }
   }
 
-  // 禁用自己约束
-  if (admin.status === 'disabled' && admin.id === context.admin.id) {
-    return json({ code: 1, message: '不可禁用自己的账号', data: null }, 400)
+  // 禁用约束：不可禁用自己；不可禁用最后一个活跃超管（否则系统锁死）
+  if (admin.status === 'disabled') {
+    if (admin.id === context.admin.id) {
+      return json({ code: 1, message: '不可禁用自己的账号', data: null }, 400)
+    }
+    if (target.role === 'superadmin' && target.status === 'active') {
+      if (await countSuperAdmins() <= 1) {
+        return json({ code: 1, message: '系统至少保留一个活跃超管，不可禁用最后一个超管', data: null }, 400)
+      }
+    }
   }
 
   let passwordHash = null

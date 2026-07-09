@@ -2,7 +2,7 @@
 // PUT /api/enrollment-update  body: { enrollment }
 // 用途：续费（purchasedHours 增量）、补赠课（giftHours 增量）、修改单价/金额/备注/状态
 // 课时为「绝对值」语义：传入的新值与旧值之差即增量，剩余按差值同步调整
-import { updateEnrollment, getEnrollment, getStudents, getCourses, json } from '../_lib/store.js'
+import { updateEnrollment, getEnrollment, getStudentById, getCourseById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -79,10 +79,8 @@ export default async function onRequestPut(context) {
     try {
       const enr = await getEnrollment(finalEnrollment.id)
       if (enr) {
-        const students = await getStudents()
-        const courses = await getCourses()
-        const s = students.find((x) => x.id === enr.studentId)
-        const c = courses.find((x) => x.id === enr.courseId)
+        const s = await getStudentById(enr.studentId)
+        const c = await getCourseById(enr.courseId)
         studentName = s?.name || enr.studentId
         courseName = c?.name || enr.courseId
       }

@@ -1,7 +1,7 @@
 // 新增排课 API
 // POST /api/schedule-add  body: { schedule: Schedule }
 // 用于后台少量新增排课，无需走完整的 JSON 导入流程
-import { addSchedule, getStudents, json } from '../_lib/store.js'
+import { addSchedule, getStudentById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -13,10 +13,9 @@ async function readBody(request) {
   }
 }
 
-// 校验排课记录必填字段与格式
+// 校验排课记录必填字段与格式（id 由 store 层自动生成，此处不校验）
 function validateSchedule(s) {
   if (!s) throw new Error('排课数据不能为空')
-  if (!s.id) throw new Error('缺少 id')
   if (!s.studentId) throw new Error('缺少 studentId')
   if (!s.courseName) throw new Error('缺少 courseName')
   if (!s.date) throw new Error('缺少 date')
@@ -53,8 +52,8 @@ export default async function onRequestPost(context) {
 
   // 跨表关联校验：studentId 必须在学员表中存在
   try {
-    const students = await getStudents()
-    if (!students.some((s) => s.id === schedule.studentId)) {
+    const student = await getStudentById(schedule.studentId)
+    if (!student) {
       return json(
         { code: 1, message: `studentId="${schedule.studentId}" 在学员表中不存在`, data: null },
         400,
@@ -64,7 +63,7 @@ export default async function onRequestPost(context) {
     // 自动补全 studentName
     const finalSchedule = {
       ...schedule,
-      studentName: schedule.studentName || students.find((s) => s.id === schedule.studentId)?.name || '',
+      studentName: schedule.studentName || student.name || '',
       startTime: schedule.startTime || '',
       endTime: schedule.endTime || '',
       teacher: schedule.teacher || '',
@@ -75,7 +74,7 @@ export default async function onRequestPost(context) {
     const result = await addSchedule(finalSchedule)
     if (result.exists) {
       return json(
-        { code: 1, message: `排课 id="${schedule.id}" 已存在，不可重复新增`, data: null },
+        { code: 1, message: '该排课记录已存在，不可重复新增', data: null },
         409,
       )
     }

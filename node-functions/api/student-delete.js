@@ -1,7 +1,7 @@
 // 删除学员 API
 // DELETE /api/student-delete  body: { studentId }
 // 删除指定学员及其所有排课数据
-import { deleteStudentWithSchedules, getStudents, json } from '../_lib/store.js'
+import { deleteStudentWithSchedules, getStudentById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -31,8 +31,8 @@ export default async function onRequestDelete(context) {
     // 删除前尝试获取学员名，用于审计
     let studentName = ''
     try {
-      const students = await getStudents()
-      studentName = students.find((s) => s.id === studentId)?.name || ''
+      const s = await getStudentById(studentId)
+      studentName = s?.name || ''
     } catch {}
     const result = await deleteStudentWithSchedules(studentId)
     if (!result.studentRemoved) {

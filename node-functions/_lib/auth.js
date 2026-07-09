@@ -370,6 +370,7 @@ export async function requireAuth(context) {
 // 权限校验中间件：requireAuth 通过后再校验权限，失败返回 403
 // 用法：const fail = await requirePermission(context, 'admins:create')
 // 权限判定：查库取最新 permissions，支持自定义权限覆盖角色默认
+// 同时校验账号是否被禁用（disabled 账号即使 token 未过期也拒绝操作）
 export async function requirePermission(context, permission) {
   const authFail = await requireAuth(context)
   if (authFail) return authFail
@@ -380,10 +381,17 @@ export async function requirePermission(context, permission) {
       { status: 403, headers: { 'Content-Type': 'application/json; charset=utf-8' } },
     )
   }
-  // superadmin 直接放行（避免查库）
-  if (admin.role === 'superadmin') return null
-  // 查库取最新 permissions（自定义权限可能在上次签发 token 后被修改）
+  // 查库取最新状态与 permissions（superadmin 也需查库，防止被禁用后仍可操作）
   const latest = await getAdminById(admin.id)
+  // 账号已被禁用：即使 token 未过期也拒绝
+  if (latest && latest.status === 'disabled') {
+    return new Response(
+      JSON.stringify({ code: 403, message: '账号已被禁用，无法执行此操作', data: null }),
+      { status: 403, headers: { 'Content-Type': 'application/json; charset=utf-8' } },
+    )
+  }
+  // superadmin 放行权限校验（但上面的 status 校验仍生效）
+  if (admin.role === 'superadmin') return null
   const adminForCheck = latest || { role: admin.role, permissions: '' }
   if (!hasPermission(adminForCheck, permission)) {
     return new Response(
