@@ -103,3 +103,65 @@ export async function getConfig(): Promise<SystemConfig> {
     return { appName: '排课系统' }
   }
 }
+
+// ========== 家长端 H5 专属访问 ==========
+// 家长通过专属链接（含 token）进入，需输入手机号后4位二次校验
+
+export interface ParentAccessHint {
+  studentId: string
+  studentName: string
+  phoneHint: string
+}
+
+export interface ParentEnrollmentSummary {
+  courseId: string
+  courseName: string
+  status: string
+  purchasedHours: number
+  giftHours: number
+  remainingHours: number
+  remainingPaidHours: number
+  remainingGiftHours: number
+  expiredAt: string
+}
+
+export interface ParentAccessData {
+  student: { id: string; name: string; grade: string; parentName: string }
+  schedules: Schedule[]
+  enrollments: ParentEnrollmentSummary[]
+  feedback: import('@/types').Feedback[]
+}
+
+// GET：校验 token，返回脱敏提示信息（家长进入 H5 时先调）
+export async function getParentAccessHint(
+  studentId: string,
+  token: string,
+): Promise<ParentAccessHint> {
+  const qs = new URLSearchParams({ s: studentId, t: token })
+  const data = await request<ParentAccessHint>(`${API_BASE}/parent-access?${qs}`)
+  return data
+}
+
+// POST：二次校验手机号后4位，通过后返回完整数据
+export async function verifyParentAccess(
+  studentId: string,
+  token: string,
+  phoneSuffix: string,
+): Promise<ParentAccessData> {
+  let resp: Response
+  try {
+    resp = await fetch(`${API_BASE}/parent-access`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studentId, token, phoneSuffix }),
+      signal: AbortSignal.timeout(10000),
+    })
+  } catch {
+    throw new Error('网络请求失败，请检查网络连接')
+  }
+  const result = await resp.json()
+  if (result.code !== 0) {
+    throw new Error(result.message || '校验失败')
+  }
+  return result.data as ParentAccessData
+}

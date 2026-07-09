@@ -1,13 +1,14 @@
 // 管理员账号管理页（仅超管使用）—— 增删改管理员账号、重置密码、启停账号
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { AdminUser, AdminRole, CurrentAdmin } from '@/types'
+import type { AdminUser, AdminRole, CurrentAdmin, PermissionModule } from '@/types'
 import {
   listAdmins,
   addAdmin,
   updateAdmin,
   deleteAdmin,
   getCurrentAdmin,
+  getPermissionDefinitions,
 } from '@/api/admin'
 import {
   Button,
@@ -234,6 +235,160 @@ export function AdminUserAdmin({ onBack }: AdminUserAdminProps) {
   )
 }
 
+// ===== 权限矩阵编辑器 =====
+// 展示所有模块的权限点（checkbox），支持「使用角色默认权限」开关与按模块全选
+// - useDefault=true：不显示矩阵，提交时 permissions 传空数组（用角色默认）
+// - useDefault=false：显示矩阵，按模块勾选具体权限点
+function PermissionMatrixEditor({
+  definitions,
+  useDefault,
+  onUseDefaultChange,
+  selected,
+  onSelectedChange,
+  defaultHint,
+}: {
+  definitions: PermissionModule[]
+  useDefault: boolean
+  onUseDefaultChange: (v: boolean) => void
+  selected: Set<string>
+  onSelectedChange: (next: Set<string>) => void
+  defaultHint?: string
+}) {
+  // 切换单个权限点
+  const togglePerm = (key: string) => {
+    const next = new Set(selected)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    onSelectedChange(next)
+  }
+
+  // 切换某模块全选/全不选
+  const toggleModule = (mod: PermissionModule) => {
+    const allKeys = mod.actions.map((a) => a.key)
+    const allSelected = allKeys.length > 0 && allKeys.every((k) => selected.has(k))
+    const next = new Set(selected)
+    if (allSelected) {
+      allKeys.forEach((k) => next.delete(k))
+    } else {
+      allKeys.forEach((k) => next.add(k))
+    }
+    onSelectedChange(next)
+  }
+
+  return (
+    <div className="rounded-md border border-slate-200 p-3 space-y-3">
+      <label className="flex items-center gap-2 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={useDefault}
+          onChange={(e) => onUseDefaultChange(e.target.checked)}
+          className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400"
+        />
+        <span className="text-sm text-slate-700">使用角色默认权限</span>
+        {useDefault && defaultHint && (
+          <span className="text-xs text-slate-400">（{defaultHint}）</span>
+        )}
+      </label>
+
+      {useDefault ? (
+        <p className="text-xs text-slate-400">关闭开关后可自定义该账号的具体权限点</p>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-400">勾选该账号可执行的具体权限点，未勾选则无权访问对应功能</p>
+          {definitions.map((mod) => {
+            const allKeys = mod.actions.map((a) => a.key)
+            const allSelected = allKeys.length > 0 && allKeys.every((k) => selected.has(k))
+            return (
+              <div key={mod.module} className="border border-slate-100 rounded-md p-2.5">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-slate-600">{mod.label}</span>
+                  <button
+                    type="button"
+                    onClick={() => toggleModule(mod)}
+                    className="text-xs text-brand-600 hover:text-brand-700 font-medium"
+                  >
+                    {allSelected ? '全不选' : '全选'}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  {mod.actions.map((a) => {
+                    const checked = selected.has(a.key)
+                    return (
+                      <label
+                        key={a.key}
+                        className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => togglePerm(a.key)}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-400"
+                        />
+                        {a.label}
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 解析 admin.permissions（逗号分隔串）为已勾选集合
+function parsePermissions(permissions?: string): Set<string> {
+  return new Set(
+    (permissions || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  )
+}
+
+// 加载权限定义矩阵（弹窗挂载时调用）
+function usePermissionDefinitions() {
+  const [definitions, setDefinitions] = useState<PermissionModule[]>([])
+  const [loading, setLoading] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    getPermissionDefinitions()
+      .then((res) => {
+        if (cancelled) return
+        if (res.code === 0) {
+          setDefinitions(res.data.definitions)
+        } else {
+          toast.error(res.message)
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) toast.error((e as Error).message)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  return { definitions, loading }
+}
+
+// 角色默认权限提示文案
+function defaultHintOf(role: AdminRole): string {
+  switch (role) {
+    case 'superadmin':
+      return '超管拥有全部权限'
+    case 'admin':
+      return '使用管理员默认权限'
+    case 'teacher':
+      return '使用教师默认权限'
+  }
+}
+
 // ===== 新增账号弹窗 =====
 interface AddForm {
   username: string
@@ -254,6 +409,10 @@ function AddAdminModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+  // 权限矩阵：默认开启「使用角色默认权限」
+  const { definitions: permDefs, loading: permLoading } = usePermissionDefinitions()
+  const [useDefaultPerm, setUseDefaultPerm] = useState(true)
+  const [selectedPerms, setSelectedPerms] = useState<Set<string>>(() => new Set())
 
   // 局部更新表单，同时清除对应字段的错误
   const update = (patch: Partial<AddForm>) => {
@@ -294,6 +453,8 @@ function AddAdminModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
         role: form.role,
         realName: form.realName.trim() || undefined,
         phone: form.phone.trim() || undefined,
+        // 使用默认开关时传空数组（用角色默认）；否则传勾选的权限点
+        permissions: useDefaultPerm ? [] : Array.from(selectedPerms),
       })
       if (result.code === 0) {
         toast.success('账号已创建')
@@ -338,6 +499,20 @@ function AddAdminModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
             <option value="admin">{t('admin.roleAdmin')}</option>
             <option value="teacher">{t('admin.roleTeacher')}</option>
           </select>
+        </Field>
+        <Field label="权限矩阵" hint="仅 admin/teacher 角色可配置；超管拥有全部权限">
+          {permLoading ? (
+            <div className="text-xs text-slate-400 py-2">加载权限定义中…</div>
+          ) : (
+            <PermissionMatrixEditor
+              definitions={permDefs}
+              useDefault={useDefaultPerm}
+              onUseDefaultChange={setUseDefaultPerm}
+              selected={selectedPerms}
+              onSelectedChange={setSelectedPerms}
+              defaultHint={defaultHintOf(form.role)}
+            />
+          )}
         </Field>
         <Field label={t('admin.realName')}>
           <input
@@ -389,6 +564,12 @@ function EditAdminModal({
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+  // 权限矩阵：加载时根据 admin.permissions 是否非空决定开关状态
+  // - superadmin 或 permissions 为空 → 使用默认（开启）
+  // - permissions 非空 → 解析为已勾选集合，关闭默认开关
+  const { definitions: permDefs, loading: permLoading } = usePermissionDefinitions()
+  const [selectedPerms, setSelectedPerms] = useState<Set<string>>(() => parsePermissions(admin.permissions))
+  const [useDefaultPerm, setUseDefaultPerm] = useState(() => selectedPerms.size === 0)
 
   const update = (patch: Partial<EditForm>) => {
     setForm((f) => ({ ...f, ...patch }))
@@ -432,6 +613,7 @@ function EditAdminModal({
         phone?: string
         status?: 'active' | 'disabled'
         password?: string
+        permissions?: string[]
       } = {
         id: admin.id,
         role: form.role,
@@ -440,6 +622,9 @@ function EditAdminModal({
         status: form.status,
       }
       if (form.password) payload.password = form.password
+      // 权限：超管通配，传空数组清空自定义；否则按默认开关决定
+      payload.permissions =
+        form.role === 'superadmin' || useDefaultPerm ? [] : Array.from(selectedPerms)
       const result = await updateAdmin(payload)
       if (result.code === 0) {
         toast.success('账号已更新')
@@ -476,6 +661,22 @@ function EditAdminModal({
             <option value="teacher">{t('admin.roleTeacher')}</option>
           </select>
         </Field>
+        {form.role !== 'superadmin' && (
+          <Field label="权限矩阵" hint="超管拥有全部权限，无需配置">
+            {permLoading ? (
+              <div className="text-xs text-slate-400 py-2">加载权限定义中…</div>
+            ) : (
+              <PermissionMatrixEditor
+                definitions={permDefs}
+                useDefault={useDefaultPerm}
+                onUseDefaultChange={setUseDefaultPerm}
+                selected={selectedPerms}
+                onSelectedChange={setSelectedPerms}
+                defaultHint={defaultHintOf(form.role)}
+              />
+            )}
+          </Field>
+        )}
         <Field label={t('admin.realName')}>
           <input
             className={inputClass}

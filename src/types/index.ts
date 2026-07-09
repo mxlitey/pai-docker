@@ -127,6 +127,8 @@ export interface AdminUser {
   phone?: string
   status?: 'active' | 'disabled'
   teacherId?: string
+  // 自定义权限点（逗号分隔串，非空时覆盖角色默认权限；空串表示用角色默认）
+  permissions?: string
   lastLoginAt?: string
   lastLoginIp?: string
   createdAt?: string
@@ -139,6 +141,19 @@ export interface CurrentAdmin {
   username: string
   role: AdminRole
   realName?: string
+  // 自定义权限点（逗号分隔串）
+  permissions?: string
+}
+
+// 权限定义（供前端渲染权限矩阵）
+export interface PermissionAction {
+  key: string
+  label: string
+}
+export interface PermissionModule {
+  module: string
+  label: string
+  actions: PermissionAction[]
 }
 
 // 审计日志

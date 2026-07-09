@@ -18,7 +18,9 @@ import {
   getToken,
   clearToken,
   getBootstrapStatus,
+  getCurrentAdmin,
 } from '@/api/admin'
+import { canSeeModule } from '@/utils/permission'
 import { AnnouncementAdmin } from './AnnouncementAdmin'
 import { ShareLinksAdmin } from './ShareLinksAdmin'
 import { StudentAdmin } from './StudentAdmin'
@@ -132,6 +134,10 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
   const [activeSubPage, setActiveSubPage] = useState<SubPage>(() =>
     readSubPageFromHash(),
   )
+  // 主页分类选项卡：教务 / 营销 / 数据 / 系统
+  const [activeTab, setActiveTab] = useState<'teaching' | 'marketing' | 'data' | 'system'>('teaching')
+  // 当前登录用户（用于按权限隐藏模块入口）
+  const currentAdmin = getCurrentAdmin()
 
   // 切换子页面：同时更新 URL hash
   const goSubPage = (sub: SubPage) => {
@@ -646,6 +652,66 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     return <LeadAdmin onBack={() => goSubPage(null)} />
   }
 
+  // 模块入口定义：按分类组织，每个入口含权限点、标题、描述、图标、跳转目标
+  // 按当前用户权限过滤后再渲染
+  const moduleEntries = [
+    // ===== 教务管理 =====
+    { tab: 'teaching', perm: 'students:view', sub: 'students', title: t('nav.students'), desc: '学员档案、报名汇总、续费预警', icon: 'students' },
+    { tab: 'teaching', perm: 'courses:view', sub: 'courses', title: t('nav.courses'), desc: '课程信息、单价、计费方式', icon: 'courses' },
+    { tab: 'teaching', perm: 'enrollments:view', sub: 'enrollments', title: t('nav.enrollments'), desc: '报名、购课赠课、课时余额', icon: 'enrollments' },
+    { tab: 'teaching', perm: 'transfers:view', sub: 'transfers', title: t('nav.transfers'), desc: '升班转课结转，按金额或课时', icon: 'transfers' },
+    { tab: 'teaching', perm: 'schedules:view', sub: 'schedules', title: t('nav.schedules'), desc: '排课、批量排课、智能排课助手', icon: 'schedules' },
+    { tab: 'teaching', perm: 'attendance:view', sub: 'attendance', title: t('nav.attendance'), desc: '按日期点名、批量点名、到课统计', icon: 'attendance' },
+    // ===== 教师与反馈 =====
+    { tab: 'teaching', perm: 'teachers:view', sub: 'teachers', title: t('nav.teachers'), desc: '课后反馈、教师绩效、评分', icon: 'teachers' },
+    // ===== 营销运营 =====
+    { tab: 'marketing', perm: 'coupons:view', sub: 'coupons', title: t('nav.coupons'), desc: '折扣/满减优惠券，报名抵扣', icon: 'coupons' },
+    { tab: 'marketing', perm: 'memberships:view', sub: 'memberships', title: t('nav.memberships'), desc: '月卡/期卡/年卡/次卡管理', icon: 'memberships' },
+    { tab: 'marketing', perm: 'leads:view', sub: 'leads', title: t('nav.leads'), desc: 'CRM 线索、阶段流转、转化分析', icon: 'leads' },
+    { tab: 'marketing', perm: 'announcement:view', sub: 'announcement', title: t('nav.announcement'), desc: '首页/家长端公告内容', icon: 'announcement' },
+    // ===== 数据分析 =====
+    { tab: 'data', perm: 'reports:view', sub: 'reports', title: t('nav.reports'), desc: '营收、课时、出勤、结转统计', icon: 'reports' },
+    { tab: 'data', perm: 'dashboard:view', sub: 'dashboard', title: t('nav.dashboard'), desc: '经营关键指标实时大屏', icon: 'dashboard' },
+    // ===== 系统管理 =====
+    { tab: 'system', perm: 'students:view', sub: 'shareLinks', title: t('nav.shareLinks'), desc: '生成家长端专属访问链接', icon: 'shareLinks' },
+    { tab: 'system', perm: 'settings:manage', sub: 'settings', title: t('nav.settings'), desc: '项目名称、备份恢复、有效期', icon: 'settings' },
+    { tab: 'system', perm: 'admins:view', sub: 'admins', title: t('nav.admins'), desc: '账号增删、权限分配、启停', icon: 'admins' },
+    { tab: 'system', perm: 'audit:view', sub: 'auditLogs', title: t('nav.auditLogs'), desc: '写操作留痕，按模块/人筛选', icon: 'auditLogs' },
+  ] as const
+
+  // 图标 SVG（命令式映射，避免每个入口重复写 svg）
+  const iconMap: Record<string, React.ReactNode> = {
+    students: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4z" />,
+    courses: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />,
+    enrollments: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />,
+    transfers: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />,
+    schedules: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />,
+    attendance: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />,
+    teachers: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />,
+    coupons: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 7h.01M7 3h5a.997.997 0 01.707.293l7 7a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A1 1 0 013 12V7a4 4 0 014-4z" />,
+    memberships: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />,
+    leads: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />,
+    announcement: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />,
+    reports: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />,
+    dashboard: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />,
+    shareLinks: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />,
+    settings: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z" />,
+    admins: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />,
+    auditLogs: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />,
+  }
+
+  const tabs = [
+    { key: 'teaching', label: '教务管理' },
+    { key: 'marketing', label: '营销运营' },
+    { key: 'data', label: '数据分析' },
+    { key: 'system', label: '系统管理' },
+  ] as const
+
+  // 当前 tab 下可见的入口（按权限过滤）
+  const visibleEntries = moduleEntries.filter(
+    (e) => e.tab === activeTab && canSeeModule(currentAdmin, e.perm),
+  )
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* 顶部栏 */}
@@ -681,351 +747,65 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* 学员管理入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.students')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                查看和管理学员数据
-              </div>
-            </div>
-            <button
-              onClick={() => goSubPage('students')}
-              className="btn-primary text-sm py-1.5 px-3"
-            >
-              进入学员管理 →
-            </button>
-          </div>
-        </section>
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
+        {/* 分类选项卡 */}
+        <div className="flex items-center gap-1 mb-5 border-b border-slate-200 overflow-x-auto">
+          {tabs.map((tab) => {
+            const count = moduleEntries.filter(
+              (e) => e.tab === tab.key && canSeeModule(currentAdmin, e.perm),
+            ).length
+            if (count === 0) return null
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+                  activeTab === tab.key
+                    ? 'border-brand-500 text-brand-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {tab.label}
+                <span className="ml-1.5 text-xs text-slate-400">{count}</span>
+              </button>
+            )
+          })}
+        </div>
 
-        {/* 课程管理入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.courses')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                查看和管理课程数据
-              </div>
-            </div>
-            <button
-              onClick={() => goSubPage('courses')}
-              className="btn-primary text-sm py-1.5 px-3"
-            >
-              进入课程管理 →
-            </button>
+        {/* 模块入口网格 */}
+        {visibleEntries.length === 0 ? (
+          <div className="card p-12 text-center text-slate-400 text-sm">
+            当前分类暂无可用模块
           </div>
-        </section>
-
-        {/* 报名管理入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.enrollments')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                学员报名课程、购课赠课、剩余课时管理
-              </div>
-            </div>
-            <button
-              onClick={() => goSubPage('enrollments')}
-              className="btn-primary text-sm py-1.5 px-3"
-            >
-              进入报名管理 →
-            </button>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {visibleEntries.map((entry) => (
+              <button
+                key={entry.sub}
+                onClick={() => {
+                  if (entry.sub === 'announcement') handleLoadAnnouncement()
+                  goSubPage(entry.sub as SubPage)
+                }}
+                className="card p-5 text-left hover:shadow-md hover:border-brand-200 transition-all group"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center flex-shrink-0 group-hover:bg-brand-100 transition-colors">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      {iconMap[entry.icon]}
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-semibold text-slate-800 mb-1">{entry.title}</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">{entry.desc}</p>
+                  </div>
+                  <svg className="w-4 h-4 text-slate-300 group-hover:text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </button>
+            ))}
           </div>
-        </section>
-
-        {/* 结转管理入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.transfers')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                学员升班/转课结转，默认按金额，可选按课时
-              </div>
-            </div>
-            <button
-              onClick={() => goSubPage('transfers')}
-              className="btn-primary text-sm py-1.5 px-3"
-            >
-              进入结转管理 →
-            </button>
-          </div>
-        </section>
-
-        {/* 排课管理入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.schedules')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                查看和管理排课数据
-              </div>
-            </div>
-            <button
-              onClick={() => goSubPage('schedules')}
-              className="btn-primary text-sm py-1.5 px-3"
-            >
-              进入排课管理 →
-            </button>
-          </div>
-        </section>
-
-        {/* 点名管理入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.attendance')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                查看和管理点名数据
-              </div>
-            </div>
-            <button
-              onClick={() => goSubPage('attendance')}
-              className="btn-primary text-sm py-1.5 px-3"
-            >
-              进入点名管理 →
-            </button>
-          </div>
-        </section>
-
-        {/* 公告管理入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.announcement')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                查看和管理公告内容
-              </div>
-            </div>
-            <button
-              onClick={() => {
-                handleLoadAnnouncement()
-                goSubPage('announcement')
-              }}
-              className="btn-primary text-sm py-1.5 px-3"
-            >
-              进入公告管理 →
-            </button>
-          </div>
-        </section>
-
-        {/* 分享链接入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.shareLinks')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                查看和生成分享链接
-              </div>
-            </div>
-            <button
-              onClick={() => goSubPage('shareLinks')}
-              className="btn-primary text-sm py-1.5 px-3"
-            >
-              进入分享链接 →
-            </button>
-          </div>
-        </section>
-
-        {/* 系统设置入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.settings')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                修改项目名称等系统配置
-              </div>
-            </div>
-            <button
-              onClick={() => goSubPage('settings')}
-              className="btn-primary text-sm py-1.5 px-3"
-            >
-              进入系统设置 →
-            </button>
-          </div>
-        </section>
-
-        {/* 管理员账号入口（仅超管） */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.admins')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                增删管理员、重置密码、启停账号（仅超级管理员可用）
-              </div>
-            </div>
-            <button
-              onClick={() => goSubPage('admins')}
-              className="btn-primary text-sm py-1.5 px-3"
-            >
-              进入管理员账号 →
-            </button>
-          </div>
-        </section>
-
-        {/* 审计日志入口（仅超管） */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.auditLogs')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                查看所有写操作的留痕记录，支持按模块/操作者筛选
-              </div>
-            </div>
-            <button
-              onClick={() => goSubPage('auditLogs')}
-              className="btn-primary text-sm py-1.5 px-3"
-            >
-              进入审计日志 →
-            </button>
-          </div>
-        </section>
-
-        {/* 报表中心入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.reports')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                营收、课时消耗、剩余课时、出勤率、结转、报名统计
-              </div>
-            </div>
-            <button
-              onClick={() => goSubPage('reports')}
-              className="btn-primary text-sm py-1.5 px-3"
-            >
-              进入报表中心 →
-            </button>
-          </div>
-        </section>
-
-        {/* 数据看板入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.dashboard')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                营收、课时、报名、转化率关键指标实时大屏
-              </div>
-            </div>
-            <button onClick={() => goSubPage('dashboard')} className="btn-primary text-sm py-1.5 px-3">
-              进入数据看板 →
-            </button>
-          </div>
-        </section>
-
-        {/* 教师管理入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.teachers')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                课后反馈记录、教师绩效（课时数、到课率、评分）
-              </div>
-            </div>
-            <button onClick={() => goSubPage('teachers')} className="btn-primary text-sm py-1.5 px-3">
-              进入教师管理 →
-            </button>
-          </div>
-        </section>
-
-        {/* 优惠券入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.coupons')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                折扣/满减优惠券管理，报名时抵扣
-              </div>
-            </div>
-            <button onClick={() => goSubPage('coupons')} className="btn-primary text-sm py-1.5 px-3">
-              进入优惠券 →
-            </button>
-          </div>
-        </section>
-
-        {/* 会员卡入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.memberships')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                月卡/期卡/年卡/次卡管理，学员办卡与到期管理
-              </div>
-            </div>
-            <button onClick={() => goSubPage('memberships')} className="btn-primary text-sm py-1.5 px-3">
-              进入会员卡 →
-            </button>
-          </div>
-        </section>
-
-        {/* 线索管理入口 */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {t('nav.leads')}
-              </h2>
-              <div className="text-xs text-slate-500 mt-1.5 ml-3">
-                CRM 线索跟踪、阶段流转、跟进记录、转化分析
-              </div>
-            </div>
-            <button onClick={() => goSubPage('leads')} className="btn-primary text-sm py-1.5 px-3">
-              进入线索管理 →
-            </button>
-          </div>
-        </section>
+        )}
       </main>
     </div>
   )

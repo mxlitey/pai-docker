@@ -11,6 +11,7 @@
 import {
   countAdmins,
   getAdminByUsername,
+  getAdminById,
   createSuperAdmin,
 } from './store.js'
 import { getTokenSecret as getTokenSecretFromConfig } from './config-file.js'
@@ -20,9 +21,10 @@ export { createSuperAdmin }
 
 // ========== 角色 / 权限模型 ==========
 // 模块：students/courses/enrollments/transfers/schedules/attendance/announcement
-//       reports/admins/audit/settings
-// 操作：view/create/update/delete
+//       reports/admins/audit/settings/feedback/coupons/memberships/leads/dashboard/teachers
+// 操作：view/create/update/delete（settings 用 manage）
 // 权限串格式 "module:action"，superadmin 用 "*" 通配
+// 自定义权限：admins.permissions 字段存逗号分隔串，非空时覆盖角色默认权限
 export const ROLE_PERMISSIONS = {
   superadmin: '*',
   admin: [
@@ -39,6 +41,8 @@ export const ROLE_PERMISSIONS = {
     'coupons:view', 'coupons:create', 'coupons:update', 'coupons:delete',
     'memberships:view', 'memberships:create', 'memberships:update', 'memberships:delete',
     'leads:view', 'leads:create', 'leads:update', 'leads:delete',
+    'dashboard:view',
+    'teachers:view',
   ],
   teacher: [
     'schedules:view', 'attendance:view', 'attendance:update',
@@ -47,11 +51,118 @@ export const ROLE_PERMISSIONS = {
   ],
 }
 
-// 判断角色是否拥有指定权限
-export function hasPermission(role, permission) {
-  const perms = ROLE_PERMISSIONS[role]
-  if (!perms) return false
-  if (perms === '*') return true
+// 权限定义清单：供前端渲染权限矩阵
+// 每个模块含 label + 可分配的操作权限点
+export const PERMISSION_DEFINITIONS = [
+  { module: 'students', label: '学员管理', actions: [
+    { key: 'students:view', label: '查看' },
+    { key: 'students:create', label: '新增' },
+    { key: 'students:update', label: '编辑' },
+    { key: 'students:delete', label: '删除' },
+  ]},
+  { module: 'courses', label: '课程管理', actions: [
+    { key: 'courses:view', label: '查看' },
+    { key: 'courses:create', label: '新增' },
+    { key: 'courses:update', label: '编辑' },
+    { key: 'courses:delete', label: '删除' },
+  ]},
+  { module: 'enrollments', label: '报名管理', actions: [
+    { key: 'enrollments:view', label: '查看' },
+    { key: 'enrollments:create', label: '新增' },
+    { key: 'enrollments:update', label: '编辑' },
+    { key: 'enrollments:delete', label: '删除' },
+  ]},
+  { module: 'transfers', label: '结转管理', actions: [
+    { key: 'transfers:view', label: '查看' },
+    { key: 'transfers:create', label: '新增' },
+  ]},
+  { module: 'schedules', label: '排课管理', actions: [
+    { key: 'schedules:view', label: '查看' },
+    { key: 'schedules:create', label: '新增' },
+    { key: 'schedules:update', label: '编辑' },
+    { key: 'schedules:delete', label: '删除' },
+  ]},
+  { module: 'attendance', label: '点名管理', actions: [
+    { key: 'attendance:view', label: '查看' },
+    { key: 'attendance:update', label: '编辑' },
+  ]},
+  { module: 'teachers', label: '教师管理', actions: [
+    { key: 'teachers:view', label: '查看' },
+  ]},
+  { module: 'feedback', label: '课后反馈', actions: [
+    { key: 'feedback:view', label: '查看' },
+    { key: 'feedback:create', label: '新增' },
+    { key: 'feedback:update', label: '编辑' },
+    { key: 'feedback:delete', label: '删除' },
+  ]},
+  { module: 'announcement', label: '公告管理', actions: [
+    { key: 'announcement:view', label: '查看' },
+    { key: 'announcement:update', label: '编辑' },
+  ]},
+  { module: 'coupons', label: '优惠券', actions: [
+    { key: 'coupons:view', label: '查看' },
+    { key: 'coupons:create', label: '新增' },
+    { key: 'coupons:update', label: '编辑' },
+    { key: 'coupons:delete', label: '删除' },
+  ]},
+  { module: 'memberships', label: '会员卡', actions: [
+    { key: 'memberships:view', label: '查看' },
+    { key: 'memberships:create', label: '新增' },
+    { key: 'memberships:update', label: '编辑' },
+    { key: 'memberships:delete', label: '删除' },
+  ]},
+  { module: 'leads', label: '线索管理', actions: [
+    { key: 'leads:view', label: '查看' },
+    { key: 'leads:create', label: '新增' },
+    { key: 'leads:update', label: '编辑' },
+    { key: 'leads:delete', label: '删除' },
+  ]},
+  { module: 'reports', label: '报表中心', actions: [
+    { key: 'reports:view', label: '查看' },
+  ]},
+  { module: 'dashboard', label: '数据看板', actions: [
+    { key: 'dashboard:view', label: '查看' },
+  ]},
+  { module: 'settings', label: '系统设置', actions: [
+    { key: 'settings:manage', label: '管理' },
+  ]},
+  { module: 'admins', label: '管理员账号', actions: [
+    { key: 'admins:view', label: '查看' },
+    { key: 'admins:create', label: '新增' },
+    { key: 'admins:update', label: '编辑' },
+    { key: 'admins:delete', label: '删除' },
+  ]},
+  { module: 'audit', label: '审计日志', actions: [
+    { key: 'audit:view', label: '查看' },
+  ]},
+]
+
+// 解析 admin 的有效权限集合
+// - superadmin：通配（返回 null 表示全部拥有）
+// - 其他角色：若 permissions 字段非空，则用自定义权限覆盖角色默认；否则用角色默认
+function resolvePermissions(admin) {
+  if (!admin) return []
+  if (admin.role === 'superadmin') return null // 通配
+  const custom = (admin.permissions || '').trim()
+  if (custom) {
+    return custom.split(',').map((s) => s.trim()).filter(Boolean)
+  }
+  return ROLE_PERMISSIONS[admin.role] || []
+}
+
+// 判断 admin 是否拥有指定权限
+// admin 为 { role, permissions } 或纯 role 字符串（兼容旧调用）
+export function hasPermission(admin, permission) {
+  // 兼容：旧调用方式 hasPermission(role, permission)
+  if (typeof admin === 'string') {
+    const role = admin
+    const perms = ROLE_PERMISSIONS[role]
+    if (!perms) return false
+    if (perms === '*') return true
+    return perms.includes(permission)
+  }
+  const perms = resolvePermissions(admin)
+  if (perms === null) return true // superadmin 通配
   return perms.includes(permission)
 }
 
@@ -256,19 +367,70 @@ export async function requireAuth(context) {
   }
 }
 
-// 权限校验中间件：requireAuth 通过后再校验角色权限，失败返回 403
+// 权限校验中间件：requireAuth 通过后再校验权限，失败返回 403
 // 用法：const fail = await requirePermission(context, 'admins:create')
+// 权限判定：查库取最新 permissions，支持自定义权限覆盖角色默认
 export async function requirePermission(context, permission) {
   const authFail = await requireAuth(context)
   if (authFail) return authFail
   const admin = context.admin
-  if (!admin || !hasPermission(admin.role, permission)) {
+  if (!admin) {
     return new Response(
       JSON.stringify({ code: 403, message: '权限不足，无法执行此操作', data: null }),
       { status: 403, headers: { 'Content-Type': 'application/json; charset=utf-8' } },
     )
   }
+  // superadmin 直接放行（避免查库）
+  if (admin.role === 'superadmin') return null
+  // 查库取最新 permissions（自定义权限可能在上次签发 token 后被修改）
+  const latest = await getAdminById(admin.id)
+  const adminForCheck = latest || { role: admin.role, permissions: '' }
+  if (!hasPermission(adminForCheck, permission)) {
+    return new Response(
+      JSON.stringify({ code: 403, message: '权限不足，无法执行此操作', data: null }),
+      { status: 403, headers: { 'Content-Type': 'application/json; charset=utf-8' } },
+    )
+  }
+  // 注入最新 permissions 供后续审计使用
+  if (latest) context.admin.permissions = latest.permissions
   return null
+}
+
+// ========== 家长端专属链接 Token ==========
+// 与管理员 token 隔离：payload 形状不同，互相无法通过对方校验
+// payload = { sid: studentId, ps: phoneSuffix(后4位), ts }
+// 用途：家长通过专属链接访问 H5，链接携带 token；进入后需再输入手机号后4位二次校验
+
+// 签发家长访问 token（仅服务端持有 secret，故仅由 share-link-generate API 调用）
+export async function signParentToken(secret, { sid, ps } = {}) {
+  const fullPayload = { typ: 'parent', sid: sid || '', ps: ps || '', ts: Date.now() }
+  const payloadStr = JSON.stringify(fullPayload)
+  const enc = new TextEncoder()
+  const payloadB64 = bufToB64Url(enc.encode(payloadStr))
+  const sig = await hmacSign(secret, payloadB64)
+  return `${payloadB64}.${sig}`
+}
+
+// 校验家长 token：返回 payload 或 null
+// maxAgeMs 默认 365 天（专属链接长期有效，靠手机号后4位做二次校验）
+export async function verifyParentToken(token, secret, maxAgeMs = 365 * 24 * 60 * 60 * 1000) {
+  if (!token || !secret) return null
+  const parts = token.split('.')
+  if (parts.length !== 2) return null
+  const [payloadB64, sig] = parts
+  const expected = await hmacSign(secret, payloadB64)
+  if (!constantTimeEqual(sig, expected)) return null
+  let payload
+  try {
+    payload = JSON.parse(b64UrlToStr(payloadB64))
+  } catch {
+    return null
+  }
+  if (!payload || payload.typ !== 'parent') return null
+  if (typeof payload.ts !== 'number') return null
+  if (Date.now() - payload.ts > maxAgeMs) return null
+  if (payload.ts > Date.now() + 60_000) return null
+  return payload
 }
 
 // 从请求中提取客户端 IP（审计用）

@@ -164,6 +164,7 @@ export function getDb() {
       phone         TEXT DEFAULT '',
       status        TEXT NOT NULL DEFAULT 'active',
       teacher_id    TEXT DEFAULT '',
+      permissions   TEXT DEFAULT '',
       last_login_at TEXT DEFAULT '',
       last_login_ip TEXT DEFAULT '',
       created_at    TEXT DEFAULT (datetime('now')),
@@ -336,6 +337,8 @@ export function getDb() {
     ['operator_id', "TEXT DEFAULT ''"],
     ['reason', "TEXT DEFAULT ''"],
   ]) ensureColumn(db, 'transfers', col, def)
+  // admins 补齐 permissions 列（细粒度权限点）
+  ensureColumn(db, 'admins', 'permissions', "TEXT DEFAULT ''")
 
   dbInstance = db
   return db
@@ -538,6 +541,8 @@ function rowToAdmin(r) {
     phone: r.phone || '',
     status: r.status || 'active',
     teacherId: r.teacher_id || '',
+    // permissions 存为逗号分隔串，空串表示用角色默认权限
+    permissions: r.permissions || '',
     lastLoginAt: r.last_login_at || '',
     lastLoginIp: r.last_login_ip || '',
     createdAt: r.created_at || '',
@@ -571,6 +576,14 @@ export async function getStudents() {
   const db = getDb()
   const rows = db.prepare('SELECT * FROM students ORDER BY created_at, id').all()
   return rows.map(rowToStudent)
+}
+
+// 按 id 取单个学员（不存在返回 null）
+export async function getStudentById(studentId) {
+  if (!studentId) return null
+  const db = getDb()
+  const row = db.prepare('SELECT * FROM students WHERE id=?').get(studentId)
+  return row ? rowToStudent(row) : null
 }
 
 export async function addStudent(student) {
@@ -1163,6 +1176,42 @@ export async function batchAddSchedules(schedules) {
   return { created, skipped, errors }
 }
 
+// 排课冲突检测：检查给定 { studentId, teacher, location, date, startTime, endTime, excludeId }
+// 是否与已有排课存在时间重叠。返回冲突列表，每条含 type(teacher/student/location) + 冲突排课
+// 时间比较采用字符串 HH:mm（ISO 时间在此格式下字典序即时间序）
+function timeOverlaps(aStart, aEnd, bStart, bEnd) {
+  if (!aStart || !aEnd || !bStart || !bEnd) return false
+  // 半开区间 [start, end) 相交：aStart < bEnd && bStart < aEnd
+  return aStart < bEnd && bStart < aEnd
+}
+
+export async function findScheduleConflicts({
+  studentId, teacher, location, date, startTime, endTime, excludeId,
+}) {
+  if (!date || !startTime || !endTime) return []
+  const db = getDb()
+  // 同一天的所有排课（数量有限，内存中筛选重叠）
+  let sql = 'SELECT * FROM schedules WHERE date=?'
+  const params = [date]
+  if (excludeId) { sql += ' AND id<>?'; params.push(excludeId) }
+  const rows = db.prepare(sql).all(...params)
+  const conflicts = []
+  for (const r of rows) {
+    const s = rowToSchedule(r)
+    if (!timeOverlaps(startTime, endTime, s.startTime, s.endTime)) continue
+    if (teacher && s.teacher && s.teacher === teacher) {
+      conflicts.push({ type: 'teacher', field: '教师', value: teacher, schedule: s })
+    }
+    if (studentId && s.studentId === studentId) {
+      conflicts.push({ type: 'student', field: '学员', value: s.studentName, schedule: s })
+    }
+    if (location && s.location && s.location === location) {
+      conflicts.push({ type: 'location', field: '教室', value: location, schedule: s })
+    }
+  }
+  return conflicts
+}
+
 export async function addSchedule(schedule) {
   const studentId = schedule.studentId
   const month = schedule.date.slice(0, 7)
@@ -1352,17 +1401,19 @@ export async function createSuperAdmin(username, passwordHash) {
 }
 
 // 创建管理员（超管用，可选 role）
-export async function createAdmin({ username, passwordHash, role, realName, phone, createdBy }) {
+export async function createAdmin({ username, passwordHash, role, realName, phone, createdBy, permissions }) {
   const db = getDb()
   const id = genAdminId()
-  db.prepare(`INSERT INTO admins (id, username, password_hash, role, real_name, phone, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
-    id, username, passwordHash, role || 'admin', realName || '', phone || '', createdBy || '',
+  // permissions 数组 → 逗号分隔串存储
+  const permStr = Array.isArray(permissions) ? permissions.filter(Boolean).join(',') : ''
+  db.prepare(`INSERT INTO admins (id, username, password_hash, role, real_name, phone, created_by, permissions)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    id, username, passwordHash, role || 'admin', realName || '', phone || '', createdBy || '', permStr,
   )
   return rowToAdmin(db.prepare('SELECT * FROM admins WHERE id=?').get(id))
 }
 
-export async function updateAdmin({ id, role, realName, phone, status, passwordHash }) {
+export async function updateAdmin({ id, role, realName, phone, status, passwordHash, permissions }) {
   const db = getDb()
   const old = db.prepare('SELECT * FROM admins WHERE id=?').get(id)
   if (!old) return { updated: false, notFound: true }
@@ -1373,6 +1424,10 @@ export async function updateAdmin({ id, role, realName, phone, status, passwordH
   if (phone !== undefined) { sets.push('phone=?'); params.push(phone) }
   if (status !== undefined) { sets.push('status=?'); params.push(status) }
   if (passwordHash) { sets.push('password_hash=?'); params.push(passwordHash) }
+  if (permissions !== undefined) {
+    const permStr = Array.isArray(permissions) ? permissions.filter(Boolean).join(',') : String(permissions || '')
+    sets.push('permissions=?'); params.push(permStr)
+  }
   if (sets.length > 0) {
     params.push(id)
     db.prepare(`UPDATE admins SET ${sets.join(', ')} WHERE id=?`).run(...params)

@@ -13,7 +13,7 @@ import {
   createSuperAdmin,
   getClientIp,
 } from '../_lib/auth.js'
-import { json, recordLogin, addAuditLog } from '../_lib/store.js'
+import { json, recordLogin, addAuditLog, getAdminById } from '../_lib/store.js'
 
 async function readBody(request) {
   try {
@@ -23,15 +23,17 @@ async function readBody(request) {
   }
 }
 
-// 当前用户信息（供前端展示用户名/角色）
+// 当前用户信息（供前端展示用户名/角色/权限）
+// admin 为 rowToAdmin 结果（驼峰字段）
 function publicAdminInfo(admin) {
   return {
     id: admin.id,
     username: admin.username,
     role: admin.role,
-    realName: admin.real_name || '',
+    realName: admin.realName || admin.real_name || '',
     phone: admin.phone || '',
     status: admin.status,
+    permissions: admin.permissions || '',
   }
 }
 
@@ -125,6 +127,8 @@ async function handleVerify(context) {
           username: payload.username,
           role: payload.role,
           realName: payload.realName || '',
+          // 查库返回最新 permissions，确保权限变更后立即生效
+          permissions: (await getAdminById(payload.uid))?.permissions || '',
         },
       },
     })

@@ -1,11 +1,13 @@
 // 教师端管理页 —— 课后反馈 + 教师绩效 两个 Tab
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { Feedback, TeacherPerformance } from '@/types'
+import type { Feedback, TeacherPerformance, Schedule } from '@/types'
 import {
   getFeedback,
   updateFeedback,
   deleteFeedback,
+  addFeedback,
+  searchSchedules,
   getTeacherPerformance,
 } from '@/api/admin'
 import {
@@ -93,6 +95,7 @@ function FeedbackPanel() {
   const [editContent, setEditContent] = useState('')
   const [editRating, setEditRating] = useState(5)
   const [saving, setSaving] = useState(false)
+  const [adding, setAdding] = useState(false)
 
   const totalPages = Math.max(1, Math.ceil(list.length / FEEDBACK_PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -169,10 +172,34 @@ function FeedbackPanel() {
 
   return (
     <>
+      {/* 提交反馈指引 */}
+      <section className="card p-4 bg-brand-50/40 border-brand-100">
+        <div className="flex items-start gap-2 text-xs text-slate-600 leading-relaxed">
+          <svg className="w-4 h-4 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div>
+            <strong className="text-slate-700">课后反馈提交入口：</strong>
+            登录后台 → 教务管理 → 教师与反馈 → 课后反馈，点击右上角「新增反馈」，
+            选择日期与对应排课记录后填写反馈内容与评分即可提交。
+          </div>
+        </div>
+      </section>
+
+      {/* 操作栏 */}
+      <div className="flex justify-end">
+        <Button variant="primary" onClick={() => setAdding(true)}>
+          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          新增反馈
+        </Button>
+      </div>
+
       {loading ? (
         <LoadingBlock />
       ) : list.length === 0 ? (
-        <EmptyState title={t('teacher.noFeedback')} description="教师提交课后反馈后将在此展示" />
+        <EmptyState title={t('teacher.noFeedback')} description="点击右上角「新增反馈」提交课后反馈" />
       ) : (
         <section className="card p-5">
           <div className="overflow-x-auto">
@@ -279,7 +306,215 @@ function FeedbackPanel() {
           </div>
         </Modal>
       )}
+
+      {/* 新增反馈弹窗 */}
+      {adding && (
+        <AddFeedbackModal
+          onClose={() => setAdding(false)}
+          onCreated={() => {
+            setAdding(false)
+            load()
+          }}
+        />
+      )}
     </>
+  )
+}
+
+// ============ 新增反馈弹窗 ============
+// 流程：选日期 → 加载当天排课 → 选排课 → 填内容+评分 → 提交
+// 教师/学员/课程/日期 等字段从选中排课自动填充
+function AddFeedbackModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const { t } = useTranslation()
+  const today = new Date().toISOString().slice(0, 10)
+  const [date, setDate] = useState(today)
+  const [schedules, setSchedules] = useState<Schedule[]>([])
+  const [loadingSchedules, setLoadingSchedules] = useState(false)
+  const [selectedId, setSelectedId] = useState('')
+  const [content, setContent] = useState('')
+  const [rating, setRating] = useState(5)
+  const [saving, setSaving] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  const loadSchedules = async (d: string) => {
+    if (!d) {
+      setSchedules([])
+      setLoaded(false)
+      return
+    }
+    setLoadingSchedules(true)
+    setSelectedId('')
+    try {
+      const result = await searchSchedules({ startDate: d, endDate: d })
+      if (result.code === 0) {
+        setSchedules(result.data.schedules || [])
+      } else {
+        setSchedules([])
+        toast.error(result.message || '加载排课失败')
+      }
+    } catch (e) {
+      setSchedules([])
+      toast.error((e as Error).message || '加载排课失败')
+    } finally {
+      setLoadingSchedules(false)
+      setLoaded(true)
+    }
+  }
+
+  useEffect(() => {
+    loadSchedules(date)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date])
+
+  const selected = schedules.find((s) => s.id === selectedId) || null
+
+  const canSubmit = !!selected && !saving
+
+  const handleSubmit = async () => {
+    if (!selected) {
+      toast.error('请先选择一条排课记录')
+      return
+    }
+    setSaving(true)
+    try {
+      const result = await addFeedback({
+        scheduleId: selected.id,
+        courseId: selected.courseId || '',
+        teacherId: '',
+        teacherName: selected.teacher || '',
+        studentId: selected.studentId,
+        studentName: selected.studentName,
+        date: selected.date,
+        content,
+        rating,
+      })
+      if (result.code === 0) {
+        toast.success('反馈已提交')
+        onCreated()
+      } else {
+        toast.error(result.message || '提交失败')
+      }
+    } catch (e) {
+      toast.error((e as Error).message || '提交失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="新增课后反馈"
+      size="md"
+      onClose={onClose}
+      footer={
+        <ModalFooter
+          loading={saving}
+          onCancel={onClose}
+          onConfirm={handleSubmit}
+          confirmText="提交反馈"
+          confirmDisabled={!canSubmit}
+        />
+      }
+    >
+      <div className="space-y-4">
+        {/* 步骤提示 */}
+        <div className="text-xs text-slate-500 bg-slate-50 rounded p-2 leading-relaxed">
+          ① 选择上课日期 → ② 从当天排课中选择一条 → ③ 填写反馈内容与评分 → ④ 提交
+        </div>
+
+        <Field label="上课日期">
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            max={today}
+            className={inputClass}
+          />
+        </Field>
+
+        <Field label="选择排课">
+          {loadingSchedules ? (
+            <div className="text-sm text-slate-400 py-2">加载排课中…</div>
+          ) : schedules.length === 0 ? (
+            <div className="text-sm text-slate-400 py-2">
+              {loaded ? '该日期暂无排课记录' : '请先选择日期'}
+            </div>
+          ) : (
+            <div className="border border-slate-200 rounded max-h-56 overflow-y-auto divide-y divide-slate-100">
+              {schedules.map((s) => {
+                const active = s.id === selectedId
+                return (
+                  <button
+                    type="button"
+                    key={s.id}
+                    onClick={() => setSelectedId(s.id)}
+                    className={cn(
+                      'w-full text-left px-3 py-2 text-sm transition-colors flex items-center justify-between gap-2',
+                      active ? 'bg-brand-50 text-brand-700' : 'hover:bg-slate-50 text-slate-700',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium truncate">
+                        {s.studentName || '—'}
+                        <span className="ml-2 text-xs text-slate-400">
+                          {s.startTime || '--:--'} ~ {s.endTime || '--:--'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400 truncate">
+                        {s.courseName || '—'} · {s.teacher || '—'} · {s.location || '—'}
+                      </div>
+                    </div>
+                    {active && (
+                      <svg className="w-4 h-4 text-brand-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </Field>
+
+        {selected && (
+          <div className="text-xs text-slate-500 bg-brand-50/40 rounded p-2">
+            已选：{selected.studentName} · {selected.courseName} · {selected.date}{' '}
+            {selected.startTime}~{selected.endTime}
+          </div>
+        )}
+
+        <Field label={t('teacher.content')}>
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            rows={4}
+            maxLength={2000}
+            placeholder="请输入课后反馈内容（学习表现、掌握情况、改进建议等）"
+            className={cn(inputClass, 'resize-y')}
+          />
+        </Field>
+
+        <Field label={t('teacher.rating')}>
+          <select
+            value={rating}
+            onChange={(e) => setRating(Number(e.target.value))}
+            className={inputClass}
+          >
+            {[0, 1, 2, 3, 4, 5].map((n) => (
+              <option key={n} value={n}>
+                {n} 星（{renderStars(n)}）
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+    </Modal>
   )
 }
 

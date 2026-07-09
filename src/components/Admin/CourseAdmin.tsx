@@ -171,26 +171,8 @@ interface CourseEditModalProps {
   onSubmit: (course: Course) => Promise<boolean>
 }
 
-// 默认时间：小时 + 分钟两个独立 select
-// 分钟以 5 分钟为单位：00, 05, 10, ..., 55
-const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, '0'))
-const MINUTE_5MIN_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'))
-
-// 将任意 HH:mm 对齐到最近的 5 分钟刻度（向下取整）
-// 用于编辑模式加载历史数据时规整化（如 "09:03" -> "09:00"）
-function alignTo5Min(time: string): string {
-  if (!time || !/^\d{2}:\d{2}$/.test(time)) return time
-  const [h, m] = time.split(':').map(Number)
-  const alignedM = Math.floor(m / 5) * 5
-  return `${String(h).padStart(2, '0')}:${String(alignedM).padStart(2, '0')}`
-}
-
-// 从 "HH:mm" 中拆出小时与分钟（无值时返回空串）
-function splitTime(time: string): { h: string; m: string } {
-  if (!time || !/^\d{2}:\d{2}$/.test(time)) return { h: '', m: '' }
-  const [h, m] = time.split(':')
-  return { h, m }
-}
+// 时间选择：原生 type="time"，值为 "HH:mm" 或空串
+// 分钟以 5 分钟为单位（step=300 秒），避免双 select 半选丢值问题
 
 function CourseEditModal({ course, onClose, onSubmit }: CourseEditModalProps) {
   const { t } = useTranslation()
@@ -199,9 +181,6 @@ function CourseEditModal({ course, onClose, onSubmit }: CourseEditModalProps) {
     course
       ? {
           ...course,
-          // 编辑模式：将历史时间对齐到 5 分钟刻度，确保 select 能匹配
-          defaultStartTime: alignTo5Min(course.defaultStartTime || ''),
-          defaultEndTime: alignTo5Min(course.defaultEndTime || ''),
           unitPrice: course.unitPrice ?? 0,
           billingType: course.billingType || 'per_lesson',
           capacity: course.capacity ?? 0,
@@ -257,21 +236,6 @@ function CourseEditModal({ course, onClose, onSubmit }: CourseEditModalProps) {
     if (value === 'active' || value === 'inactive') {
       update({ status: value })
     }
-  }
-
-  // 时间字段局部变更：小时与分钟分别选择，合成 "HH:mm" 写回
-  // 全空视为未设置；半选时保留中间态（如 "09:"），由 validate 的格式校验拦截
-  const handleTimeChange = (
-    field: 'defaultStartTime' | 'defaultEndTime',
-    part: 'h' | 'm',
-    value: string,
-  ) => {
-    const current = splitTime(form[field] || '')
-    const next = { ...current, [part]: value }
-    const merged = next.h === '' && next.m === '' ? '' : `${next.h}:${next.m}`
-    const patch: Partial<Course> = {}
-    patch[field] = merged
-    update(patch)
   }
 
   const validate = (): boolean => {
@@ -395,54 +359,24 @@ function CourseEditModal({ course, onClose, onSubmit }: CourseEditModalProps) {
           />
         </Field>
 
-        {/* 默认时间：小时 + 分钟分别选择，分钟按 5 分钟刻度 */}
+        {/* 默认时间：原生 type="time"，5 分钟刻度 */}
         <Field label={t('course.defaultTime')} error={errors.time} hint="分钟以 5 分钟为单位">
           <div className="flex items-center gap-2">
-            {/* 开始时间：时 : 分 */}
-            <select
-              value={splitTime(form.defaultStartTime || '').h}
-              onChange={(e) => handleTimeChange('defaultStartTime', 'h', e.target.value)}
-              className={cn(inputClass, 'bg-white w-20 text-center')}
-            >
-              <option value="">时</option>
-              {HOUR_OPTIONS.map((h) => (
-                <option key={h} value={h}>{h}</option>
-              ))}
-            </select>
-            <span className="text-slate-400">:</span>
-            <select
-              value={splitTime(form.defaultStartTime || '').m}
-              onChange={(e) => handleTimeChange('defaultStartTime', 'm', e.target.value)}
-              className={cn(inputClass, 'bg-white w-20 text-center')}
-            >
-              <option value="">分</option>
-              {MINUTE_5MIN_OPTIONS.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
+            <input
+              type="time"
+              step={300}
+              value={form.defaultStartTime || ''}
+              onChange={(e) => update({ defaultStartTime: e.target.value })}
+              className={cn(inputClass, 'bg-white w-32')}
+            />
             <span className="text-slate-400 px-1">-</span>
-            {/* 结束时间：时 : 分 */}
-            <select
-              value={splitTime(form.defaultEndTime || '').h}
-              onChange={(e) => handleTimeChange('defaultEndTime', 'h', e.target.value)}
-              className={cn(inputClass, 'bg-white w-20 text-center')}
-            >
-              <option value="">时</option>
-              {HOUR_OPTIONS.map((h) => (
-                <option key={h} value={h}>{h}</option>
-              ))}
-            </select>
-            <span className="text-slate-400">:</span>
-            <select
-              value={splitTime(form.defaultEndTime || '').m}
-              onChange={(e) => handleTimeChange('defaultEndTime', 'm', e.target.value)}
-              className={cn(inputClass, 'bg-white w-20 text-center')}
-            >
-              <option value="">分</option>
-              {MINUTE_5MIN_OPTIONS.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
+            <input
+              type="time"
+              step={300}
+              value={form.defaultEndTime || ''}
+              onChange={(e) => update({ defaultEndTime: e.target.value })}
+              className={cn(inputClass, 'bg-white w-32')}
+            />
           </div>
         </Field>
 

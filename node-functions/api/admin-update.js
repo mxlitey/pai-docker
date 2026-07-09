@@ -51,6 +51,15 @@ export default async function onRequestPut(context) {
   }
 
   try {
+    // permissions：字符串数组；显式传入时覆盖（含空数组=清空自定义权限，回退角色默认）
+    // undefined 表示不修改 permissions
+    let permissions = undefined
+    if (Array.isArray(admin.permissions)) {
+      permissions = admin.permissions.filter((p) => typeof p === 'string' && p.trim())
+    } else if (typeof admin.permissions === 'string') {
+      // 支持 "useDefault" 哨兵值表示回退默认权限
+      permissions = admin.permissions === '' ? [] : admin.permissions.split(',').map((s) => s.trim()).filter(Boolean)
+    }
     await updateAdmin({
       id: admin.id,
       role: admin.role,
@@ -58,17 +67,19 @@ export default async function onRequestPut(context) {
       phone: admin.phone,
       status: admin.status,
       passwordHash,
+      permissions,
     })
     const parts = []
     if (admin.role && admin.role !== target.role) parts.push(`角色→${admin.role}`)
     if (admin.status && admin.status !== target.status) parts.push(`状态→${admin.status}`)
     if (passwordHash) parts.push('重置密码')
     if (admin.realName !== undefined && admin.realName !== target.real_name) parts.push('改姓名')
+    if (permissions !== undefined) parts.push('调整权限')
     await writeAudit(context, {
       action: 'update', module: 'admins',
       targetType: 'admin', targetId: admin.id, targetName: target.username,
       summary: `更新账号 ${target.username}${parts.length ? '（' + parts.join('、') + '）' : ''}`,
-      before: { role: target.role, status: target.status },
+      before: { role: target.role, status: target.status, permissions: target.permissions },
     })
     return json({ code: 0, message: '账号已更新', data: null })
   } catch (e) {

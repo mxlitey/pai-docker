@@ -33,11 +33,16 @@ export default async function onRequestPost(context) {
 
   try {
     const passwordHash = await hashPassword(String(admin.password))
+    // permissions：字符串数组，仅对非超管生效；superadmin 忽略
+    const permissions = Array.isArray(admin.permissions)
+      ? admin.permissions.filter((p) => typeof p === 'string' && p.trim())
+      : []
     const created = await createAdmin({
       username, passwordHash, role,
       realName: String(admin.realName || '').trim(),
       phone: String(admin.phone || '').trim(),
       createdBy: context.admin.id,
+      permissions,
     })
     await writeAudit(context, {
       action: 'create', module: 'admins',

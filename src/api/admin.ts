@@ -5,7 +5,7 @@ import type {
   AdminUser, AdminRole, CurrentAdmin, AuditLog, ReportQuery,
   BackupInfo, SystemConfigFull, BatchEnrollmentItem,
   Feedback, TeacherPerformance, Coupon, Membership, StudentMembership,
-  Lead, LeadFollowup,
+  Lead, LeadFollowup, PermissionModule,
 } from '@/types'
 
 const API_BASE = '/api'
@@ -532,6 +532,7 @@ export async function addAdmin(admin: {
   role: Exclude<AdminRole, 'superadmin'>
   realName?: string
   phone?: string
+  permissions?: string[]
 }): Promise<ApiResult<{ admin: AdminUser }>> {
   return request(`${API_BASE}/admin-add`, {
     method: 'POST',
@@ -539,7 +540,7 @@ export async function addAdmin(admin: {
   })
 }
 
-// 更新管理员（改角色/姓名/电话/状态/重置密码）
+// 更新管理员（改角色/姓名/电话/状态/重置密码/权限）
 export async function updateAdmin(admin: {
   id: string
   role?: AdminRole
@@ -547,11 +548,19 @@ export async function updateAdmin(admin: {
   phone?: string
   status?: 'active' | 'disabled'
   password?: string
+  permissions?: string[]
 }): Promise<ApiResult<null>> {
   return request(`${API_BASE}/admin-update`, {
     method: 'PUT',
     body: JSON.stringify({ admin }),
   })
+}
+
+// 查询权限定义矩阵（供权限分配表渲染）
+export async function getPermissionDefinitions(): Promise<
+  ApiResult<{ definitions: PermissionModule[]; rolePermissions: Record<string, string | string[]> }>
+> {
+  return request(`${API_BASE}/permission-definitions`, { method: 'GET' })
 }
 
 // 删除管理员（不可删自己、不可删最后一个超管）
@@ -894,4 +903,44 @@ export async function addFollowup(fu: { leadId: string; content: string; stage?:
     signal: AbortSignal.timeout(10000),
   })
   return resp.json()
+}
+
+// ========== 家长端专属链接生成 ==========
+// 为学员签发家长访问 token（手机号后4位二次校验）
+export async function generateShareLink(
+  studentId: string,
+): Promise<ApiResult<{ token: string; studentId: string; studentName: string }>> {
+  const resp = await fetch(`${API_BASE}/share-link-generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ studentId }),
+    signal: AbortSignal.timeout(10000),
+  })
+  return resp.json()
+}
+
+// ========== 智能排课冲突检测 ==========
+export interface ScheduleConflict {
+  type: 'teacher' | 'student' | 'location'
+  field: string
+  value: string
+  schedule: Schedule
+}
+export interface ConflictCheckResult {
+  date: string
+  conflicts: ScheduleConflict[]
+}
+
+export async function checkScheduleConflict(params: {
+  studentId?: string
+  teacher?: string
+  location?: string
+  dates: string[]
+  startTime: string
+  endTime: string
+}): Promise<ApiResult<{ results: ConflictCheckResult[]; total: number; free: number; conflict: number }>> {
+  return request(`${API_BASE}/schedule-check-conflict`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
 }
