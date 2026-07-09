@@ -11,7 +11,7 @@ import {
   countAdmins,
   getAdminByUsername,
   createSuperAdmin,
-} from './store-sqlite.js'
+} from './store.js'
 import { getTokenSecret as getTokenSecretFromConfig } from './config-file.js'
 
 // re-export，供 api 层直接从 auth.js 引入

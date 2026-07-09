@@ -1,4 +1,4 @@
-// Node HTTP 服务器 —— 替代 EdgeOne 边缘函数运行时
+// Node HTTP 服务器
 // 职责：
 // 1. 路由 /api/* 到 node-functions/api/*.js（按文件名映射，无需逐个注册）
 // 2. 托管 dist/ 静态资源（Vite 构建产物）
@@ -8,7 +8,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, extname, normalize } from 'node:path'
-import { getDb, countAdmins } from './node-functions/_lib/store-sqlite.js'
+import { getDb, countAdmins } from './node-functions/_lib/store.js'
 import { loadConfig, getConfigPath } from './node-functions/_lib/config-file.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))

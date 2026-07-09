@@ -1,18 +1,18 @@
 <div align="center">
   <h1>📅 排课系统</h1>
   <p>基于日历视角的学员排课查询与管理系统</p>
-  <p>全球边缘加速 · 无需独立服务器 · 零成本部署</p>
+  <p>Docker 自托管 · SQLite 单文件持久化 · 零配置启动</p>
 </div>
 
 ***
 
 ## 📖 项目介绍
 
-排课系统是一套面向教育培训场景的学员排课查询与管理系统。前端为 React 单页应用，后端运行于腾讯云 EdgeOne Makers 边缘函数（Node Functions），数据存储于 EdgeOne Pages Blob 分布式对象存储，整套系统无需独立服务器，全球 3200+ 节点边缘加速。
+排课系统是一套面向教育培训场景的学员排课查询与管理系统。前端为 React 单页应用，后端运行于 Node.js，数据存储使用 SQLite（单文件持久化），适合私有服务器、内网或单机场景，无需外部数据库。
 
-家长通过专属分享链接或学员姓名搜索即可查看排课日历（月/周/日三视图），管理员通过密码登录后台一站式管理学员、课程、排课、点名、公告与分享链接。排课按学员 + 月份分文件存储，跨月跨学员修改自动迁移；点名按课程→时间段两级分组，三态出勤自动联动课时扣减；公告支持 Markdown 渲染并按发布时间版本控制弹窗。
+家长通过专属分享链接或学员姓名搜索即可查看排课日历（月/周/日三视图），管理员通过密码登录后台一站式管理学员、课程、排课、点名、公告与分享链接。点名按课程→时间段两级分组，三态出勤自动联动课时扣减；公告支持 Markdown 渲染并按发布时间版本控制弹窗。
 
-项目名称、登录密码等均通过环境变量注入，可在不修改代码的情况下完成定制。
+系统采用**零配置启动**：超管账号首次访问时引导创建，token 签名密钥首次启动自动生成，项目名称等配置通过后台「系统设置」页面动态修改，无需任何环境变量。
 
 ***
 
@@ -43,10 +43,11 @@
 ### 后台管理
 - 👥 **学员管理**：分页表格、新增 / 编辑 / 删除（二次确认）、ID 自动生成、姓名变更级联更新排课
 - 📚 **课程管理**：10 色颜色标签、默认时段记忆、删除同时清理关联排课
-- 🗂️ **排课管理**：双 tab（按学员 / 按日期+课程筛选）、单条新增、批量新增（日期×学员笛卡尔积）、跨月跨学员迁移
+- 🗂️ **排课管理**：双 tab（按学员 / 按日期+课程筛选）、单条新增、批量新增（日期×学员笛卡尔积）
 - ✅ **点名管理**：按日期加载，课程→时间段两级分组，三态出勤，时间段级与全局批量操作
 - 📢 **公告管理**：编辑 / 预览双 tab，Markdown 实时渲染，字数统计
 - 🔗 **分享链接**：一键生成全部学员查看链接，单条 / 全量复制
+- ⚙️ **系统设置**：后台动态修改项目名称，运行时即时生效
 
 ### 公告弹窗
 - 🔔 **版本控制**：按公告发布时间标记，同一版本仅自动弹一次
@@ -55,10 +56,11 @@
 
 ### 安全与性能
 - 🔐 **鉴权**：HMAC-SHA256 签名 token，与登录密码解耦，24 小时有效
-- 🛡️ **防竞态**：模块级写锁串行化读-改-写，多锁按字典序加锁防死锁
-- 🚫 **防注入**：存储路径 id 校验 `/^[A-Za-z0-9_-]{1,64}$/`，防路径遍历
-- ⚡ **按月分文件**：排课按学员+月份存储，查询仅读对应月份
-- 🌐 **边缘加速**：静态资源与函数均部署于 EdgeOne 边缘节点
+- 🛡️ **并发安全**：SQLite WAL 模式 + ACID 事务，读不阻塞写
+- 🚫 **防注入**：存储 id 校验 `/^[A-Za-z0-9_-]{1,64}$/`，参数化查询
+- 🔑 **密码哈希**：PBKDF2-HMAC-SHA256（100000 次迭代）加盐存储
+- ⚡ **索引优化**：排课表按 student_id + date 建复合索引，按月查询高效
+- 💾 **高频配置走文件**：项目名称、token 密钥存于 config.json + 内存缓存，读零 IO
 
 ***
 
@@ -72,10 +74,10 @@
 | 样式方案 | TailwindCSS 3 | 原子化 CSS，自定义 brand 色板与组件类 |
 | 日期处理 | date-fns 3 | 函数式日期库，中文本地化 |
 | Markdown | react-markdown + remark-gfm | 公告渲染，GFM 语法 |
-| 后端运行时 | Node Functions | EdgeOne Makers 边缘函数，毫秒级冷启动 |
-| 数据存储 | EdgeOne Pages Blob | 分布式对象存储，强一致模式 |
-| 鉴权 | Web Crypto API | HMAC-SHA256 自实现 token |
-| 部署平台 | 腾讯云 EdgeOne Makers | 全球边缘节点加速，Git 集成自动部署 |
+| 后端运行时 | Node.js 18+ | 原生 HTTP 服务器 |
+| 数据存储 | SQLite（better-sqlite3） | 单文件持久化，同步 API |
+| 鉴权 | Web Crypto API | HMAC-SHA256 自实现 token + PBKDF2 密码哈希 |
+| 部署方式 | Docker | 多阶段构建，Volume 挂载持久化 |
 
 ***
 
@@ -83,98 +85,14 @@
 
 ### 前置条件
 
-1. 腾讯云账号（已实名认证）
-2. GitHub / Gitee 代码仓库
-3. 已开通 EdgeOne Makers（免费版即可）
-
-### 步骤一：推送代码到 Git 仓库
-
-```bash
-git add .
-git commit -m "排课系统"
-git remote add origin https://github.com/<your-username>/pai.git
-git push -u origin main
-```
-
-### 步骤二：EdgeOne Makers 控制台创建项目
-
-1. 登录 [EdgeOne Makers 控制台](https://console.cloud.tencent.com/edgeone/pages)
-2. 点击「创建项目」→「连接 Git 仓库」
-3. 授权并选择目标仓库
-4. 平台自动识别 Vite 框架，构建配置：
-   - **构建命令**：`npm run build`
-   - **输出目录**：`dist`
-   - **Node 版本**：18+
-5. 点击「部署」，等待自动构建完成（约 30-60 秒）
-
-### 步骤三：配置环境变量
-
-在 Makers 控制台进入项目「设置」→「环境变量与密钥」，添加：
-
-| 变量名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| `ADMIN_PASSWORD` | Secret | 是 | 后台管理登录密码 |
-| `ADMIN_TOKEN_SECRET` | Secret | 否 | token 签名密钥，推荐配置以与登录密码解耦；未配置时回退到 `ADMIN_PASSWORD` |
-| `VITE_APP_NAME` | Plain | 否 | 项目名称，显示在首页与各页标题。未设置时默认「排课系统」；构建时注入，修改后需重新部署 |
-
-> 提示：以 `VITE_` 开头的变量会在构建时注入到前端产物中，修改后需重新触发部署才能生效。`ADMIN_PASSWORD` 与 `ADMIN_TOKEN_SECRET` 仅后端读取，修改即时生效。
->
-> 公告内容通过后台「公告管理」动态管理，存储于 EdgeOne Blob，无需环境变量配置。
->
-> 页脚的 GitHub 链接硬编码为本仓库地址 `https://github.com/mxlitey/pai`，如需替换修改 [`src/config.ts`](src/config.ts) 中的 `GITHUB_URL` 即可。
-
-### 步骤四：验证部署
-
-平台分配预览域名，如 `https://pai-xxx.edgeone.site`。
-
-1. 访问预览域名，确认首页正常加载（项目名称取自 `VITE_APP_NAME`，未设置时为「排课系统」）
-2. 在首页搜索框输入学员姓名，自动跳转到日历页并加载该学员排课
-3. 切换月 / 周 / 日视图，确认排课数据正确展示
-4. 点击首页右上角齿轮图标，输入密码登录验证管理功能
-
-### 步骤五：初始化数据
-
-部署完成后 Blob 存储为空，正式数据请在后台通过「学员管理」「课程管理」「排课管理」逐条或批量录入。
-
-### 步骤六：绑定自定义域名（可选）
-
-1. 在 Makers 控制台「项目设置」→「域名管理」
-2. 添加自定义域名，如 `schedule.example.com`
-3. 在域名 DNS 服务商添加 CNAME 记录指向 EdgeOne
-4. 平台自动签发 SSL 证书
-
-***
-
-## 🐳 Docker 部署（自托管）
-
-除 EdgeOne Makers 边缘部署外，本项目也支持通过 Docker 自托管运行。Docker 版后端运行于 Node.js，数据存储使用 SQLite（单文件持久化），无需外部数据库，适合私有服务器、内网或单机场景。
-
-### 架构差异
-
-| 项 | EdgeOne 版 | Docker 版 |
-|----|-----------|-----------|
-| 后端运行时 | EdgeOne 边缘函数 | Node.js 18+ |
-| 数据存储 | EdgeOne Pages Blob（对象存储） | SQLite（单文件） |
-| 静态资源 | 边缘节点分发 | Node 服务托管 `dist/` |
-| 数据持久化 | 平台托管 | Docker Volume 挂载 |
-| 并发安全 | 模块级写锁（单实例） | SQLite 事务（ACID） |
-| 多实例水平扩展 | 支持 | 不支持（SQLite 单机） |
-| 管理员账号 | 环境变量单密码 | SQLite admin 表（超管引导创建，为多账号体系预留） |
-| 系统配置 | 环境变量 / 构建期注入 | config.json 配置文件（后台动态修改，运行时生效） |
-| Token 签名密钥 | 环境变量 `ADMIN_TOKEN_SECRET` | 系统首次启动自动生成 32 字节随机值，存入 config.json |
-
-> Docker 版与 EdgeOne 版功能完全一致，仅运行时与存储层不同，API 行为对前端透明。
-
-### 前置条件
-
 1. 已安装 Docker（20.10+）与 Docker Compose（可选）
 2. 服务器开放对外端口（默认 8788）
 
-> Docker 版**零配置启动**：无需任何环境变量，token 密钥、项目名称等配置全部由系统自动生成或通过后台管理界面设置。
+> 本项目**零配置启动**：无需任何环境变量，token 密钥、项目名称等配置全部由系统自动生成或通过后台管理界面设置。
 
 ### 首次部署：超管账号引导创建
 
-Docker 版取消了 `ADMIN_PASSWORD` 环境变量，改为**首次访问时引导创建超管账号**，为后期多账号体系预留。流程：
+系统取消了固定密码，改为**首次访问时引导创建超管账号**，为后期多账号体系预留。流程：
 
 1. 启动容器后访问 `http://<服务器IP>:8788`
 2. 系统检测到 admin 表为空，自动跳转到引导页
@@ -233,23 +151,20 @@ docker compose logs -f pai
 | 变量名 | 必填 | 说明 |
 |--------|------|------|
 | `PORT` | 否 | 服务监听端口，默认 8788 |
-| `DATA_DIR` | 否 | SQLite 数据目录，默认 `/app/data`，对应容器内路径 |
+| `DATA_DIR` | 否 | 数据目录，默认 `/app/data`，对应容器内路径 |
 
-> ⚠️ Docker 版**无需任何业务配置环境变量**：
-> - 超管密码通过首次访问引导页设置（不再使用 `ADMIN_PASSWORD`）
-> - Token 签名密钥由系统首次启动自动生成并持久化（不再使用 `ADMIN_TOKEN_SECRET`）
-> - 项目名称等系统配置在后台「系统设置」页面动态修改（不再使用 `VITE_APP_NAME`）
+> ⚠️ 本项目**无需任何业务配置环境变量**：
+> - 超管密码通过首次访问引导页设置
+> - Token 签名密钥由系统首次启动自动生成 32 字节随机值并持久化到 config.json
+> - 项目名称等系统配置在后台「系统设置」页面动态修改
 >
 > 数据库文件位于容器内 `/app/data/pai.db`，系统配置文件位于 `/app/data/config.json`（含 token 签名密钥等敏感信息）。请务必通过 Volume 挂载 `/app/data` 目录持久化，否则容器重建会丢失数据且需要重新初始化。
 
 ### 本地构建镜像
 
-若需修改代码后自行构建：
-
 ```bash
-git clone https://github.com/mxlitey/pai.git
-cd pai
-git checkout docker
+git clone https://github.com/mxlitey/pai-docker.git
+cd pai-docker
 docker build -t pai:latest .
 docker run -d -p 8788:8788 -v pai-data:/app/data pai:latest
 ```
@@ -263,11 +178,11 @@ docker run -d -p 8788:8788 -v pai-data:/app/data pai:latest
 5. 首页搜索框输入学员姓名，验证排课查询
 6. 反向代理（可选）：使用 Nginx / Caddy 转发至 `127.0.0.1:8788` 并配置 HTTPS
 
-### 数据备份与迁移
+### 数据备份与恢复
 
 - **备份**：复制整个 `/app/data` 目录（含 `pai.db` 业务数据与 `config.json` 系统配置），缺一不可——丢失 `config.json` 会导致 tokenSecret 重置，所有已签发 token 失效
-- **重置超管密码**：停止容器，删除 `/app/data/pai.db` 中的 admin 表记录后重启，会重新进入引导流程（**会清除所有管理员，业务数据与系统配置不受影响**）
-- **从 EdgeOne 迁移**：参考根目录迁移脚本，将 Blob 中的 JSON 数据一次性导入 SQLite
+- **恢复**：将备份的 `/app/data` 目录挂载回容器重启即可
+- **重置超管密码**：停止容器，删除 `/app/data/pai.db` 中的 admin 表记录后重启，会重新进入引导流程（**仅清除管理员账号，业务数据与系统配置不受影响**）
 
 ### 后续规划（已预留扩展点）
 
@@ -280,6 +195,8 @@ docker run -d -p 8788:8788 -v pai-data:/app/data pai:latest
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|------|------|
+| GET | `/api/config` | 否 | 公开读取系统配置（appName 等前端首屏需要的配置） |
+| PUT | `/api/config` | 是 | 修改系统配置（appName 等） |
 | GET | `/api/announcement` | 否 | 公开读取公告内容（`{content, updatedAt}`） |
 | POST | `/api/announcement` | 是 | 保存公告（最大 5000 字，空内容等价清空） |
 | GET | `/api/students` | 否 | 学员列表；带 `?q=` 时按精确+模糊搜索 |
@@ -294,12 +211,14 @@ docker run -d -p 8788:8788 -v pai-data:/app/data pai:latest
 | DELETE | `/api/student-delete` | 是 | 删除学员及其所有排课 |
 | POST | `/api/schedule-add` | 是 | 新增单条排课（校验学员存在） |
 | POST | `/api/schedule-add-batch` | 是 | 批量新增排课（日期×学员笛卡尔积） |
-| PUT | `/api/schedule-update` | 是 | 修改排课（含跨月/跨学员迁移） |
+| PUT | `/api/schedule-update` | 是 | 修改排课 |
 | DELETE | `/api/schedule-delete` | 是 | 删除单条排课 |
 | GET | `/api/attendance?date=` | 是 | 获取指定日期所有排课（含出勤状态） |
 | POST | `/api/attendance` | 是 | 批量设置点名，自动扣减/回退学员剩余课时 |
 | POST | `/api/auth` | 否 | 登录，返回 token |
 | GET | `/api/auth` | 是 | 校验 token 有效性 |
+| GET | `/api/auth/bootstrap` | 否 | 查询引导状态（前端决定是否展示引导页） |
+| POST | `/api/auth/bootstrap` | 否 | 引导创建超管账号（仅在系统未初始化时可用） |
 
 ***
 
@@ -309,7 +228,7 @@ docker run -d -p 8788:8788 -v pai-data:/app/data pai:latest
 
 ### Student（学员）
 
-存储位置：`students/index.json`，内容为 `Student[]`。
+存储位置：SQLite `students` 表。
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -321,7 +240,7 @@ docker run -d -p 8788:8788 -v pai-data:/app/data pai:latest
 
 ### Course（课程）
 
-存储位置：`courses/index.json`，内容为 `Course[]`。
+存储位置：SQLite `courses` 表。
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -335,7 +254,7 @@ docker run -d -p 8788:8788 -v pai-data:/app/data pai:latest
 
 ### Schedule（排课记录）
 
-存储位置：`schedules/{studentId}/{yyyy-MM}.json`，按学员 ID + 月份分文件存储，内容为 `Schedule[]`。
+存储位置：SQLite `schedules` 表，按 `student_id + date` 建复合索引。
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -359,14 +278,9 @@ docker run -d -p 8788:8788 -v pai-data:/app/data pai:latest
 - `undefined`（未点名）：不扣减
 - 仅当新旧 `attended` 值不同时才扣减/回退，避免重复操作
 
-**按月分文件存储设计**：
-- 路径 `schedules/{studentId}/{yyyy-MM}.json`，单次读写仅涉及单月文件
-- 跨月查询按需读取对应月份文件，性能可控
-- 修改排课日期或学员时，自动从旧文件移除并写入新文件，空文件自动清理（跨月/跨学员迁移）
-
 ### Announcement（公告）
 
-存储位置：`config/announcement.json`，单文件存储。
+存储位置：SQLite `announcement` 表（单行，id=1）。
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -377,7 +291,7 @@ docker run -d -p 8788:8788 -v pai-data:/app/data pai:latest
 
 ### 关键校验规则
 
-- 存储路径 id（studentId/courseId/scheduleId）：`/^[A-Za-z0-9_-]{1,64}$/`，防路径遍历
+- 存储 id（studentId/courseId/scheduleId）：`/^[A-Za-z0-9_-]{1,64}$/`，防 SQL 注入与路径遍历
 - 日期：`/^\d{4}-\d{2}-\d{2}$/`；时间：`/^\d{2}:\d{2}$/`（HH:mm）
 - 学员 id、排课 id 全局唯一，重复写入被拒绝
 - 排课 `studentId` 必须在学员表中存在（跨表关联校验）
@@ -391,16 +305,18 @@ docker run -d -p 8788:8788 -v pai-data:/app/data pai:latest
 ## 📁 项目结构
 
 ```
-pai/
-├── node-functions/                  # 后端 Edge Functions
+pai-docker/
+├── node-functions/                  # 后端 API
 │   ├── _lib/
-│   │   ├── auth.js                  # HMAC-SHA256 鉴权、token 签发校验
+│   │   ├── auth.js                  # HMAC-SHA256 鉴权、token 签发校验、PBKDF2 密码哈希
+│   │   ├── config-file.js           # config.json 读写（appName、tokenSecret，内存缓存）
 │   │   ├── id.js                    # 排课 id 生成器
-│   │   └── store.js                 # Blob 存储封装、写锁、数据操作
+│   │   └── store.js                 # SQLite 存储层、数据操作
 │   └── api/                         # 各业务接口
 │       ├── announcement.js          # 公告读取(公开)/保存(鉴权)
 │       ├── attendance.js            # 点名管理
-│       ├── auth.js                  # 登录/校验
+│       ├── auth.js                  # 登录/校验/引导创建超管
+│       ├── config.js                # 系统配置读取(公开)/修改(鉴权)
 │       ├── courses.js               # 课程列表
 │       ├── course-add.js            # 新增课程
 │       ├── course-update.js         # 更新课程
@@ -413,7 +329,7 @@ pai/
 │       ├── schedules-search.js      # 跨学员搜索
 │       ├── schedule-add.js          # 新增单条排课
 │       ├── schedule-add-batch.js    # 批量新增排课
-│       ├── schedule-update.js       # 修改排课(含迁移)
+│       ├── schedule-update.js       # 修改排课
 │       └── schedule-delete.js       # 删除排课
 ├── src/                             # 前端源码
 │   ├── api/
@@ -423,6 +339,8 @@ pai/
 │   │   ├── Admin/                   # 后台管理组件
 │   │   │   ├── AdminPanel.tsx       # 后台主框架
 │   │   │   ├── AdminLogin.tsx       # 登录页
+│   │   │   ├── Bootstrap.tsx        # 超管引导创建页
+│   │   │   ├── SystemSettingsAdmin.tsx # 系统设置(修改项目名称)
 │   │   │   ├── StudentAdmin.tsx     # 学员管理
 │   │   │   ├── CourseAdmin.tsx      # 课程管理
 │   │   │   ├── ScheduleAdmin.tsx    # 排课管理
@@ -445,9 +363,12 @@ pai/
 │   │   └── SearchBar.tsx            # 学员搜索框
 │   ├── types/index.ts               # TypeScript 类型定义
 │   ├── utils/                       # 工具函数
-│   ├── config.ts                    # 环境变量集中导出
+│   ├── config.ts                    # 前端配置集中导出
 │   ├── App.tsx                      # 应用根组件
 │   └── main.tsx                     # React 入口
+├── Dockerfile                       # 多阶段构建（builder 编译前端 + runtime 运行）
+├── docker-compose.yml               # Compose 编排
+├── server.js                        # Node HTTP 服务器（路由 + 静态托管）
 ├── index.html
 ├── package.json
 ├── tailwind.config.js
