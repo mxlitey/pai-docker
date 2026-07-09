@@ -219,3 +219,28 @@ export interface ReportQuery {
   endDate?: string
   groupBy?: 'day' | 'month' | 'course' | 'teacher'
 }
+
+// ========== 数据备份 ==========
+export interface BackupInfo {
+  filename: string
+  path: string
+  size: number
+  createdAt: string
+}
+
+// 系统配置（含续费预警阈值、备份保留天数等）
+export interface SystemConfigFull {
+  appName: string
+  renewalThreshold: number
+  backupKeepDays: number
+  moduleEnabled: Record<string, boolean>
+}
+
+// 批量报名条目
+export interface BatchEnrollmentItem {
+  studentId: string
+  purchasedHours: number
+  giftHours?: number
+  unitPrice?: number
+  paidAmount?: number
+}

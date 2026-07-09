@@ -1,17 +1,18 @@
 // 系统配置 API
 // GET  /api/config   公开接口，返回 appName 等前端需要的配置（首屏加载用）
 // PUT  /api/config    需鉴权，修改 appName 等配置（后台系统设置页调用）
-import { getAppName, setAppName } from '../_lib/config-file.js'
+import { getAllConfig, getAppName, setAppName, setRenewalThreshold, setBackupKeepDays } from '../_lib/config-file.js'
 import { requireAuth } from '../_lib/auth.js'
 import { json } from '../_lib/store.js'
 
 // 公开读取配置：前端首屏加载时调用，无需鉴权
 function handleGet() {
-  const appName = getAppName()
+  // appName 为高频首屏字段，其余配置项一并返回供后台使用
+  const cfg = getAllConfig()
   return json({
     code: 0,
     message: 'ok',
-    data: { appName },
+    data: cfg,
   })
 }
 
@@ -29,15 +30,21 @@ async function handlePut(context) {
     } catch {
       // 忽略解析失败
     }
-    const { appName } = body
+    const { appName, renewalThreshold, backupKeepDays } = body
 
-    if (appName === undefined) {
+    if (appName === undefined && renewalThreshold === undefined && backupKeepDays === undefined) {
       return json({ code: 1, message: '未提供需要更新的配置项', data: null }, 400)
     }
 
     const updated = {}
     if (typeof appName === 'string') {
       updated.appName = setAppName(appName)
+    }
+    if (renewalThreshold !== undefined) {
+      updated.renewalThreshold = setRenewalThreshold(renewalThreshold)
+    }
+    if (backupKeepDays !== undefined) {
+      updated.backupKeepDays = setBackupKeepDays(backupKeepDays)
     }
 
     return json({

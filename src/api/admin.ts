@@ -3,11 +3,18 @@
 import type {
   Schedule, Student, Course, Enrollment, Transfer,
   AdminUser, AdminRole, CurrentAdmin, AuditLog, ReportQuery,
+  BackupInfo, SystemConfigFull, BatchEnrollmentItem,
 } from '@/types'
 
 const API_BASE = '/api'
 const TOKEN_KEY = 'admin_token'
 const CURRENT_ADMIN_KEY = 'current_admin'
+
+// 统一构造鉴权请求头（带 token）
+function authHeaders(): Record<string, string> {
+  const token = getToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
 
 interface ApiResult<T> {
   code: number
@@ -597,4 +604,84 @@ export async function getReport(
   if (query.endDate) qs.set('endDate', query.endDate)
   if (query.groupBy) qs.set('groupBy', query.groupBy)
   return request(`${API_BASE}/reports?${qs.toString()}`, { method: 'GET' })
+}
+
+// ========== 系统配置（扩展） ==========
+
+// 读取完整系统配置（appName + 预警阈值 + 备份保留天数 + 模块开关）
+export async function getSystemConfig(): Promise<ApiResult<SystemConfigFull>> {
+  return request<SystemConfigFull>(`${API_BASE}/config`)
+}
+
+// 更新系统配置（appName / renewalThreshold / backupKeepDays 任意子集）
+export async function updateSystemConfig(
+  patch: Partial<Pick<SystemConfigFull, 'appName' | 'renewalThreshold' | 'backupKeepDays'>>,
+): Promise<ApiResult<Partial<SystemConfigFull>>> {
+  const resp = await fetch(`${API_BASE}/config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(patch),
+    signal: AbortSignal.timeout(10000),
+  })
+  return resp.json()
+}
+
+// ========== 数据备份与恢复 ==========
+
+export async function listBackups(): Promise<ApiResult<{ backups: BackupInfo[]; keepDays: number }>> {
+  return request<{ backups: BackupInfo[]; keepDays: number }>(`${API_BASE}/backups`)
+}
+
+export async function createBackup(): Promise<ApiResult<BackupInfo>> {
+  const resp = await fetch(`${API_BASE}/backups`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    signal: AbortSignal.timeout(30000),
+  })
+  return resp.json()
+}
+
+export async function deleteBackup(filename: string): Promise<ApiResult<{ ok: boolean }>> {
+  const resp = await fetch(`${API_BASE}/backups?filename=${encodeURIComponent(filename)}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    signal: AbortSignal.timeout(10000),
+  })
+  return resp.json()
+}
+
+export async function restoreBackup(filename: string): Promise<ApiResult<{ ok: boolean; preSnapshot: string }>> {
+  const resp = await fetch(`${API_BASE}/backups/restore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ filename }),
+    signal: AbortSignal.timeout(30000),
+  })
+  return resp.json()
+}
+
+// ========== 课时过期处理 ==========
+
+export async function expireOverdue(): Promise<ApiResult<{ affected: number }>> {
+  const resp = await fetch(`${API_BASE}/expire`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    signal: AbortSignal.timeout(15000),
+  })
+  return resp.json()
+}
+
+// ========== 批量报名 ==========
+
+export async function batchEnroll(
+  courseId: string,
+  items: BatchEnrollmentItem[],
+): Promise<ApiResult<{ count: number; results: { studentId: string; enrollmentId: string; ok: boolean }[] }>> {
+  const resp = await fetch(`${API_BASE}/enrollment-batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ courseId, items }),
+    signal: AbortSignal.timeout(15000),
+  })
+  return resp.json()
 }

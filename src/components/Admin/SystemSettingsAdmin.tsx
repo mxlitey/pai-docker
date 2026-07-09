@@ -1,9 +1,26 @@
-// 系统设置二级页面：修改项目名称等系统配置
-import { useState, useEffect } from 'react'
+// 系统设置二级页面：修改项目名称、续费预警阈值、数据备份与恢复等系统配置
+import { useCallback, useEffect, useState } from 'react'
+import type { BackupInfo } from '@/types'
 import { getConfig } from '@/api'
-import { updateConfig } from '@/api/admin'
+import {
+  getSystemConfig,
+  updateSystemConfig,
+  listBackups,
+  createBackup,
+  deleteBackup,
+  restoreBackup,
+  expireOverdue,
+} from '@/api/admin'
 import { setAppName as setAppNameConfig } from '@/config'
-import { Button, LoadingBlock, SubPageHeader, inputClass } from '@/components/ui'
+import {
+  Button,
+  EmptyState,
+  LoadingBlock,
+  SubPageHeader,
+  confirmDialog,
+  inputClass,
+  toast,
+} from '@/components/ui'
 
 interface SystemSettingsAdminProps {
   // 配置变更后通知父级刷新（如项目名称变更需更新页头）
@@ -14,6 +31,15 @@ interface SystemSettingsAdminProps {
   showToast: (type: 'success' | 'error' | 'info', message: string) => void
 }
 
+// 文件大小格式化：B / KB / MB
+function formatSize(size: number): string {
+  return size < 1024
+    ? size + 'B'
+    : size < 1048576
+      ? (size / 1024).toFixed(1) + 'KB'
+      : (size / 1048576).toFixed(1) + 'MB'
+}
+
 export function SystemSettingsAdmin({
   onConfigChanged,
   onBack,
@@ -21,31 +47,72 @@ export function SystemSettingsAdmin({
   setBusy,
   showToast,
 }: SystemSettingsAdminProps) {
+  // 项目名称
   const [appName, setAppName] = useState('')
   const [originalAppName, setOriginalAppName] = useState('')
+  // 续费预警阈值
+  const [renewalThreshold, setRenewalThreshold] = useState(0)
+  const [originalThreshold, setOriginalThreshold] = useState(0)
+  // 自动备份保留天数
+  const [backupKeepDays, setBackupKeepDays] = useState(7)
+  const [originalKeepDays, setOriginalKeepDays] = useState(7)
   const [loading, setLoading] = useState(true)
 
-  // 进入页面时加载当前配置
-  useEffect(() => {
-    let active = true
-    getConfig()
-      .then((cfg) => {
-        if (!active) return
-        setAppName(cfg.appName)
-        setOriginalAppName(cfg.appName)
-      })
-      .catch(() => {
-        if (active) showToast('error', '加载配置失败')
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => {
-      active = false
+  // 备份列表
+  const [backups, setBackups] = useState<BackupInfo[]>([])
+  const [backupsLoading, setBackupsLoading] = useState(true)
+  const [backupCreating, setBackupCreating] = useState(false)
+  const [savingKeepDays, setSavingKeepDays] = useState(false)
+  const [restoring, setRestoring] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  // 课时过期处理
+  const [expiring, setExpiring] = useState(false)
+
+  // 加载备份列表
+  const loadBackups = useCallback(async () => {
+    setBackupsLoading(true)
+    try {
+      const result = await listBackups()
+      if (result.code === 0) setBackups(result.data.backups)
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBackupsLoading(false)
     }
   }, [])
 
-  const dirty = appName !== originalAppName
+  // 进入页面时加载当前配置（appName + 续费阈值 + 备份保留天数）与备份列表
+  useEffect(() => {
+    let active = true
+    Promise.allSettled([getConfig(), getSystemConfig()]).then(([appR, fullR]) => {
+      if (!active) return
+      if (appR.status === 'fulfilled') {
+        setAppName(appR.value.appName)
+        setOriginalAppName(appR.value.appName)
+      } else {
+        showToast('error', '加载配置失败')
+      }
+      if (fullR.status === 'fulfilled' && fullR.value.code === 0) {
+        const cfg = fullR.value.data
+        setRenewalThreshold(cfg.renewalThreshold)
+        setOriginalThreshold(cfg.renewalThreshold)
+        setBackupKeepDays(cfg.backupKeepDays)
+        setOriginalKeepDays(cfg.backupKeepDays)
+      } else if (fullR.status === 'rejected') {
+        toast.error((fullR.reason as Error)?.message || '加载配置失败')
+      }
+    }).finally(() => {
+      if (active) setLoading(false)
+    })
+    loadBackups()
+    return () => {
+      active = false
+    }
+  }, [loadBackups, showToast])
+
+  // 顶部保存：包含项目名称 + 续费预警阈值
+  const dirty = appName !== originalAppName || renewalThreshold !== originalThreshold
+  const keepDaysDirty = backupKeepDays !== originalKeepDays
 
   const handleSave = async () => {
     const trimmed = appName.trim()
@@ -57,14 +124,23 @@ export function SystemSettingsAdmin({
       showToast('error', '项目名称不能超过 50 个字符')
       return
     }
+    const threshold = Number(renewalThreshold)
+    if (!Number.isFinite(threshold) || threshold < 0) {
+      showToast('error', '续费预警阈值需为不小于 0 的数值')
+      return
+    }
     setBusy(true)
     try {
-      const result = await updateConfig({ appName: trimmed })
+      const result = await updateSystemConfig({
+        appName: trimmed,
+        renewalThreshold: threshold,
+      })
       if (result.code === 0) {
         setOriginalAppName(trimmed)
+        setOriginalThreshold(threshold)
         setAppNameConfig(trimmed)
         onConfigChanged?.(trimmed)
-        showToast('success', '项目名称已更新')
+        showToast('success', '设置已更新')
       } else {
         showToast('error', result.message || '保存失败')
       }
@@ -77,6 +153,117 @@ export function SystemSettingsAdmin({
 
   const handleReset = () => {
     setAppName(originalAppName)
+    setRenewalThreshold(originalThreshold)
+  }
+
+  // 手动处理过期课时
+  const handleExpire = async () => {
+    setExpiring(true)
+    try {
+      const result = await expireOverdue()
+      if (result.code === 0) {
+        toast.success(`已处理 ${result.data.affected} 条过期记录`)
+      } else {
+        toast.error(result.message || '处理失败')
+      }
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setExpiring(false)
+    }
+  }
+
+  // 单独保存自动备份保留天数
+  const handleSaveKeepDays = async () => {
+    const n = Number(backupKeepDays)
+    if (!Number.isFinite(n) || n < 1) {
+      toast.error('保留天数需为不小于 1 的数值')
+      return
+    }
+    setSavingKeepDays(true)
+    try {
+      const result = await updateSystemConfig({ backupKeepDays: n })
+      if (result.code === 0) {
+        setOriginalKeepDays(n)
+        setBackupKeepDays(n)
+        toast.success('备份保留天数已更新')
+      } else {
+        toast.error(result.message || '保存失败')
+      }
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setSavingKeepDays(false)
+    }
+  }
+
+  // 立即创建备份
+  const handleCreateBackup = async () => {
+    setBackupCreating(true)
+    try {
+      const result = await createBackup()
+      if (result.code === 0) {
+        toast.success('备份已创建')
+        await loadBackups()
+      } else {
+        toast.error(result.message || '备份失败')
+      }
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBackupCreating(false)
+    }
+  }
+
+  // 恢复备份（恢复前自动创建当前数据快照）
+  const handleRestore = async (filename: string) => {
+    const ok = await confirmDialog({
+      title: '恢复备份',
+      message: `确认从「${filename}」恢复数据？恢复前会自动创建当前数据的快照，现有数据将被覆盖。`,
+      danger: true,
+      requireText: filename,
+      confirmText: '确认恢复',
+    })
+    if (!ok) return
+    setRestoring(filename)
+    try {
+      const result = await restoreBackup(filename)
+      if (result.code === 0) {
+        toast.success('已恢复，建议刷新页面')
+        await loadBackups()
+      } else {
+        toast.error(result.message || '恢复失败')
+      }
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setRestoring(null)
+    }
+  }
+
+  // 删除备份
+  const handleDelete = async (filename: string) => {
+    const ok = await confirmDialog({
+      title: '删除备份',
+      message: `确认删除备份文件「${filename}」？此操作不可恢复。`,
+      danger: true,
+      confirmText: '确认删除',
+    })
+    if (!ok) return
+    setDeleting(filename)
+    try {
+      const result = await deleteBackup(filename)
+      if (result.code === 0) {
+        toast.success('已删除备份')
+        await loadBackups()
+      } else {
+        toast.error(result.message || '删除失败')
+      }
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setDeleting(null)
+    }
   }
 
   return (
@@ -124,6 +311,143 @@ export function SystemSettingsAdmin({
                   </span>
                   {dirty && (
                     <span className="text-xs text-amber-600">未保存的修改</span>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {/* 续费预警与有效期 */}
+            <section className="card p-5">
+              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2 mb-1">
+                <span className="w-1 h-4 bg-brand-500 rounded"></span>
+                续费预警与有效期
+              </h2>
+              <p className="text-xs text-slate-500 mb-4 ml-3">
+                设置学员课时不足时的预警阈值，并可手动处理已过期的课时记录。修改阈值后点击顶部「保存」生效。
+              </p>
+              <div className="ml-3 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">续费预警阈值</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={renewalThreshold}
+                    onChange={(e) =>
+                      setRenewalThreshold(e.target.value === '' ? 0 : Number(e.target.value))
+                    }
+                    className={inputClass}
+                  />
+                  <p className="text-xs text-slate-400 mt-1.5">剩余课时 ≤ 此值时在学员列表标红提醒</p>
+                </div>
+                <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
+                  <Button variant="outline" loading={expiring} onClick={handleExpire}>
+                    立即处理过期课时
+                  </Button>
+                  <span className="text-xs text-slate-400">手动触发已过期课时的结算处理</span>
+                </div>
+              </div>
+            </section>
+
+            {/* 数据备份与恢复 */}
+            <section className="card p-5">
+              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2 mb-1">
+                <span className="w-1 h-4 bg-brand-500 rounded"></span>
+                数据备份与恢复
+              </h2>
+              <p className="text-xs text-slate-500 mb-4 ml-3">
+                手动创建数据快照、恢复历史备份或调整自动备份保留策略。
+              </p>
+              <div className="ml-3 space-y-4">
+                <div className="flex flex-wrap items-end gap-4">
+                  <div>
+                    <Button variant="primary" loading={backupCreating} onClick={handleCreateBackup}>
+                      立即备份
+                    </Button>
+                  </div>
+                  <div className="flex-1 min-w-[220px]">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      自动备份保留天数
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        value={backupKeepDays}
+                        onChange={(e) =>
+                          setBackupKeepDays(e.target.value === '' ? 1 : Number(e.target.value))
+                        }
+                        className={inputClass}
+                      />
+                      <Button
+                        variant="outline"
+                        loading={savingKeepDays}
+                        disabled={!keepDaysDirty}
+                        onClick={handleSaveKeepDays}
+                      >
+                        保存
+                      </Button>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1.5">
+                      每日凌晨自动备份，超过此天数的备份自动清理
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100">
+                  <h3 className="text-sm font-medium text-slate-700 mb-3">备份列表</h3>
+                  {backupsLoading ? (
+                    <LoadingBlock />
+                  ) : backups.length === 0 ? (
+                    <EmptyState
+                      title="暂无备份"
+                      description="点击「立即备份」创建第一份数据快照"
+                    />
+                  ) : (
+                    <div className="overflow-x-auto -mx-1">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
+                            <th className="py-2 px-1 font-medium">文件名</th>
+                            <th className="py-2 px-1 font-medium whitespace-nowrap">大小</th>
+                            <th className="py-2 px-1 font-medium whitespace-nowrap">创建时间</th>
+                            <th className="py-2 px-1 font-medium text-right">操作</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {backups.map((b) => (
+                            <tr key={b.filename} className="border-b border-slate-50">
+                              <td className="py-2 px-1 font-mono text-xs text-slate-700 break-all max-w-[220px]">
+                                {b.filename}
+                              </td>
+                              <td className="py-2 px-1 text-slate-600 whitespace-nowrap">
+                                {formatSize(b.size)}
+                              </td>
+                              <td className="py-2 px-1 text-slate-600 whitespace-nowrap">
+                                {new Date(b.createdAt).toLocaleString()}
+                              </td>
+                              <td className="py-2 px-1 text-right">
+                                <div className="inline-flex gap-2">
+                                  <Button
+                                    variant="outline"
+                                    loading={restoring === b.filename}
+                                    onClick={() => handleRestore(b.filename)}
+                                  >
+                                    恢复
+                                  </Button>
+                                  <Button
+                                    variant="danger"
+                                    loading={deleting === b.filename}
+                                    onClick={() => handleDelete(b.filename)}
+                                  >
+                                    删除
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
               </div>

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Course, Enrollment, EnrollmentStatus, Student } from '@/types'
+import type { BatchEnrollmentItem, Course, Enrollment, EnrollmentStatus, Student } from '@/types'
 import { cn } from '@/utils/cn'
 import { getCourseDotClass } from '@/utils/courseColors'
 import {
   addEnrollment,
+  batchEnroll,
   deleteEnrollment,
   listEnrollments,
   updateEnrollment,
@@ -12,12 +13,14 @@ import {
   Button,
   confirmDialog,
   EmptyState,
+  Field,
   inputClass,
   LoadingBlock,
   Modal,
   ModalFooter,
   Pagination,
   SubPageHeader,
+  toast,
 } from '@/components/ui'
 
 interface EnrollmentAdminProps {
@@ -64,6 +67,80 @@ function isAuthError(e: Error): boolean {
   return msg.includes('未登录') || msg.includes('登录已过期') || msg.includes('401')
 }
 
+// 当天日期字符串 yyyy-MM-dd（用于判定过期）
+function todayDateStr(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+// 报名记录的有效展示状态：后端 expire 任务会把 status 置为 'expired'；
+// 此外若 expiredAt 早于今天，前端也按已过期展示（即使 status 尚未被扫描更新）
+function effectiveStatus(e: Enrollment): EnrollmentStatus | 'expired' {
+  // 后端运行期可能写入 'expired'（类型枚举未包含，此处按字符串比较）
+  if ((e.status as string) === 'expired') return 'expired'
+  if (e.expiredAt && e.expiredAt < todayDateStr()) return 'expired'
+  return e.status
+}
+
+// 状态 -> 中文标签（CSV 导出用）
+function statusLabel(status: EnrollmentStatus | 'expired'): string {
+  switch (status) {
+    case 'active':
+      return '进行中'
+    case 'settled':
+      return '已结转'
+    case 'finished':
+      return '已结课'
+    case 'expired':
+      return '已过期'
+  }
+}
+
+// CSV 导出：报名列表（UTF-8 BOM）
+function exportEnrollmentsCsv(
+  enrollments: Enrollment[],
+  studentMap: Map<string, Student>,
+  courseMap: Map<string, Course>,
+) {
+  const headers = [
+    '报名ID', '学员ID', '学员姓名', '课程ID', '课程名', '状态',
+    '购课课时', '赠课课时', '剩余付费课时', '剩余赠课课时', '单价', '实付',
+    '有效期', '报名时间',
+  ]
+  const rows = enrollments.map((e) => {
+    const student = studentMap.get(e.studentId)
+    const course = courseMap.get(e.courseId)
+    return [
+      e.id,
+      e.studentId,
+      student?.name || '',
+      e.courseId,
+      course?.name || '',
+      statusLabel(effectiveStatus(e)),
+      String(e.purchasedHours ?? 0),
+      String(e.giftHours ?? 0),
+      String(e.remainingPaidHours ?? 0),
+      String(e.remainingGiftHours ?? 0),
+      String(e.unitPrice ?? 0),
+      String(e.paidAmount ?? 0),
+      e.expiredAt || '',
+      e.enrolledAt || '',
+    ]
+  })
+  const csv = [headers, ...rows]
+    .map((r) => r.map((c) => {
+      const v = String(c ?? '')
+      return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+    }).join(','))
+    .join('\n')
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `报名记录_${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export function EnrollmentAdmin({
   students,
   courses,
@@ -79,6 +156,8 @@ export function EnrollmentAdmin({
   const [page, setPage] = useState(1)
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Enrollment | null>(null)
+  // 批量报名弹窗
+  const [batchOpen, setBatchOpen] = useState(false)
   // 本地操作忙碌（删除进行中），与父级 busy 共同禁用按钮
   const [localBusy, setLocalBusy] = useState(false)
 
@@ -171,10 +250,22 @@ export function EnrollmentAdmin({
     }
   }
 
+  // 导出当前列表为 CSV（按报名时间升序，与列表一致）
+  const handleExportCsv = () => {
+    if (sorted.length === 0) return
+    exportEnrollmentsCsv(sorted, studentMap, courseMap)
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* 顶部栏 */}
       <SubPageHeader title="报名管理" onBack={onBack} count={sorted.length} countLabel="条">
+        <Button variant="outline" onClick={handleExportCsv} disabled={sorted.length === 0}>
+          导出 CSV
+        </Button>
+        <Button variant="ghost" onClick={() => setBatchOpen(true)} disabled={busy}>
+          批量报名
+        </Button>
         <Button variant="primary" onClick={() => setAdding(true)} disabled={actionDisabled}>
           + 新增报名
         </Button>
@@ -281,7 +372,7 @@ export function EnrollmentAdmin({
                           </div>
                         </td>
                         <td className="py-2.5 px-2">
-                          <StatusBadge status={e.status} />
+                          <StatusBadge status={effectiveStatus(e)} />
                         </td>
                         <td className="py-2.5 px-2 text-right text-slate-700 whitespace-nowrap font-medium">
                           {e.purchasedHours}
@@ -369,12 +460,29 @@ export function EnrollmentAdmin({
           onAuthError={onAuthError}
         />
       )}
+
+      {/* 批量报名弹窗 */}
+      {batchOpen && (
+        <BatchEnrollModal
+          courses={courses}
+          students={students}
+          onClose={() => setBatchOpen(false)}
+          onSuccess={loadEnrollments}
+        />
+      )}
     </div>
   )
 }
 
 // 状态标签
-function StatusBadge({ status }: { status: EnrollmentStatus }) {
+function StatusBadge({ status }: { status: EnrollmentStatus | 'expired' }) {
+  if (status === 'expired') {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-rose-50 text-rose-700 border border-rose-200">
+        已过期
+      </span>
+    )
+  }
   if (status === 'active') {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-green-50 text-green-700 border border-green-200">
@@ -432,6 +540,8 @@ interface EnrollmentForm {
   unitPrice: string
   paidAmount: string
   status: EnrollmentStatus
+  // 有效期 yyyy-MM-dd；空串表示无有效期（永不过期）
+  expiredAt: string
   note: string
 }
 
@@ -457,6 +567,7 @@ function EnrollmentEditModal({
         unitPrice: String(enrollment.unitPrice ?? 0),
         paidAmount: String(enrollment.paidAmount ?? 0),
         status: enrollment.status,
+        expiredAt: enrollment.expiredAt ? enrollment.expiredAt.slice(0, 10) : '',
         note: enrollment.note || '',
       }
     }
@@ -468,6 +579,7 @@ function EnrollmentEditModal({
       unitPrice: '',
       paidAmount: '',
       status: 'active',
+      expiredAt: '',
       note: '',
     }
   })
@@ -606,7 +718,7 @@ function EnrollmentEditModal({
 
       let ok = false
       if (isEdit && enrollment) {
-        // 编辑：传入 { id, purchasedHours, giftHours, unitPrice, paidAmount, status, note }
+        // 编辑：传入 { id, purchasedHours, giftHours, unitPrice, paidAmount, status, expiredAt, note }
         // 课时为「绝对值」语义，后端按差值调整剩余
         const r = await updateEnrollment({
           id: enrollment.id,
@@ -615,6 +727,7 @@ function EnrollmentEditModal({
           unitPrice: upNum,
           paidAmount: paidNum,
           status: form.status,
+          expiredAt: form.expiredAt,
           note: form.note.trim(),
         })
         ok = applyResult(r, '报名已更新')
@@ -629,6 +742,7 @@ function EnrollmentEditModal({
           purchasedHours: phNum,
           giftHours: ghNum,
           unitPrice: upNum,
+          expiredAt: form.expiredAt,
           note: form.note.trim(),
         }
         const defaultPaid = round2(phNum * upNum)
@@ -859,6 +973,16 @@ function EnrollmentEditModal({
           </div>
         </div>
 
+        {/* 有效期 */}
+        <Field label="有效期" hint="到期后该报名自动失效；留空表示无有效期">
+          <input
+            type="date"
+            value={form.expiredAt}
+            onChange={(e) => setField('expiredAt', e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+
         {/* 备注 */}
         <div className="flex items-start gap-4">
           <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">备注</span>
@@ -869,6 +993,244 @@ function EnrollmentEditModal({
             className={inputClass}
             placeholder="可选，如：续费、赠课原因等"
           />
+        </div>
+
+        {/* 错误提示 */}
+        {error && (
+          <div className="bg-rose-50 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
+            {error}
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+// ===== 批量报名弹窗 =====
+interface BatchEnrollModalProps {
+  courses: Course[]
+  students: Student[]
+  onClose: () => void
+  onSuccess: () => void // 成功后刷新列表
+}
+
+function BatchEnrollModal({ courses, students, onClose, onSuccess }: BatchEnrollModalProps) {
+  const [courseId, setCourseId] = useState('')
+  const [purchasedHours, setPurchasedHours] = useState('')
+  const [giftHours, setGiftHours] = useState('0')
+  const [unitPrice, setUnitPrice] = useState('0')
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const [keyword, setKeyword] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  // 按姓名/年级/手机号过滤学员
+  const filteredStudents = useMemo(() => {
+    const kw = keyword.trim().toLowerCase()
+    if (!kw) return students
+    return students.filter((s) =>
+      s.name.toLowerCase().includes(kw) ||
+      (s.grade || '').toLowerCase().includes(kw) ||
+      (s.phone || '').includes(keyword.trim()),
+    )
+  }, [students, keyword])
+
+  // 实付合计预览 = 购课课时 × 单价 × 选中人数
+  const phNum = Number(purchasedHours) || 0
+  const upNum = Number(unitPrice) || 0
+  const paidPreview = round2(phNum * upNum * selected.size)
+
+  const toggleStudent = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    setError('')
+  }
+
+  const handleSave = async () => {
+    setError('')
+
+    if (!courseId) {
+      setError('请选择课程')
+      return
+    }
+    const ph = Number(purchasedHours)
+    if (!Number.isFinite(ph) || ph < 0 || !Number.isInteger(ph)) {
+      setError('购课课时需为非负整数')
+      return
+    }
+    const gh = giftHours.trim() === '' ? 0 : Number(giftHours)
+    if (!Number.isFinite(gh) || gh < 0 || !Number.isInteger(gh)) {
+      setError('赠课课时需为非负整数')
+      return
+    }
+    const up = unitPrice.trim() === '' ? 0 : Number(unitPrice)
+    if (!Number.isFinite(up) || up < 0) {
+      setError('单价需为非负数')
+      return
+    }
+    if (selected.size === 0) {
+      setError('请至少选择一名学员')
+      return
+    }
+
+    const items: BatchEnrollmentItem[] = Array.from(selected).map((studentId) => ({
+      studentId,
+      purchasedHours: ph,
+      giftHours: gh,
+      unitPrice: up,
+      paidAmount: round2(ph * up),
+    }))
+
+    setSaving(true)
+    try {
+      const r = await batchEnroll(courseId, items)
+      if (r.code === 0) {
+        toast.success(`已批量新增 ${items.length} 条报名`)
+        onSuccess()
+        onClose()
+      } else {
+        toast.error(r.message || '批量报名失败')
+      }
+    } catch (e) {
+      const err = e as Error
+      toast.error(err.message || '批量报名失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="批量报名"
+      onClose={onClose}
+      size="lg"
+      footer={
+        <ModalFooter
+          onCancel={onClose}
+          onConfirm={handleSave}
+          loading={saving}
+          confirmText="批量报名"
+          confirmDisabled={false}
+        />
+      }
+    >
+      <div className="space-y-4">
+        <div className="text-xs text-slate-400">
+          <span className="text-rose-500">*</span> 为必填项。所填参数将统一应用到全部选中学员。
+        </div>
+
+        {/* 课程 */}
+        <Field label="课程" required>
+          <select
+            value={courseId}
+            onChange={(e) => setCourseId(e.target.value)}
+            className={cn(inputClass, 'bg-white')}
+            autoFocus
+          >
+            <option value="">请选择课程</option>
+            {courses.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {typeof c.unitPrice === 'number' && c.unitPrice > 0
+                  ? `（¥${c.unitPrice}/课时）`
+                  : ''}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        {/* 购课课时 */}
+        <Field label="购课课时" required hint="统一应用到全部选中学员">
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={purchasedHours}
+            onChange={(e) => setPurchasedHours(e.target.value)}
+            className={inputClass}
+            placeholder="如：40"
+          />
+        </Field>
+
+        {/* 赠课课时 */}
+        <Field label="赠课课时" hint="默认 0">
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={giftHours}
+            onChange={(e) => setGiftHours(e.target.value)}
+            className={inputClass}
+            placeholder="默认 0"
+          />
+        </Field>
+
+        {/* 单价 */}
+        <Field label="单价" hint="每课时单价，默认 0">
+          <div className="flex items-center gap-2">
+            <span className="text-slate-400 text-sm">¥</span>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={unitPrice}
+              onChange={(e) => setUnitPrice(e.target.value)}
+              className={cn(inputClass, 'flex-1')}
+              placeholder="每课时单价，如 200"
+            />
+          </div>
+        </Field>
+
+        {/* 实付合计（只读预览） */}
+        <Field label="实付合计" hint="= 购课课时 × 单价 × 选中人数">
+          <div className="pt-2 text-sm text-slate-700 font-medium">
+            {formatMoney(paidPreview)}
+          </div>
+        </Field>
+
+        {/* 学员搜索 */}
+        <Field label="学员" required hint={`已选 ${selected.size} / ${students.length} 名`}>
+          <input
+            type="text"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            className={inputClass}
+            placeholder="按姓名 / 年级 / 手机号搜索"
+          />
+        </Field>
+
+        {/* 学员多选列表 */}
+        <div className="border border-slate-200 rounded-md max-h-60 overflow-y-auto">
+          {filteredStudents.length === 0 ? (
+            <div className="px-3 py-4 text-sm text-slate-400 text-center">无匹配学员</div>
+          ) : (
+            filteredStudents.map((s) => {
+              const checked = selected.has(s.id)
+              return (
+                <label
+                  key={s.id}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-50 border-b border-slate-100 last:border-0',
+                    checked && 'bg-brand-50/50',
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleStudent(s.id)}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-slate-700 font-medium">{s.name}</span>
+                  {s.grade && <span className="text-xs text-slate-400">{s.grade}</span>}
+                  {s.phone && <span className="text-xs text-slate-400">{s.phone}</span>}
+                </label>
+              )
+            })
+          )}
         </div>
 
         {/* 错误提示 */}

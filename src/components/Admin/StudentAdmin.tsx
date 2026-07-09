@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Student, EnrollmentSummary, StudentStatus } from '@/types'
 import {
   Button,
@@ -10,6 +10,7 @@ import {
   SubPageHeader,
   inputClass,
 } from '@/components/ui'
+import { getSystemConfig } from '@/api/admin'
 
 interface StudentAdminProps {
   students: Student[]
@@ -24,10 +25,44 @@ interface StudentAdminProps {
 
 const PAGE_SIZE = 10
 
+// CSV 导出：学员列表（含报名汇总）
+function exportStudentsCsv(students: Student[], summaries: Record<string, EnrollmentSummary>) {
+  const headers = ['学员ID', '姓名', '年级', '手机', '家长姓名', '性别', '生日', '状态', '标签', '来源', '报名课程数', '剩余课时', '创建时间']
+  const rows = students.map((s) => {
+    const sum = summaries[s.id]
+    const remaining = sum ? sum.remainingHours : 0
+    const count = sum ? sum.count : 0
+    return [s.id, s.name, s.grade, s.phone, s.parentName, s.gender, s.birthday, s.status, s.tags, s.source, String(count), String(remaining), s.createdAt]
+  })
+  const csv = [headers, ...rows]
+    .map((r) => r.map((c) => {
+      const v = String(c ?? '')
+      return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+    }).join(','))
+    .join('\n')
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `学员列表_${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export function StudentAdmin({ students, summaries, busy, onBack, onDelete, onAdd, onUpdate }: StudentAdminProps) {
   const [page, setPage] = useState(1)
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Student | null>(null)
+  // 续费预警阈值：从系统配置加载，剩余课时 ≤ 阈值标红
+  const [renewalThreshold, setRenewalThreshold] = useState(4)
+
+  useEffect(() => {
+    getSystemConfig().then((result) => {
+      if (result.code === 0 && typeof result.data?.renewalThreshold === 'number') {
+        setRenewalThreshold(result.data.renewalThreshold)
+      }
+    }).catch(() => { /* 静默使用默认值 */ })
+  }, [])
 
   const totalPages = Math.max(1, Math.ceil(students.length / PAGE_SIZE))
   // 当前页越界时回到最后一页（如删除后）
@@ -41,6 +76,9 @@ export function StudentAdmin({ students, summaries, busy, onBack, onDelete, onAd
     <div className="min-h-screen bg-slate-50">
       {/* 顶部栏 */}
       <SubPageHeader title="学员管理" onBack={onBack} count={students.length} countLabel="名">
+        <Button variant="outline" onClick={() => exportStudentsCsv(students, summaries)} disabled={students.length === 0}>
+          导出 CSV
+        </Button>
         <Button variant="primary" onClick={() => setAdding(true)} disabled={busy}>
           + 新增学员
         </Button>
@@ -108,13 +146,17 @@ export function StudentAdmin({ students, summaries, busy, onBack, onDelete, onAd
                           }
                           const remaining = sum.remainingHours
                           const total = sum.purchasedHours + sum.giftHours
+                          // 续费预警：剩余 ≤ 阈值（且 > 0）标橙，=0 标红
+                          const isWarning = remaining > 0 && remaining <= renewalThreshold
                           return (
                             <span>
                               <span
                                 className={
                                   remaining === 0
                                     ? 'text-rose-600 font-medium'
-                                    : 'text-slate-700 font-medium'
+                                    : isWarning
+                                      ? 'text-amber-600 font-medium'
+                                      : 'text-slate-700 font-medium'
                                 }
                               >
                                 {remaining}
@@ -122,6 +164,9 @@ export function StudentAdmin({ students, summaries, busy, onBack, onDelete, onAd
                               <span className="text-slate-400"> / {total}</span>
                               {remaining === 0 && (
                                 <span className="ml-1 text-xs text-rose-500">已用完</span>
+                              )}
+                              {isWarning && (
+                                <span className="ml-1 text-xs text-amber-500" title={`剩余 ≤ ${renewalThreshold}，建议续费`}>需续费</span>
                               )}
                               {sum.remainingGiftHours > 0 && (
                                 <span className="ml-1 text-xs text-amber-600">

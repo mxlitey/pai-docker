@@ -66,6 +66,8 @@ export default async function onRequestPost(context) {
       unitPrice,
       totalAmount: Number(enrollment.totalAmount ?? (purchased * unitPrice)),
       paidAmount: Number(enrollment.paidAmount ?? (purchased * unitPrice)),
+      // 有效期：空串表示无有效期（永不过期）；格式 yyyy-MM-dd
+      expiredAt: enrollment.expiredAt ? String(enrollment.expiredAt).slice(0, 10) : '',
       enrolledAt: enrollment.enrolledAt || new Date().toISOString(),
       note: enrollment.note ? String(enrollment.note).slice(0, 500) : '',
     }

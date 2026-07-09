@@ -8,8 +8,11 @@ import { readFile, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, extname, normalize } from 'node:path'
-import { getDb, countAdmins } from './node-functions/_lib/store.js'
-import { loadConfig, getConfigPath } from './node-functions/_lib/config-file.js'
+import {
+  getDb, countAdmins, createBackup, purgeOldBackups,
+  expireOverdueEnrollments,
+} from './node-functions/_lib/store.js'
+import { loadConfig, getConfigPath, getBackupKeepDays } from './node-functions/_lib/config-file.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = __dirname
@@ -254,6 +257,46 @@ async function main() {
     console.log(`[启动] 排课系统 Docker 版已启动：http://0.0.0.0:${PORT}`)
     console.log(`[启动] 静态资源目录：${STATIC_DIR}`)
   })
+
+  // 6. 定时任务：每日自动备份 + 清理过期备份 + 课时过期处理
+  //    每日凌晨 3:00 执行一次（setInterval 简易调度，进程重启后从启动时间算起）
+  const DAY_MS = 86400000
+  // 启动后立即执行一次过期处理，确保状态及时
+  try { expireOverdueEnrollments() } catch (e) { console.error('[定时] 过期处理失败:', e?.message) }
+  // 计算到下一个凌晨 3:00 的间隔
+  const now = new Date()
+  const next3am = new Date(now)
+  next3am.setHours(3, 0, 0, 0)
+  if (next3am <= now) next3am.setTime(next3am.getTime() + DAY_MS)
+  const firstDelay = next3am.getTime() - now.getTime()
+  setTimeout(() => {
+    // 每日执行
+    runDailyMaintenance()
+    setInterval(runDailyMaintenance, DAY_MS)
+  }, firstDelay)
+  console.log(`[启动] 定时任务已注册：每日 03:00 自动备份 + 过期处理（首次于 ${next3am.toLocaleString()} 执行）`)
+}
+
+// 每日维护：备份 → 清理旧备份 → 过期处理
+function runDailyMaintenance() {
+  try {
+    const result = createBackup()
+    console.log(`[定时] 自动备份完成：${result.filename} (${result.size} bytes)`)
+  } catch (e) {
+    console.error('[定时] 自动备份失败:', e?.message || String(e))
+  }
+  try {
+    const purged = purgeOldBackups(getBackupKeepDays())
+    if (purged.deleted > 0) console.log(`[定时] 清理过期备份 ${purged.deleted} 份`)
+  } catch (e) {
+    console.error('[定时] 清理旧备份失败:', e?.message || String(e))
+  }
+  try {
+    const r = expireOverdueEnrollments()
+    if (r.affected > 0) console.log(`[定时] 课时过期处理：${r.affected} 条报名置为 expired`)
+  } catch (e) {
+    console.error('[定时] 课时过期处理失败:', e?.message || String(e))
+  }
 }
 
 main().catch((e) => {

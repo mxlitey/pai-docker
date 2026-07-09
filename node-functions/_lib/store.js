@@ -33,6 +33,10 @@ mkdirSync(DATA_DIR, { recursive: true })
 
 const DB_PATH = join(DATA_DIR, 'pai.db')
 
+// 暴露数据目录与库路径（供备份/恢复模块使用）
+export const STORE_DATA_DIR = DATA_DIR
+export const STORE_DB_PATH = DB_PATH
+
 // 单例连接
 let dbInstance = null
 export function getDb() {
@@ -1611,6 +1615,184 @@ export async function getReportEnrollmentStats({ startDate, endDate, groupBy } =
     return acc
   }, { count: 0, amount: 0 })
   return { rows, summary }
+}
+
+// ========== 数据备份与恢复 ==========
+import {
+  copyFileSync, existsSync, mkdirSync as mkdirSyncFs,
+  readFileSync, readdirSync, statSync, unlinkSync, writeFileSync,
+} from 'node:fs'
+
+// 备份目录
+const BACKUP_DIR = join(DATA_DIR, 'backups')
+
+function ensureBackupDir() {
+  mkdirSyncFs(BACKUP_DIR, { recursive: true })
+}
+
+// 创建一份备份（VACUUM INTO 生成独立可用的 db 副本）
+// 返回 { ok, filename, path, size, createdAt }
+export function createBackup() {
+  ensureBackupDir()
+  const now = new Date()
+  const ts = now.toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const filename = `backup-${ts}.db`
+  const path = join(BACKUP_DIR, filename)
+  const db = getDb()
+  // VACUUM INTO 在事务内生成干净副本，不锁住主库的读
+  db.pragma('wal_checkpoint(FULL)')
+  db.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`)
+  const size = statSync(path).size
+  return { ok: true, filename, path, size, createdAt: now.toISOString() }
+}
+
+// 列出所有备份（按时间倒序）
+export function listBackups() {
+  ensureBackupDir()
+  const files = readdirSync(BACKUP_DIR).filter((f) => f.endsWith('.db'))
+  const list = files.map((f) => {
+    const p = join(BACKUP_DIR, f)
+    const st = statSync(p)
+    return { filename: f, path: p, size: st.size, createdAt: st.mtime.toISOString() }
+  }).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return list
+}
+
+// 删除指定备份
+export function deleteBackup(filename) {
+  if (typeof filename !== 'string' || !/^backup-[\dT-]+\.db$/.test(filename)) {
+    throw new Error('非法的备份文件名')
+  }
+  const path = join(BACKUP_DIR, filename)
+  if (!existsSync(path)) throw new Error('备份文件不存在')
+  unlinkSync(path)
+  return { ok: true }
+}
+
+// 清理过期备份：删除早于 keepDays 天的备份
+export function purgeOldBackups(keepDays) {
+  ensureBackupDir()
+  const days = Math.max(1, Math.floor(Number(keepDays) || 30))
+  const cutoff = Date.now() - days * 86400000
+  const files = readdirSync(BACKUP_DIR).filter((f) => f.endsWith('.db'))
+  let deleted = 0
+  for (const f of files) {
+    const p = join(BACKUP_DIR, f)
+    try {
+      const st = statSync(p)
+      if (st.mtimeMs < cutoff) {
+        unlinkSync(p)
+        deleted++
+      }
+    } catch {
+      // 忽略单个文件错误
+    }
+  }
+  return { deleted }
+}
+
+// 从指定备份文件恢复：覆盖当前主库
+// 恢复前自动创建一份「恢复前快照」防止误操作
+export function restoreBackup(filename) {
+  if (typeof filename !== 'string' || !/^backup-[\dT-]+\.db$/.test(filename)) {
+    throw new Error('非法的备份文件名')
+  }
+  const src = join(BACKUP_DIR, filename)
+  if (!existsSync(src)) throw new Error('备份文件不存在')
+  // 恢复前快照
+  const preSnapshot = createBackup()
+  // 关闭当前连接，覆盖文件
+  if (dbInstance) {
+    try { dbInstance.close() } catch { /* 忽略 */ }
+    dbInstance = null
+  }
+  // WAL 模式下需同时清理 -wal/-shm
+  for (const suffix of ['', '-wal', '-shm']) {
+    try { unlinkSync(DB_PATH + suffix) } catch { /* 忽略 */ }
+  }
+  copyFileSync(src, DB_PATH)
+  // 重新打开并校验
+  const db = getDb()
+  const valid = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='students'").get()
+  if (!valid) throw new Error('备份文件无效：缺少 students 表')
+  return { ok: true, preSnapshot: preSnapshot.filename }
+}
+
+// ========== 课时有效期处理 ==========
+// 扫描已过期且仍 active 的报名记录，置为 expired 状态
+// 返回 { affected }
+export function expireOverdueEnrollments() {
+  const db = getDb()
+  const today = new Date().toISOString().slice(0, 10)
+  const info = db.prepare(
+    `UPDATE enrollments
+       SET status='expired'
+     WHERE status='active'
+       AND expired_at <> ''
+       AND expired_at < ?`,
+  ).run(today)
+  return { affected: info.changes || 0 }
+}
+
+// ========== 批量报名 ==========
+// 批量为多个学员报名同一课程
+// items: [{ studentId, purchasedHours, giftHours, unitPrice, paidAmount }]
+export async function batchAddEnrollments(courseId, items, operatorId) {
+  if (!courseId) throw new Error('缺少 courseId')
+  if (!Array.isArray(items) || items.length === 0) throw new Error('报名条目不能为空')
+  const db = getDb()
+  const results = []
+  const enroll = db.transaction(() => {
+    for (const it of items) {
+      const id = genEnrollmentId()
+      const ph = Math.max(0, Math.floor(Number(it.purchasedHours) || 0))
+      const gh = Math.max(0, Math.floor(Number(it.giftHours) || 0))
+      const up = Math.max(0, Number(it.unitPrice) || 0)
+      const paid = Math.max(0, Number(it.paidAmount) || 0)
+      const total = ph * up
+      db.prepare(`INSERT INTO enrollments
+        (id, student_id, course_id, status, purchased_hours, gift_hours,
+         remaining_paid_hours, remaining_gift_hours, unit_price, total_amount,
+         paid_amount, discount_amount, payment_status, operator_id, enrolled_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`)
+        .run(id, it.studentId, courseId, 'active', ph, gh, ph, gh, up, total, paid, 0, 'paid', operatorId || '')
+      results.push({ studentId: it.studentId, enrollmentId: id, ok: true })
+    }
+  })
+  enroll()
+  return { results, count: results.length }
+}
+
+// ========== 通用数据导出（CSV 用） ==========
+// 导出学员列表（含报名汇总）
+export function exportStudentsWithSummary() {
+  const db = getDb()
+  const rows = db.prepare(`
+    SELECT s.id, s.name, s.grade, s.phone, s.parent_name, s.gender,
+           s.birthday, s.status, s.tags, s.source, s.created_at,
+           (SELECT COUNT(*) FROM enrollments e WHERE e.student_id=s.id) AS enrollment_count,
+           (SELECT COALESCE(SUM(e.remaining_paid_hours + e.remaining_gift_hours),0)
+              FROM enrollments e WHERE e.student_id=s.id AND e.status='active') AS remaining_hours
+    FROM students s
+    ORDER BY s.created_at DESC
+  `).all()
+  return rows
+}
+
+// 导出报名记录
+export function exportEnrollments() {
+  const db = getDb()
+  const rows = db.prepare(`
+    SELECT e.id, e.student_id, s.name AS student_name, e.course_id, c.name AS course_name,
+           e.status, e.purchased_hours, e.gift_hours, e.remaining_paid_hours,
+           e.remaining_gift_hours, e.unit_price, e.total_amount, e.paid_amount,
+           e.payment_status, e.expired_at, e.enrolled_at
+    FROM enrollments e
+    LEFT JOIN students s ON s.id=e.student_id
+    LEFT JOIN courses c ON c.id=e.course_id
+    ORDER BY e.enrolled_at DESC
+  `).all()
+  return rows
 }
 
 // ========== JSON 响应工具 ==========

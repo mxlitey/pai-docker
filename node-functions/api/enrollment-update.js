@@ -63,6 +63,8 @@ export default async function onRequestPut(context) {
       ...(enrollment.unitPrice !== undefined ? { unitPrice: Number(enrollment.unitPrice) } : {}),
       ...(enrollment.totalAmount !== undefined ? { totalAmount: Number(enrollment.totalAmount) } : {}),
       ...(enrollment.paidAmount !== undefined ? { paidAmount: Number(enrollment.paidAmount) } : {}),
+      // 有效期：透传给 store（空串表示清除有效期）；store 用 ?? 兜底保留旧值
+      ...(enrollment.expiredAt !== undefined ? { expiredAt: String(enrollment.expiredAt).slice(0, 10) } : {}),
       ...(enrollment.status ? { status: enrollment.status } : {}),
       ...(enrollment.note !== undefined ? { note: String(enrollment.note).slice(0, 500) } : {}),
     }

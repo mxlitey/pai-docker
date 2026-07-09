@@ -1,8 +1,11 @@
 // 配置文件管理 —— 高频读取的系统配置走文件，不占 DB
 //
 // 存储内容：
-//   appName      - 项目名称（后台可动态修改）
-//   tokenSecret  - token 签名密钥（首次启动自动生成 32 字节随机值）
+//   appName         - 项目名称（后台可动态修改）
+//   tokenSecret     - token 签名密钥（首次启动自动生成 32 字节随机值）
+//   renewalThreshold- 续费预警阈值（剩余课时 ≤ 此值标红，默认 4）
+//   backupKeepDays  - 自动备份保留天数（默认 30）
+//   moduleEnabled   - 模块启用开关（id -> boolean，留作模块化扩展）
 //
 // 文件位置：DATA_DIR/config.json（与 SQLite 同目录，跟随数据卷持久化）
 // 读取策略：启动时一次性加载到内存，读操作零 IO；写操作同步回写文件
@@ -31,11 +34,19 @@ function generateTokenSecret() {
   return hex
 }
 
+// 默认续费预警阈值：剩余课时 ≤ 此值标红提醒
+const DEFAULT_RENEWAL_THRESHOLD = 4
+// 默认自动备份保留天数
+const DEFAULT_BACKUP_KEEP_DAYS = 30
+
 // 构造默认配置（首次启动用）
 function createDefaultConfig() {
   return {
     appName: DEFAULT_APP_NAME,
     tokenSecret: generateTokenSecret(),
+    renewalThreshold: DEFAULT_RENEWAL_THRESHOLD,
+    backupKeepDays: DEFAULT_BACKUP_KEEP_DAYS,
+    moduleEnabled: {},
   }
 }
 
@@ -54,9 +65,18 @@ export function loadConfig() {
         tokenSecret: typeof parsed.tokenSecret === 'string' && parsed.tokenSecret
           ? parsed.tokenSecret
           : generateTokenSecret(),
+        renewalThreshold: Number.isFinite(parsed.renewalThreshold)
+          ? Math.max(0, Math.floor(parsed.renewalThreshold))
+          : DEFAULT_RENEWAL_THRESHOLD,
+        backupKeepDays: Number.isFinite(parsed.backupKeepDays)
+          ? Math.max(1, Math.floor(parsed.backupKeepDays))
+          : DEFAULT_BACKUP_KEEP_DAYS,
+        moduleEnabled: parsed.moduleEnabled && typeof parsed.moduleEnabled === 'object'
+          ? parsed.moduleEnabled
+          : {},
       }
       // 若文件缺失必要字段，回写修复后的配置
-      if (!parsed.tokenSecret || !parsed.appName) {
+      if (!parsed.tokenSecret || !parsed.appName || parsed.renewalThreshold === undefined) {
         writeFileSync(CONFIG_PATH, JSON.stringify(cachedConfig, null, 2), 'utf-8')
       }
     } else {
@@ -106,4 +126,64 @@ export function getTokenSecret() {
 // 暴露配置文件路径（供调试/运维查看）
 export function getConfigPath() {
   return CONFIG_PATH
+}
+
+// 暴露配置文件目录（供备份模块使用）
+export function getConfigDir() {
+  return CONFIG_DIR
+}
+
+// 读取完整配置对象（供 /api/config 一次性返回）
+export function getAllConfig() {
+  const cfg = loadConfig()
+  return {
+    appName: cfg.appName,
+    renewalThreshold: cfg.renewalThreshold,
+    backupKeepDays: cfg.backupKeepDays,
+    moduleEnabled: { ...cfg.moduleEnabled },
+  }
+}
+
+// 读取续费预警阈值
+export function getRenewalThreshold() {
+  const cfg = loadConfig()
+  return cfg.renewalThreshold
+}
+
+// 修改续费预警阈值
+export function setRenewalThreshold(val) {
+  const cfg = loadConfig()
+  const n = Number(val)
+  cfg.renewalThreshold = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : DEFAULT_RENEWAL_THRESHOLD
+  persist()
+  return cfg.renewalThreshold
+}
+
+// 读取备份保留天数
+export function getBackupKeepDays() {
+  const cfg = loadConfig()
+  return cfg.backupKeepDays
+}
+
+// 修改备份保留天数
+export function setBackupKeepDays(val) {
+  const cfg = loadConfig()
+  const n = Number(val)
+  cfg.backupKeepDays = Number.isFinite(n) ? Math.max(1, Math.floor(n)) : DEFAULT_BACKUP_KEEP_DAYS
+  persist()
+  return cfg.backupKeepDays
+}
+
+// 读取模块开关
+export function getModuleEnabled(moduleId) {
+  const cfg = loadConfig()
+  return cfg.moduleEnabled[moduleId] !== false
+}
+
+// 修改模块开关
+export function setModuleEnabled(moduleId, enabled) {
+  const cfg = loadConfig()
+  cfg.moduleEnabled[moduleId] = !!enabled
+  persist()
+  return cfg.moduleEnabled[moduleId]
 }
