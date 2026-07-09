@@ -1347,7 +1347,7 @@ export async function countSuperAdmins() {
 export async function createSuperAdmin(username, passwordHash) {
   const db = getDb()
   const id = genAdminId()
-  db.prepare(`INSERT INTO admins (id, username, password_hash, role) VALUES (?, ?, 'superadmin')`).run(id, username, passwordHash)
+  db.prepare(`INSERT INTO admins (id, username, password_hash, role) VALUES (?, ?, ?, 'superadmin')`).run(id, username, passwordHash)
   return { id, username, role: 'superadmin' }
 }
 
