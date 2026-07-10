@@ -351,7 +351,7 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
                         <div className="font-medium text-slate-700 flex items-center gap-1.5 flex-wrap">
                           {s.courseName}
                           {s.makeupFor && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded">
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded" title={`补课自 ${s.makeupFor}`}>
                               补课
                             </span>
                           )}
@@ -377,6 +377,11 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
                           )}
                         </div>
                         <div className="text-xs text-slate-400 font-mono">{s.id}</div>
+                        {s.makeupFor && (
+                          <div className="text-[10px] text-amber-500 font-mono mt-0.5" title="原缺勤排课ID">
+                            ← {s.makeupFor}
+                          </div>
+                        )}
                         {s.rescheduledFrom && (
                           <div className="text-[10px] text-blue-400 font-mono mt-0.5" title="原排课ID">
                             ← {s.rescheduledFrom}
