@@ -4,6 +4,8 @@
 // 2. 托管 dist/ 静态资源（Vite 构建产物）
 // 3. 启动时初始化数据库并打印引导提示
 import { createServer } from 'node:http'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { readFile, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -153,11 +155,28 @@ function toWebRequest(req) {
 }
 
 // 把 Web Response 写回 Node 原生 ServerResponse
+// 流式回写：用 pipeline 把 Web ReadableStream 转为 Node 流后直接灌入 res，
+// 避免 arrayBuffer() 全量缓冲响应体导致大响应 OOM；同时自带背压控制
 async function writeWebResponse(webResp, res) {
   res.statusCode = webResp.status
   webResp.headers.forEach((v, k) => res.setHeader(k, v))
-  const body = await webResp.arrayBuffer()
-  res.end(Buffer.from(body))
+  if (!webResp.body) {
+    res.end()
+    return
+  }
+  try {
+    // pipeline 在源流结束后会自动 end(res)，无需手动收尾
+    await pipeline(Readable.fromWeb(webResp.body), res)
+  } catch (e) {
+    // 响应体已开始写入（头部已发送）：无法再发标准 JSON 错误，只能终止连接
+    // 典型场景：客户端中途断开（ERR_STREAM_PREMATURE_CLOSE）
+    if (res.headersSent) {
+      res.destroy()
+    } else {
+      // 头部尚未刷新，交给外层 catch 发 500
+      throw e
+    }
+  }
 }
 
 // 主请求处理
