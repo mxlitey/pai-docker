@@ -301,7 +301,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <span className="text-sm text-slate-500">搜索学员：</span>
               <div className="w-full max-w-md">
-                <SearchBar onSelectStudent={setSelectedStudent} />
+                <SearchBar onSelectStudent={setSelectedStudent} students={students} />
               </div>
               {selectedStudent && (
                 <span className="text-xs text-slate-400">

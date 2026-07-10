@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react'
+import { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import type { Student } from '@/types'
 import { searchStudents } from '@/api'
@@ -6,6 +6,8 @@ import { cn } from '@/utils/cn'
 
 interface SearchBarProps {
   onSelectStudent: (student: Student) => void
+  // 可选：传入学员列表，本地过滤（避免 API 调用，适用于后台管理页已加载全部学员的场景）
+  students?: Student[]
   // 初始输入框内容（用于首页刷新后回显上次搜索的学员名）
   initialValue?: string
   // 输入内容变化回调（清空时父级可据此禁用「查看排课」按钮）
@@ -14,9 +16,8 @@ interface SearchBarProps {
   containerClassName?: string
 }
 
-export function SearchBar({ onSelectStudent, initialValue, onQueryChange, containerClassName }: SearchBarProps) {
+export function SearchBar({ onSelectStudent, students, initialValue, onQueryChange, containerClassName }: SearchBarProps) {
   const [query, setQuery] = useState(initialValue || '')
-  const [results, setResults] = useState<Student[]>([])
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -28,10 +29,21 @@ export function SearchBar({ onSelectStudent, initialValue, onQueryChange, contai
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>()
   const requestIdRef = useRef(0)
 
-  // 防抖搜索 —— 复用 @/api 的 searchStudents（与 AdminPanel.loadStudents 同一函数）
+  // 本地过滤模式：从传入的 students 列表中按姓名模糊匹配
+  const localResults = useMemo(() => {
+    if (!students) return null // 未传入 students，走 API 模式
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+    return students.filter((s) =>
+      (s.name || '').toLowerCase().includes(q) ||
+      (s.grade || '').toLowerCase().includes(q) ||
+      (s.phone || '').toLowerCase().includes(q),
+    )
+  }, [students, query])
+
+  // 防抖搜索（仅在 API 模式下使用）
   const doSearch = useCallback(async (q: string) => {
     if (!q.trim()) {
-      setResults([])
       setErrorMsg('')
       setOpen(false)
       return
@@ -39,15 +51,14 @@ export function SearchBar({ onSelectStudent, initialValue, onQueryChange, contai
     const currentRequestId = ++requestIdRef.current
     setLoading(true)
     try {
-      const students = await searchStudents(q.trim())
+      const result = await searchStudents(q.trim())
       if (requestIdRef.current !== currentRequestId) return
-      setResults(students)
       setErrorMsg('')
       setOpen(true)
       setHighlightIndex(-1)
+      void result
     } catch (e) {
       if (requestIdRef.current !== currentRequestId) return
-      setResults([])
       setErrorMsg((e as Error).message || '搜索失败')
       setOpen(true)
     } finally {
@@ -60,6 +71,18 @@ export function SearchBar({ onSelectStudent, initialValue, onQueryChange, contai
   const handleInput = (value: string) => {
     setQuery(value)
     onQueryChange?.(value)
+    // 本地模式：无需防抖搜索
+    if (students) {
+      if (value.trim()) {
+        setOpen(true)
+        setHighlightIndex(-1)
+        setErrorMsg('')
+      } else {
+        setOpen(false)
+      }
+      return
+    }
+    // API 模式：防抖搜索
     if (debounceTimer.current) clearTimeout(debounceTimer.current)
     debounceTimer.current = setTimeout(() => doSearch(value), 250)
   }
@@ -69,6 +92,9 @@ export function SearchBar({ onSelectStudent, initialValue, onQueryChange, contai
     setOpen(false)
     onSelectStudent(student)
   }
+
+  // 当前结果列表（本地模式或 API 模式）
+  const results: Student[] = localResults !== null ? localResults : []
 
   // 键盘导航
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -91,21 +117,17 @@ export function SearchBar({ onSelectStudent, initialValue, onQueryChange, contai
     }
   }
 
-  // 计算下拉框位置（基于输入框的视口坐标）
+  // 计算下拉框位置
   const updateDropdownPos = useCallback(() => {
     if (!inputWrapperRef.current) return
     const rect = inputWrapperRef.current.getBoundingClientRect()
     setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width })
   }, [])
 
-  // 下拉展开时计算位置
   useLayoutEffect(() => {
-    if (open) {
-      updateDropdownPos()
-    }
+    if (open) updateDropdownPos()
   }, [open, updateDropdownPos])
 
-  // 滚动/缩放时实时更新下拉位置（捕获阶段，监听所有祖先的滚动）
   useEffect(() => {
     if (!open) return
     const handler = () => updateDropdownPos()
@@ -117,7 +139,6 @@ export function SearchBar({ onSelectStudent, initialValue, onQueryChange, contai
     }
   }, [open, updateDropdownPos])
 
-  // 点击外部关闭
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const target = e.target as Node
@@ -132,14 +153,12 @@ export function SearchBar({ onSelectStudent, initialValue, onQueryChange, contai
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  // 卸载时清理防抖定时器
   useEffect(() => {
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current)
     }
   }, [])
 
-  // 通过 portal 渲染下拉，避免被 Modal 等父级 overflow 裁切
   const renderDropdown = () => {
     if (!open || !dropdownPos) return null
     const style: React.CSSProperties = {

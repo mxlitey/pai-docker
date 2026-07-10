@@ -210,6 +210,7 @@ export function TransferAdmin({
                   }
                 }}
                 initialValue={selectedStudent?.name || ''}
+                students={students}
                 containerClassName="max-w-none"
               />
             </div>

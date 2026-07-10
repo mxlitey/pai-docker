@@ -785,6 +785,7 @@ function EnrollmentEditModal({
                   onSelectStudent={handleStudentSelect}
                   onQueryChange={handleStudentQueryChange}
                   initialValue={selectedStudent?.name || ''}
+                  students={students}
                   containerClassName="max-w-none"
                 />
                 {selectedStudent && (
