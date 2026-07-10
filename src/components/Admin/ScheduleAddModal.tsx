@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import type { Course, Student, ClassInfo, Schedule } from '@/types'
-import { getSchedules } from '@/api'
+import type { Course, Student, ClassInfo } from '@/types'
 import { batchAddSchedules, getClassMembers } from '@/api/admin'
 import { cn } from '@/utils/cn'
 import { getCourseDotClass } from '@/utils/courseColors'
@@ -47,12 +46,6 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  // 补课模式：开启后限制单学员单日期，并选择该学员的缺勤排课进行关联
-  const [makeupMode, setMakeupMode] = useState(false)
-  const [makeupFor, setMakeupFor] = useState('')
-  const [absentSchedules, setAbsentSchedules] = useState<Schedule[]>([])
-  const [loadingAbsent, setLoadingAbsent] = useState(false)
-
   // 选中的课程对象
   const selectedCourse = useMemo(
     () => courses.find((c) => c.id === courseId) || null,
@@ -94,40 +87,6 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
     setSuccess('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId])
-
-  // 补课模式：选中学员时加载其缺勤排课（attended=false 且未取消）
-  useEffect(() => {
-    if (!makeupMode) {
-      setAbsentSchedules([])
-      setMakeupFor('')
-      return
-    }
-    // 补课模式仅允许单学员
-    if (selectedStudentIds.size !== 1) {
-      setAbsentSchedules([])
-      setMakeupFor('')
-      return
-    }
-    const studentId = Array.from(selectedStudentIds)[0]
-    let cancelled = false
-    setLoadingAbsent(true)
-    getSchedules(studentId)
-      .then((list) => {
-        if (cancelled) return
-        setAbsentSchedules(
-          list.filter((s) => s.attended === false && s.status !== 'cancelled'),
-        )
-      })
-      .catch(() => {
-        if (!cancelled) setAbsentSchedules([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingAbsent(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [makeupMode, selectedStudentIds])
 
   // 选班级时：自动带入班级关联课程 + 默认值 + 成员名单
   const handleClassChange = async (nextClassId: string) => {
@@ -248,21 +207,6 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
       setError('请至少选择一名学员')
       return
     }
-    // 补课模式校验
-    if (makeupMode) {
-      if (selectedStudentIds.size > 1) {
-        setError('补课模式仅支持单学员，请只选择一名学员')
-        return
-      }
-      if (dates.length > 1) {
-        setError('补课模式仅支持单日期，请只添加一个日期')
-        return
-      }
-      if (!makeupFor) {
-        setError('补课模式需选择一节缺勤排课进行关联')
-        return
-      }
-    }
 
     setSaving(true)
     try {
@@ -278,7 +222,6 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
         note,
         studentIds: Array.from(selectedStudentIds),
         classId: classId || undefined,
-        makeupFor: makeupMode ? makeupFor : undefined,
       })
       if (result.code === 0) {
         const msg = `已新增 ${result.data.created} 条排课` + (result.data.skipped > 0 ? `，跳过 ${result.data.skipped} 条重复` : '')
@@ -325,59 +268,6 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
           <span className="text-rose-500">*</span> 为必填项，选择课程后将为每位选中学员在所选每个日期生成一条排课
           {classes.length > 0 && '；选择班级可自动带出成员名单与默认时间'}
         </div>
-
-        {/* 补课模式开关 */}
-        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={makeupMode}
-              onChange={(e) => {
-                setMakeupMode(e.target.checked)
-                if (!e.target.checked) setMakeupFor('')
-              }}
-              className="w-4 h-4 rounded border-slate-300 text-amber-500 focus:ring-amber-400"
-            />
-            <span className="text-sm text-amber-800 font-medium">补课模式</span>
-          </label>
-          <span className="text-xs text-amber-600">
-            {makeupMode ? '开启：仅支持单学员单日期，需选择一节该学员的缺勤排课进行关联' : '开启后可为学员的缺勤排课补一节新课'}
-          </span>
-        </div>
-
-        {/* 补课关联选择器（仅补课模式 + 已选单学员时显示） */}
-        {makeupMode && selectedStudentIds.size === 1 && (
-          <div className="flex items-start gap-4">
-            <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
-              <span className="text-rose-500 mr-0.5">*</span>补课关联
-            </span>
-            <div className="flex-1">
-              {loadingAbsent ? (
-                <div className="text-xs text-slate-400 py-2">加载缺勤记录中…</div>
-              ) : absentSchedules.length === 0 ? (
-                <div className="text-xs text-slate-400 py-2">该学员暂无缺勤排课记录</div>
-              ) : (
-                <select
-                  value={makeupFor}
-                  onChange={(e) => setMakeupFor(e.target.value)}
-                  className={cn(inputClass, 'bg-white')}
-                >
-                  <option value="">请选择缺勤排课…</option>
-                  {absentSchedules.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.courseName} · {s.date}{s.startTime ? ` ${s.startTime}` : ''}（缺勤）
-                    </option>
-                  ))}
-                </select>
-              )}
-              {makeupFor && (
-                <div className="mt-1 text-xs text-amber-600">
-                  本节将标记为补课，关联缺勤记录：{absentSchedules.find((s) => s.id === makeupFor)?.courseName || ''}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* 课程选择 */}
         <div className="flex items-start gap-4">

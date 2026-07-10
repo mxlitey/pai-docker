@@ -365,6 +365,16 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
                               已取消
                             </span>
                           )}
+                          {s.attended === true && s.status !== 'cancelled' && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-green-50 text-green-700 border border-green-200 rounded">
+                              到课
+                            </span>
+                          )}
+                          {s.attended === false && s.status !== 'cancelled' && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-rose-50 text-rose-700 border border-rose-200 rounded">
+                              缺勤
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-slate-400 font-mono">{s.id}</div>
                         {s.rescheduledFrom && (
@@ -387,11 +397,20 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
                         >
                           {'编辑'}
                         </button>
-                        {s.status !== 'cancelled' && s.attended !== true && (
+                        {s.status !== 'cancelled' && s.attended === false && (
                           <button
                             onClick={() => setReschedulingSchedule(s)}
                             disabled={busy}
                             className="text-amber-600 hover:text-amber-700 text-xs font-medium mr-3 disabled:opacity-50"
+                          >
+                            {'补课'}
+                          </button>
+                        )}
+                        {s.status !== 'cancelled' && s.attended !== true && s.attended !== false && (
+                          <button
+                            onClick={() => setReschedulingSchedule(s)}
+                            disabled={busy}
+                            className="text-blue-600 hover:text-blue-700 text-xs font-medium mr-3 disabled:opacity-50"
                           >
                             {'调课'}
                           </button>

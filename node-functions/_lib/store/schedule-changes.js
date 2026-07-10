@@ -102,6 +102,53 @@ export async function rescheduleSchedule(original, { newDate, newStartTime, newE
   return tx()
 }
 
+// ========== 补课操作（事务）：保留原缺勤排课 + 生成新排课（设 makeup_for） ==========
+// 与调课的区别：原排课不取消（保留缺勤记录），不写 schedule_changes
+// original 为 getScheduleById 的返回值（由 API 层预先加载传入，须 attended===false）
+export async function makeupSchedule(original, { newDate, newStartTime, newEndTime, reason, operatorId }) {
+  const db = getDb()
+  const tx = db.transaction(() => {
+    // 生成新排课（复制原排课，替换日期/时间，标记为补课）
+    const newId = genScheduleId()
+    const newSchedule = {
+      ...original,
+      id: newId,
+      date: newDate,
+      startTime: newStartTime || original.startTime || '',
+      endTime: newEndTime || original.endTime || '',
+      status: 'scheduled',
+      attended: undefined, // 新排课未点名
+      makeupFor: original.id, // 标记补课关联
+      rescheduledFrom: '', // 补课不设调课来源
+    }
+    db.prepare(`INSERT INTO schedules
+      (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, room, makeup_for, rescheduled_from, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      newId,
+      newSchedule.studentId,
+      newSchedule.studentName,
+      newSchedule.classId || '',
+      newSchedule.courseId || '',
+      newSchedule.courseName,
+      newSchedule.teacher || '',
+      newSchedule.location || '',
+      newSchedule.date,
+      newSchedule.startTime,
+      newSchedule.endTime,
+      newSchedule.note || '',
+      newSchedule.color || '',
+      null,
+      'scheduled',
+      newSchedule.room || '',
+      newSchedule.makeupFor || '',
+      newSchedule.rescheduledFrom || '',
+      now(),
+    )
+    return { newScheduleId: newId, original }
+  })
+  return tx()
+}
+
 // ========== 查询调课历史 ==========
 // 支持按 scheduleId（原或新）或 studentId 查询
 export async function getScheduleChanges({ scheduleId, studentId, limit } = {}) {

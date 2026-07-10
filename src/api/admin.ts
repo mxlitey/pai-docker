@@ -281,6 +281,20 @@ export async function rescheduleSchedule(
   })
 }
 
+// 补课：保留原缺勤排课 + 生成新排课（设 makeup_for）
+export async function makeupSchedule(
+  scheduleId: string,
+  newDate: string,
+  newStartTime?: string,
+  newEndTime?: string,
+  reason?: string,
+): Promise<ApiResult<{ originalScheduleId: string; newScheduleId: string }>> {
+  return request(`${API_BASE}/schedule-makeup`, {
+    method: 'POST',
+    body: JSON.stringify({ scheduleId, newDate, newStartTime, newEndTime, reason }),
+  })
+}
+
 // 查询调课历史（按排课ID或学员ID）
 export async function listScheduleChanges(
   params: { scheduleId?: string; studentId?: string; limit?: number },

@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type { Schedule, Student } from '@/types'
-import { getSchedules } from '@/api'
 import { updateSchedule, deleteSchedule } from '@/api/admin'
 import { cn } from '@/utils/cn'
 import { Modal, ModalFooter, Button, confirmDialog, inputClass } from '@/components/ui'
@@ -26,7 +25,6 @@ function createForm(schedule: Schedule | null): Schedule {
       startTime: '',
       endTime: '',
       note: '',
-      makeupFor: '',
     }
   )
 }
@@ -43,9 +41,6 @@ export function ScheduleEditor({
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  // 该学员的缺勤排课（用于补课关联选择）
-  const [absentSchedules, setAbsentSchedules] = useState<Schedule[]>([])
-  const [loadingAbsent, setLoadingAbsent] = useState(false)
 
   useEffect(() => {
     setForm(createForm(schedule))
@@ -53,38 +48,6 @@ export function ScheduleEditor({
     setError('')
     setSuccess('')
   }, [schedule])
-
-  // 学员变更时加载其缺勤排课（attended=false 且未取消），供补课关联选择
-  useEffect(() => {
-    if (!form.studentId) {
-      setAbsentSchedules([])
-      return
-    }
-    let cancelled = false
-    setLoadingAbsent(true)
-    getSchedules(form.studentId)
-      .then((list) => {
-        if (cancelled) return
-        // 筛选缺勤排课：attended===false，排除已取消和当前编辑的记录
-        setAbsentSchedules(
-          list.filter(
-            (s) =>
-              s.attended === false &&
-              s.status !== 'cancelled' &&
-              s.id !== form.id,
-          ),
-        )
-      })
-      .catch(() => {
-        if (!cancelled) setAbsentSchedules([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingAbsent(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [form.studentId, form.id])
 
   if (!schedule) return null
 
@@ -294,38 +257,6 @@ export function ScheduleEditor({
             className={inputClass}
             placeholder="如：A教室201"
           />
-        </div>
-
-        {/* 补课关联：选填，关联一节该学员的缺勤排课 */}
-        <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'补课关联'}</span>
-          <div className="flex-1">
-            {loadingAbsent ? (
-              <div className="text-xs text-slate-400 py-2">加载缺勤记录中…</div>
-            ) : absentSchedules.length === 0 ? (
-              <div className="text-xs text-slate-400 py-2">
-                {form.studentId ? '该学员暂无缺勤记录' : '请先选择学员'}
-              </div>
-            ) : (
-              <select
-                value={form.makeupFor || ''}
-                onChange={(e) => handleChange('makeupFor', e.target.value)}
-                className={cn(inputClass, 'bg-white')}
-              >
-                <option value="">无（普通排课）</option>
-                {absentSchedules.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.courseName} · {s.date}{s.startTime ? ` ${s.startTime}` : ''}（缺勤）
-                  </option>
-                ))}
-              </select>
-            )}
-            {form.makeupFor && (
-              <div className="mt-1 text-xs text-amber-600">
-                本节标记为补课，关联缺勤记录：{absentSchedules.find((s) => s.id === form.makeupFor)?.courseName || form.makeupFor}
-              </div>
-            )}
-          </div>
         </div>
 
         {/* 备注 */}

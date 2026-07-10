@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { Schedule, ScheduleChange } from '@/types'
-import { rescheduleSchedule, listScheduleChanges } from '@/api/admin'
+import { rescheduleSchedule, makeupSchedule, listScheduleChanges } from '@/api/admin'
 import { Modal, ModalFooter, inputClass } from '@/components/ui'
 
 interface RescheduleModalProps {
@@ -43,6 +43,10 @@ export function RescheduleModal({ schedule, onClose, onUpdated, onToast }: Resch
 
   if (!schedule) return null
 
+  // 上下文感知：attended===false 为补课模式，其他为调课模式
+  const isMakeupMode = schedule.attended === false
+  const modeLabel = isMakeupMode ? '补课' : '调课'
+
   const handleSubmit = async () => {
     if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
       onToast('error', '请填写有效的新日期')
@@ -54,21 +58,29 @@ export function RescheduleModal({ schedule, onClose, onUpdated, onToast }: Resch
       (newStartTime || schedule.startTime || '') === (schedule.startTime || '') &&
       (newEndTime || schedule.endTime || '') === (schedule.endTime || '')
     ) {
-      onToast('error', '新日期/时间与原排课相同，无需调课')
+      onToast('error', `新日期/时间与原排课相同，无需${modeLabel}`)
       return
     }
 
     setSaving(true)
     try {
-      const result = await rescheduleSchedule(
-        schedule.id,
-        newDate,
-        newStartTime || undefined,
-        newEndTime || undefined,
-        reason || undefined,
-      )
+      const result = isMakeupMode
+        ? await makeupSchedule(
+            schedule.id,
+            newDate,
+            newStartTime || undefined,
+            newEndTime || undefined,
+            reason || undefined,
+          )
+        : await rescheduleSchedule(
+            schedule.id,
+            newDate,
+            newStartTime || undefined,
+            newEndTime || undefined,
+            reason || undefined,
+          )
       if (result.code === 0) {
-        onToast('success', `已调课：${schedule.date} → ${newDate}`)
+        onToast('success', `已${modeLabel}：${schedule.date} → ${newDate}`)
         onUpdated()
         onClose()
       } else {
@@ -83,7 +95,7 @@ export function RescheduleModal({ schedule, onClose, onUpdated, onToast }: Resch
 
   return (
     <Modal
-      title="调课"
+      title={modeLabel}
       onClose={onClose}
       size="md"
       footer={
@@ -91,14 +103,14 @@ export function RescheduleModal({ schedule, onClose, onUpdated, onToast }: Resch
           onCancel={onClose}
           onConfirm={handleSubmit}
           loading={saving}
-          confirmText="确认调课"
+          confirmText={`确认${modeLabel}`}
         />
       }
     >
       <div className="space-y-4">
         {/* 原排课信息 */}
         <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 space-y-1">
-          <div className="text-xs text-slate-400 mb-1">原排课</div>
+          <div className="text-xs text-slate-400 mb-1">原排课{isMakeupMode ? '（缺勤）' : ''}</div>
           <div className="text-sm text-slate-700 font-medium">
             {schedule.studentName} · {schedule.courseName}
           </div>
@@ -112,8 +124,8 @@ export function RescheduleModal({ schedule, onClose, onUpdated, onToast }: Resch
           )}
         </div>
 
-        {/* 调课历史 */}
-        {(loadingChanges || changes.length > 0) && (
+        {/* 调课历史（仅调课模式显示，补课不写 schedule_changes） */}
+        {!isMakeupMode && (loadingChanges || changes.length > 0) && (
           <div className="space-y-2">
             <div className="text-xs text-slate-400">调课历史（{changes.length}）</div>
             {loadingChanges ? (
@@ -149,7 +161,7 @@ export function RescheduleModal({ schedule, onClose, onUpdated, onToast }: Resch
 
         {/* 新时间表单 */}
         <div className="space-y-3 pt-2">
-          <div className="text-sm text-slate-400">调至新时间</div>
+          <div className="text-sm text-slate-400">{isMakeupMode ? '补课时间' : '调至新时间'}</div>
 
           {/* 新日期 */}
           <div className="flex items-center gap-4">
@@ -184,22 +196,24 @@ export function RescheduleModal({ schedule, onClose, onUpdated, onToast }: Resch
             </div>
           </div>
 
-          {/* 调课原因 */}
+          {/* 原因 */}
           <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-400 w-20 flex-shrink-0">调课原因</span>
+            <span className="text-sm text-slate-400 w-20 flex-shrink-0">{isMakeupMode ? '补课说明' : '调课原因'}</span>
             <input
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               className={inputClass}
-              placeholder="选填，如：教师请假、场地冲突"
+              placeholder={isMakeupMode ? '选填' : '选填，如：教师请假、场地冲突'}
             />
           </div>
         </div>
 
         {/* 说明 */}
         <div className="bg-blue-50 border border-blue-100 rounded-md px-3 py-2 text-xs text-blue-700">
-          调课后，原排课标记为「已取消」并保留记录，新排课以新时间生成。已点名的排课不允许调课（需先改缺勤回退课时）。
+          {isMakeupMode
+            ? '补课后，原缺勤排课保留记录，新排课以新时间生成并标记为「补课」。新排课点名到课时会扣减课时。'
+            : '调课后，原排课标记为「已取消」并保留记录，新排课以新时间生成。已点名的排课不允许调课（需先改缺勤回退课时）。'}
         </div>
       </div>
     </Modal>
