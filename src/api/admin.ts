@@ -5,7 +5,7 @@ import type {
   AdminUser, AdminRole, CurrentAdmin, AuditLog, ReportQuery,
   BackupInfo, SystemConfigFull, BatchEnrollmentItem,
   Feedback, TeacherPerformance, Coupon, Membership, StudentMembership,
-  Lead, LeadFollowup, PermissionModule,
+  Lead, LeadFollowup, PermissionModule, Grade,
 } from '@/types'
 
 const API_BASE = '/api'
@@ -367,6 +367,54 @@ export async function deleteCourse(
   })
 }
 
+// ========== 年级管理 ==========
+
+// 获取年级列表（按 sort_order 排序）
+export async function listGrades(): Promise<ApiResult<{ grades: Grade[] }>> {
+  return request(`${API_BASE}/grades`, { method: 'GET' })
+}
+
+// 新增年级
+export async function addGrade(
+  grade: Omit<Grade, 'id' | 'createdAt'> & { id?: string },
+): Promise<ApiResult<{ created: boolean; exists: boolean; duplicateName: boolean; grade: Grade }>> {
+  return request(`${API_BASE}/grade-add`, {
+    method: 'POST',
+    body: JSON.stringify({ grade }),
+  })
+}
+
+// 更新年级（重命名时后端级联更新学员/课程的 grade 文本字段）
+export async function updateGrade(
+  grade: Grade,
+): Promise<ApiResult<{ updated: boolean; notFound: boolean; duplicateName: boolean; renamed: boolean; grade: Grade }>> {
+  return request(`${API_BASE}/grade-update`, {
+    method: 'PUT',
+    body: JSON.stringify({ grade }),
+  })
+}
+
+// 删除年级（仍被学员/课程引用时后端拒绝，返回 inUse + 计数）
+export async function deleteGrade(
+  id: string,
+): Promise<ApiResult<{ deleted: boolean; notFound: boolean; inUse: boolean; studentCount: number; courseCount: number }>> {
+  return request(`${API_BASE}/grade-delete`, {
+    method: 'DELETE',
+    body: JSON.stringify({ id }),
+  })
+}
+
+// 批量升班：将 fromGradeName 年级的所有学员升至 toGradeName
+export async function promoteGrade(
+  fromGradeName: string,
+  toGradeName: string,
+): Promise<ApiResult<{ promoted: number; same: boolean; fromGradeName: string; toGradeName: string }>> {
+  return request(`${API_BASE}/grade-promote`, {
+    method: 'POST',
+    body: JSON.stringify({ fromGradeName, toGradeName }),
+  })
+}
+
 // 批量新增排课（按课程为多个学员在多个日期同时排课）
 export async function batchAddSchedules(body: {
   courseId: string
@@ -499,7 +547,14 @@ export async function listTransfers(params: {
 export async function addTransfer(transfer: {
   studentId: string
   fromEnrollmentId: string
-  toEnrollmentId: string
+  // 目标报名二选一：toEnrollmentId 选已有报名；newTargetEnrollment 升班时即时新建
+  toEnrollmentId?: string
+  newTargetEnrollment?: {
+    courseId: string
+    unitPrice?: number
+    expiredAt?: string
+    note?: string
+  }
   mode: 'amount' | 'hours'
   note?: string
   reason?: string
@@ -511,6 +566,8 @@ export async function addTransfer(transfer: {
   leftoverAmount: number
   toPurchasedAdd: number
   toGiftAdd: number
+  toEnrollmentId: string
+  createdTargetEnrollmentId: string | null
 }>> {
   return request(`${API_BASE}/transfer-add`, {
     method: 'POST',
@@ -917,30 +974,4 @@ export async function generateShareLink(
     signal: AbortSignal.timeout(10000),
   })
   return resp.json()
-}
-
-// ========== 智能排课冲突检测 ==========
-export interface ScheduleConflict {
-  type: 'teacher' | 'student' | 'location'
-  field: string
-  value: string
-  schedule: Schedule
-}
-export interface ConflictCheckResult {
-  date: string
-  conflicts: ScheduleConflict[]
-}
-
-export async function checkScheduleConflict(params: {
-  studentId?: string
-  teacher?: string
-  location?: string
-  dates: string[]
-  startTime: string
-  endTime: string
-}): Promise<ApiResult<{ results: ConflictCheckResult[]; total: number; free: number; conflict: number }>> {
-  return request(`${API_BASE}/schedule-check-conflict`, {
-    method: 'POST',
-    body: JSON.stringify(params),
-  })
 }

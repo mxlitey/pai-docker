@@ -17,42 +17,12 @@ import { WeekView } from '../Calendar/WeekView'
 import { DayView } from '../Calendar/DayView'
 import { ScheduleDetail } from '../ScheduleDetail'
 import type { Schedule, Feedback, ViewMode } from '@/types'
-import { cn } from '@/utils/cn'
 
 type Phase = 'loading' | 'verify' | 'verified' | 'error'
-
-interface GroupedSchedules {
-  date: string
-  items: Schedule[]
-}
-
-// 按日期分组排课
-function groupByDate(schedules: Schedule[]): GroupedSchedules[] {
-  const map = new Map<string, Schedule[]>()
-  for (const s of schedules) {
-    const arr = map.get(s.date) || []
-    arr.push(s)
-    map.set(s.date, arr)
-  }
-  return Array.from(map.entries())
-    .map(([date, items]) => ({ date, items }))
-    .sort((a, b) => a.date.localeCompare(b.date))
-}
 
 function renderStars(rating: number): string {
   const r = Math.max(0, Math.min(5, Math.round(rating)))
   return '★'.repeat(r) + '☆'.repeat(5 - r)
-}
-
-// 把 yyyy-MM-dd 格式化为易读的「M月D日 周X」
-function formatDateCN(date: string): string {
-  try {
-    const d = new Date(date + 'T00:00:00')
-    const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-    return `${d.getMonth() + 1}月${d.getDate()}日 ${weekdays[d.getDay()]}`
-  } catch {
-    return date
-  }
 }
 
 export function ParentH5({ appName }: { appName: string }) {
@@ -64,7 +34,6 @@ export function ParentH5({ appName }: { appName: string }) {
   const [phoneSuffix, setPhoneSuffix] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [data, setData] = useState<ParentAccessData | null>(null)
-  const [tab, setTab] = useState<'list' | 'calendar'>('list')
 
   // 从 URL 读取 s / t 参数
   const params = new URLSearchParams(window.location.search)
@@ -218,11 +187,6 @@ export function ParentH5({ appName }: { appName: string }) {
   }
 
   // ===== 已验证：学员信息主页 =====
-  const groups = groupByDate(data.schedules)
-  const todayStr = new Date().toISOString().slice(0, 10)
-  const upcoming = groups.filter((g) => g.date >= todayStr)
-  const past = groups.filter((g) => g.date < todayStr).reverse()
-
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
@@ -243,91 +207,45 @@ export function ParentH5({ appName }: { appName: string }) {
       </header>
 
       <main className="max-w-md mx-auto px-4 py-4 space-y-4">
-        {/* 列表/日历 切换 */}
-        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 w-full">
-          <button
-            onClick={() => setTab('list')}
-            className={cn(
-              'flex-1 px-4 py-1.5 text-sm font-medium rounded-md transition-all',
-              tab === 'list' ? 'bg-brand-500 text-white shadow-sm' : 'text-slate-600',
-            )}
-          >
-            列表
-          </button>
-          <button
-            onClick={() => setTab('calendar')}
-            className={cn(
-              'flex-1 px-4 py-1.5 text-sm font-medium rounded-md transition-all',
-              tab === 'calendar' ? 'bg-brand-500 text-white shadow-sm' : 'text-slate-600',
-            )}
-          >
-            日历
-          </button>
-        </div>
-
-        {tab === 'calendar' ? (
-          <ParentCalendar schedules={data.schedules} />
-        ) : (
-          <>
-        {/* 课时余额 */}
-        {data.enrollments.length > 0 && (
-          <section className="card p-4">
-            <h2 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
-              <svg className="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-              </svg>
-              课时余额
-            </h2>
-            <div className="space-y-2">
+        {/* 学员信息概览 */}
+        <section className="card p-4 bg-gradient-to-r from-brand-50 to-transparent">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center font-semibold text-base">
+                {data.student.name.charAt(0)}
+              </div>
+              <div>
+                <div className="font-semibold text-slate-800">{data.student.name}</div>
+                <div className="text-xs text-slate-400">
+                  {[
+                    data.student.grade,
+                    data.student.parentName,
+                  ].filter(Boolean).join(' · ') || '学员'}
+                </div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs text-slate-400">总排课</div>
+              <div className="text-lg font-semibold text-brand-600">{data.schedules.length}</div>
+            </div>
+          </div>
+          {/* 课时余额速览 */}
+          {data.enrollments.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-brand-100/60 space-y-1.5">
               {data.enrollments.map((e, i) => (
-                <div key={`${e.courseId}-${i}`} className="flex items-center justify-between text-sm py-1.5 border-b border-slate-50 last:border-0">
-                  <span className="text-slate-600">
-                    {e.courseName || `课程 ${e.courseId.slice(-6)}`}
-                  </span>
-                  <span className={`font-semibold ${e.remainingHours > 0 ? 'text-brand-600' : 'text-slate-400'}`}>
+                <div key={`${e.courseId}-${i}`} className="flex items-center justify-between text-xs">
+                  <span className="text-slate-600">{e.courseName || `课程 ${e.courseId.slice(-6)}`}</span>
+                  <span className={`font-medium ${e.remainingHours > 0 ? 'text-brand-600' : 'text-slate-400'}`}>
                     剩余 {e.remainingHours} 课时
                   </span>
                 </div>
               ))}
             </div>
-          </section>
-        )}
-
-        {/* 即将到来的排课 */}
-        <section className="card p-4">
-          <h2 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
-            <svg className="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            即将上课（{upcoming.length}）
-          </h2>
-          {upcoming.length === 0 ? (
-            <p className="text-xs text-slate-400 py-3 text-center">近期暂无排课</p>
-          ) : (
-            <div className="space-y-2">
-              {upcoming.map((g) => (
-                <ScheduleGroup key={g.date} group={g} highlight />
-              ))}
-            </div>
           )}
         </section>
 
-        {/* 历史排课 */}
-        {past.length > 0 && (
-          <section className="card p-4">
-            <h2 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
-              <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              历史排课（{past.length}）
-            </h2>
-            <div className="space-y-2">
-              {past.slice(0, 20).map((g) => (
-                <ScheduleGroup key={g.date} group={g} />
-              ))}
-            </div>
-          </section>
-        )}
+        {/* 日历视图 */}
+        <ParentCalendar schedules={data.schedules} />
 
         {/* 教师课后反馈 */}
         {data.feedback.length > 0 && (
@@ -357,35 +275,7 @@ export function ParentH5({ appName }: { appName: string }) {
         <p className="text-xs text-slate-300 text-center py-2">
           如需调整排课或信息有误，请联系老师
         </p>
-          </>
-        )}
       </main>
-    </div>
-  )
-}
-
-// 单日排课分组渲染
-function ScheduleGroup({ group, highlight = false }: { group: GroupedSchedules; highlight?: boolean }) {
-  return (
-    <div className={`rounded-lg p-3 ${highlight ? 'bg-brand-50/50 border border-brand-100' : 'bg-slate-50'}`}>
-      <div className="text-xs font-medium text-slate-500 mb-2">{formatDateCN(group.date)}</div>
-      <div className="space-y-1.5">
-        {group.items.map((s) => (
-          <div key={s.id} className="flex items-start gap-2 text-sm">
-            <span className="text-slate-400 text-xs font-mono mt-0.5 whitespace-nowrap">
-              {s.startTime || '--:--'}-{s.endTime || '--:--'}
-            </span>
-            <div className="flex-1 min-w-0">
-              <div className="text-slate-700 truncate">{s.courseName}</div>
-              {(s.teacher || s.location) && (
-                <div className="text-xs text-slate-400 truncate">
-                  {[s.teacher, s.location].filter(Boolean).join(' · ')}
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   )
 }

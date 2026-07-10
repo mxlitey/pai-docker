@@ -15,7 +15,6 @@ import {
 } from '@/components/ui'
 import { ScheduleEditor } from './ScheduleEditor'
 import { ScheduleAddModal } from './ScheduleAddModal'
-import { ScheduleAssistantModal } from './ScheduleAssistantModal'
 
 interface ScheduleAdminProps {
   students: Student[]
@@ -46,7 +45,6 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
 
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
   const [addingSchedule, setAddingSchedule] = useState(false)
-  const [assistantOpen, setAssistantOpen] = useState(false)
 
   // 按学员加载排课
   const loadSchedulesByStudent = useCallback(async (studentId: string) => {
@@ -161,20 +159,6 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
         onBack={onBack}
         count={schedules.length > 0 ? schedules.length : undefined}
       >
-        <Button
-          variant="outline"
-          onClick={() => setAssistantOpen(true)}
-          disabled={busy || students.length === 0 || courses.length === 0}
-          title={
-            students.length === 0
-              ? '请先添加学员数据'
-              : courses.length === 0
-                ? '请先在课程管理中添加课程'
-                : '智能检测多日期冲突，一键排入空闲日期'
-          }
-        >
-          ✨ 智能排课助手
-        </Button>
         <Button
           variant="primary"
           onClick={() => setAddingSchedule(true)}
@@ -396,17 +380,6 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
         />
       )}
 
-      {/* 智能排课助手 */}
-      {assistantOpen && (
-        <ScheduleAssistantModal
-          courses={courses}
-          onClose={() => setAssistantOpen(false)}
-          onCreated={() => {
-            setAssistantOpen(false)
-            refreshCurrent()
-          }}
-        />
-      )}
     </div>
   )
 }

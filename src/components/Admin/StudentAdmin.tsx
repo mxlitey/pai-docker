@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { Student, EnrollmentSummary, StudentStatus } from '@/types'
+import type { Student, EnrollmentSummary, GradeStatus, Grade, StudentStatus } from '@/types'
 import {
   Button,
   EmptyState,
@@ -10,11 +10,13 @@ import {
   Pagination,
   SubPageHeader,
   inputClass,
+  toast,
 } from '@/components/ui'
-import { getSystemConfig } from '@/api/admin'
+import { addGrade, getSystemConfig } from '@/api/admin'
 
 interface StudentAdminProps {
   students: Student[]
+  grades: Grade[]
   // 学员报名汇总：studentId -> 汇总（由父级从 enrollment 聚合后传入）
   summaries: Record<string, EnrollmentSummary>
   busy: boolean
@@ -22,6 +24,7 @@ interface StudentAdminProps {
   onDelete: (student: Student) => void
   onAdd: (student: Student) => Promise<boolean>
   onUpdate: (student: Student) => Promise<boolean>
+  onGradesChange: () => void // 快捷添加年级后刷新年级列表
 }
 
 const PAGE_SIZE = 10
@@ -50,7 +53,7 @@ function exportStudentsCsv(students: Student[], summaries: Record<string, Enroll
   URL.revokeObjectURL(url)
 }
 
-export function StudentAdmin({ students, summaries, busy, onBack, onDelete, onAdd, onUpdate }: StudentAdminProps) {
+export function StudentAdmin({ students, grades, summaries, busy, onBack, onDelete, onAdd, onUpdate, onGradesChange }: StudentAdminProps) {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
   const [adding, setAdding] = useState(false)
@@ -216,6 +219,8 @@ export function StudentAdmin({ students, summaries, busy, onBack, onDelete, onAd
       {/* 新增学员弹窗 */}
       {adding && (
         <StudentEditModal
+          grades={grades}
+          onGradesChange={onGradesChange}
           onClose={() => setAdding(false)}
           onSubmit={onAdd}
         />
@@ -225,6 +230,8 @@ export function StudentAdmin({ students, summaries, busy, onBack, onDelete, onAd
       {editing && (
         <StudentEditModal
           student={editing}
+          grades={grades}
+          onGradesChange={onGradesChange}
           onClose={() => setEditing(null)}
           onSubmit={onUpdate}
         />
@@ -236,6 +243,8 @@ export function StudentAdmin({ students, summaries, busy, onBack, onDelete, onAd
 // ===== 新增/编辑学员弹窗（共用） =====
 interface StudentEditModalProps {
   student?: Student // 有值 = 编辑模式；无值 = 新增模式
+  grades: Grade[]
+  onGradesChange: () => void
   onClose: () => void
   onSubmit: (student: Student) => Promise<boolean>
 }
@@ -255,7 +264,7 @@ interface StudentFormState {
   source: string
 }
 
-function StudentEditModal({ student, onClose, onSubmit }: StudentEditModalProps) {
+function StudentEditModal({ student, grades, onGradesChange, onClose, onSubmit }: StudentEditModalProps) {
   const { t } = useTranslation()
   const isEdit = !!student
   const [form, setForm] = useState<StudentFormState>(
@@ -290,11 +299,40 @@ function StudentEditModal({ student, onClose, onSubmit }: StudentEditModalProps)
   )
   const [saving, setSaving] = useState(false)
   const [nameError, setNameError] = useState('')
+  // 快捷添加年级：不离开当前弹窗即时新增年级并选中
+  const [quickAdding, setQuickAdding] = useState(false)
+  const [quickName, setQuickName] = useState('')
+  const [quickSaving, setQuickSaving] = useState(false)
 
   // 局部更新表单，同时清除姓名字段的错误
   const update = (patch: Partial<StudentFormState>) => {
     setForm((f) => ({ ...f, ...patch }))
     if ('name' in patch) setNameError('')
+  }
+
+  // 快捷添加年级：调 addGrade，成功后刷新父级年级列表并自动选中新年级
+  const handleQuickAddGrade = async () => {
+    const name = quickName.trim()
+    if (!name) return
+    setQuickSaving(true)
+    try {
+      const result = await addGrade({ name, sortOrder: 0, status: 'active' as GradeStatus, description: '' })
+      if (result.code === 0) {
+        toast.success(t('grade.quickAddSuccess', { name }))
+        onGradesChange()
+        update({ grade: name })
+        setQuickName('')
+        setQuickAdding(false)
+      } else if (result.code === 409) {
+        toast.error(t('grade.duplicateName'))
+      } else {
+        toast.error(result.message || '添加失败')
+      }
+    } catch (e) {
+      toast.error('添加失败：' + (e as Error).message)
+    } finally {
+      setQuickSaving(false)
+    }
   }
 
   const handleSave = async () => {
@@ -354,13 +392,63 @@ function StudentEditModal({ student, onClose, onSubmit }: StudentEditModalProps)
         </Field>
 
         <Field label={t('student.grade')} hint={t('student.gradePlaceholder')}>
-          <input
-            type="text"
-            className={inputClass}
-            value={form.grade}
-            onChange={(e) => update({ grade: e.target.value })}
-            placeholder={t('student.gradePlaceholder')}
-          />
+          {quickAdding ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                className={inputClass}
+                value={quickName}
+                onChange={(e) => setQuickName(e.target.value)}
+                placeholder={t('grade.namePlaceholder')}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); handleQuickAddGrade() }
+                  if (e.key === 'Escape') { setQuickAdding(false); setQuickName('') }
+                }}
+                maxLength={32}
+              />
+              <button
+                type="button"
+                onClick={handleQuickAddGrade}
+                disabled={quickSaving || !quickName.trim()}
+                className="btn-primary whitespace-nowrap text-xs px-3 py-2 disabled:opacity-50"
+              >
+                {quickSaving ? '...' : t('common.add')}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setQuickAdding(false); setQuickName('') }}
+                className="btn-ghost text-xs px-2 py-2"
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <select
+                className={inputClass}
+                value={form.grade}
+                onChange={(e) => update({ grade: e.target.value })}
+              >
+                <option value="">{t('grade.noGrade')}</option>
+                {grades.map((g) => (
+                  <option key={g.id} value={g.name}>{g.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setQuickAdding(true)}
+                className="btn-ghost whitespace-nowrap text-xs px-3 py-2"
+                title={t('grade.quickAdd')}
+              >
+                + {t('grade.quickAdd')}
+              </button>
+            </div>
+          )}
+          {/* 兜底：若学员年级不在年级列表中（历史数据），仍显示出来便于编辑 */}
+          {form.grade && !grades.some((g) => g.name === form.grade) && !quickAdding && (
+            <p className="text-xs text-amber-600 mt-1">当前年级「{form.grade}」不在年级列表中，可重新选择或去年级管理维护</p>
+          )}
         </Field>
 
         <Field label={t('student.phone')}>

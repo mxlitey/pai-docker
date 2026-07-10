@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { Course, BillingType, CourseStatus } from '@/types'
+import type { Course, BillingType, CourseStatus, Grade } from '@/types'
 import { cn } from '@/utils/cn'
 import { COURSE_COLOR_OPTIONS, getCourseDotClass } from '@/utils/courseColors'
 import {
@@ -16,6 +16,7 @@ import {
 
 interface CourseAdminProps {
   courses: Course[]
+  grades: Grade[]
   busy: boolean
   onBack: () => void
   onDelete: (course: Course) => void
@@ -25,7 +26,7 @@ interface CourseAdminProps {
 
 const PAGE_SIZE = 15
 
-export function CourseAdmin({ courses, busy, onBack, onDelete, onAdd, onUpdate }: CourseAdminProps) {
+export function CourseAdmin({ courses, grades, busy, onBack, onDelete, onAdd, onUpdate }: CourseAdminProps) {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
   const [adding, setAdding] = useState(false)
@@ -147,6 +148,7 @@ export function CourseAdmin({ courses, busy, onBack, onDelete, onAdd, onUpdate }
       {/* 新增弹窗 */}
       {adding && (
         <CourseEditModal
+          grades={grades}
           onClose={() => setAdding(false)}
           onSubmit={onAdd}
         />
@@ -156,6 +158,7 @@ export function CourseAdmin({ courses, busy, onBack, onDelete, onAdd, onUpdate }
       {editing && (
         <CourseEditModal
           course={editing}
+          grades={grades}
           onClose={() => setEditing(null)}
           onSubmit={onUpdate}
         />
@@ -167,6 +170,7 @@ export function CourseAdmin({ courses, busy, onBack, onDelete, onAdd, onUpdate }
 // ===== 新增/编辑课程弹窗 =====
 interface CourseEditModalProps {
   course?: Course // 有值 = 编辑模式；无值 = 新增模式
+  grades: Grade[]
   onClose: () => void
   onSubmit: (course: Course) => Promise<boolean>
 }
@@ -174,7 +178,7 @@ interface CourseEditModalProps {
 // 时间选择：原生 type="time"，值为 "HH:mm" 或空串
 // 分钟以 5 分钟为单位（step=300 秒），避免双 select 半选丢值问题
 
-function CourseEditModal({ course, onClose, onSubmit }: CourseEditModalProps) {
+function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalProps) {
   const { t } = useTranslation()
   const isEdit = !!course
   const [form, setForm] = useState<Course>(
@@ -187,6 +191,7 @@ function CourseEditModal({ course, onClose, onSubmit }: CourseEditModalProps) {
           status: course.status || 'active',
           term: course.term || '',
           category: course.category || '',
+          grade: course.grade || '',
           description: course.description || '',
         }
       : {
@@ -204,6 +209,7 @@ function CourseEditModal({ course, onClose, onSubmit }: CourseEditModalProps) {
           status: 'active',
           term: '',
           category: '',
+          grade: '',
           description: '',
         },
   )
@@ -279,6 +285,7 @@ function CourseEditModal({ course, onClose, onSubmit }: CourseEditModalProps) {
       term: (form.term || '').trim(),
       status: (form.status || 'active') as CourseStatus,
       category: (form.category || '').trim(),
+      grade: (form.grade || '').trim(),
       description: (form.description || '').trim(),
     }
     const ok = await onSubmit(finalCourse)
@@ -457,6 +464,23 @@ function CourseEditModal({ course, onClose, onSubmit }: CourseEditModalProps) {
             onChange={(e) => update({ category: e.target.value })}
             placeholder="如：数学"
           />
+        </Field>
+
+        {/* 关联年级：报名时按学员年级过滤可选课程 */}
+        <Field label={t('course.grade')} hint="报名时仅可选对应年级的课程">
+          <select
+            className={inputClass}
+            value={form.grade || ''}
+            onChange={(e) => update({ grade: e.target.value })}
+          >
+            <option value="">{t('grade.noGrade')}</option>
+            {grades.map((g) => (
+              <option key={g.id} value={g.name}>{g.name}</option>
+            ))}
+          </select>
+          {form.grade && !grades.some((g) => g.name === form.grade) && (
+            <p className="text-xs text-amber-600 mt-1">当前年级「{form.grade}」不在年级列表中，可重新选择</p>
+          )}
         </Field>
 
         {/* 描述 */}

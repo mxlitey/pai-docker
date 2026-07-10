@@ -10,9 +10,11 @@ interface SearchBarProps {
   initialValue?: string
   // 输入内容变化回调（清空时父级可据此禁用「查看排课」按钮）
   onQueryChange?: (query: string) => void
+  // 容器自定义类名（用于覆盖默认宽度等，如 "max-w-none" 表示不限宽）
+  containerClassName?: string
 }
 
-export function SearchBar({ onSelectStudent, initialValue, onQueryChange }: SearchBarProps) {
+export function SearchBar({ onSelectStudent, initialValue, onQueryChange, containerClassName }: SearchBarProps) {
   const { t } = useTranslation()
   const [query, setQuery] = useState(initialValue || '')
   const [results, setResults] = useState<Student[]>([])
@@ -103,7 +105,7 @@ export function SearchBar({ onSelectStudent, initialValue, onQueryChange }: Sear
   }, [])
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-md">
+    <div ref={containerRef} className={cn('relative w-full', containerClassName)}>
       <div className="relative">
         <svg
           className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"

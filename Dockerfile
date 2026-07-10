@@ -58,6 +58,11 @@ VOLUME /app/data
 ENV NODE_ENV=production
 ENV PORT=8788
 ENV DATA_DIR=/app/data
+# 默认时区 Asia/Shanghai（可通过 docker run -e TZ=xxx 覆盖）
+ENV TZ=Asia/Shanghai
+RUN apk add --no-cache tzdata \
+    && cp /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo "$TZ" > /etc/timezone
 
 EXPOSE 8788
 

@@ -13,6 +13,8 @@ services:
     environment:
       # 可选：自定义服务监听端口（容器内）
       PORT: "8788"
+      # 时区（默认 Asia/Shanghai，可改为其他时区如 America/Los_Angeles）
+      TZ: "Asia/Shanghai"
 
 volumes:
   pai-data:

@@ -19,6 +19,9 @@ export type CourseStatus = 'active' | 'inactive'
 // 排课状态
 export type ScheduleStatus = 'scheduled' | 'completed' | 'cancelled' | 'makeup'
 
+// 年级状态
+export type GradeStatus = 'active' | 'inactive'
+
 // 学员信息
 export interface Student {
   id: string
@@ -50,6 +53,17 @@ export interface Course {
   term?: string
   status?: CourseStatus
   category?: string
+  grade?: string
+  description?: string
+  createdAt?: string
+}
+
+// 年级信息（主数据：学员/课程通过 grade 文本字段引用年级名称）
+export interface Grade {
+  id: string
+  name: string
+  sortOrder?: number
+  status?: GradeStatus
   description?: string
   createdAt?: string
 }

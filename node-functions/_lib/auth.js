@@ -30,6 +30,7 @@ export const ROLE_PERMISSIONS = {
   admin: [
     'students:view', 'students:create', 'students:update', 'students:delete',
     'courses:view', 'courses:create', 'courses:update', 'courses:delete',
+    'grades:view', 'grades:create', 'grades:update', 'grades:delete',
     'enrollments:view', 'enrollments:create', 'enrollments:update', 'enrollments:delete',
     'transfers:view', 'transfers:create',
     'schedules:view', 'schedules:create', 'schedules:update', 'schedules:delete',
@@ -46,7 +47,7 @@ export const ROLE_PERMISSIONS = {
   ],
   teacher: [
     'schedules:view', 'attendance:view', 'attendance:update',
-    'enrollments:view', 'students:view', 'courses:view', 'reports:view',
+    'enrollments:view', 'students:view', 'courses:view', 'grades:view', 'reports:view',
     'feedback:view', 'feedback:create', 'feedback:update',
   ],
 }
@@ -65,6 +66,12 @@ export const PERMISSION_DEFINITIONS = [
     { key: 'courses:create', label: '新增' },
     { key: 'courses:update', label: '编辑' },
     { key: 'courses:delete', label: '删除' },
+  ]},
+  { module: 'grades', label: '年级管理', actions: [
+    { key: 'grades:view', label: '查看' },
+    { key: 'grades:create', label: '新增' },
+    { key: 'grades:update', label: '编辑' },
+    { key: 'grades:delete', label: '删除' },
   ]},
   { module: 'enrollments', label: '报名管理', actions: [
     { key: 'enrollments:view', label: '查看' },

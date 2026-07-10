@@ -23,7 +23,7 @@ import {
   genScheduleId, genEnrollmentId, genTransferId,
   genStudentId, genCourseId, genAdminId, genAuditId,
   genFeedbackId, genCouponId, genMembershipId, genStudentMembershipId,
-  genLeadId, genFollowupId,
+  genLeadId, genFollowupId, genGradeId,
 } from './id.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -78,9 +78,20 @@ export function getDb() {
       term               TEXT DEFAULT '',
       status             TEXT DEFAULT 'active',
       category           TEXT DEFAULT '',
+      grade              TEXT DEFAULT '',
       description        TEXT DEFAULT '',
       created_at         TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS grades (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL UNIQUE,
+      sort_order  INTEGER DEFAULT 0,
+      status      TEXT DEFAULT 'active',
+      description TEXT DEFAULT '',
+      created_at  TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_grades_sort ON grades(sort_order);
 
     CREATE TABLE IF NOT EXISTS schedules (
       id           TEXT PRIMARY KEY,
@@ -314,6 +325,7 @@ export function getDb() {
     ['status', "TEXT DEFAULT 'active'"],
     ['category', "TEXT DEFAULT ''"],
     ['description', "TEXT DEFAULT ''"],
+    ['grade', "TEXT DEFAULT ''"],
   ]) ensureColumn(db, 'courses', col, def)
   // schedules 补齐新增列
   for (const [col, def] of [
@@ -460,6 +472,7 @@ function rowToCourse(r) {
     term: r.term || '',
     status: r.status || 'active',
     category: r.category || '',
+    grade: r.grade || '',
     description: r.description || '',
     createdAt: r.created_at || '',
   }
@@ -694,14 +707,15 @@ export async function addCourse(course) {
     term: course.term || '',
     status: course.status || 'active',
     category: course.category || '',
+    grade: course.grade || '',
     description: course.description || '',
   }
   db.prepare(`INSERT INTO courses
-    (id, name, teacher, location, color, default_start_time, default_end_time, unit_price, billing_type, capacity, term, status, category, description)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    (id, name, teacher, location, color, default_start_time, default_end_time, unit_price, billing_type, capacity, term, status, category, grade, description)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     finalCourse.id, finalCourse.name, finalCourse.teacher, finalCourse.location, finalCourse.color,
     finalCourse.defaultStartTime, finalCourse.defaultEndTime, finalCourse.unitPrice, finalCourse.billingType,
-    finalCourse.capacity, finalCourse.term, finalCourse.status, finalCourse.category, finalCourse.description,
+    finalCourse.capacity, finalCourse.term, finalCourse.status, finalCourse.category, finalCourse.grade, finalCourse.description,
   )
   return { created: true, exists: false, course: finalCourse }
 }
@@ -713,7 +727,7 @@ export async function updateCourse(course) {
   if (!old) return { updated: false, notFound: true }
   const info = db.prepare(`UPDATE courses SET
     name=?, teacher=?, location=?, color=?, default_start_time=?, default_end_time=?,
-    unit_price=?, billing_type=?, capacity=?, term=?, status=?, category=?, description=?
+    unit_price=?, billing_type=?, capacity=?, term=?, status=?, category=?, grade=?, description=?
     WHERE id=?`).run(
     course.name,
     course.teacher || '',
@@ -727,6 +741,7 @@ export async function updateCourse(course) {
     course.term || '',
     course.status || 'active',
     course.category || '',
+    course.grade || '',
     course.description || '',
     course.id,
   )
@@ -747,6 +762,114 @@ export async function deleteCourseWithSchedules(courseId) {
     }
   })
   return tx()
+}
+
+// ========== 年级管理 ==========
+// 年级作为主数据：学员/课程通过 grade 文本字段（年级名称）关联，便于显示与升班批量更新。
+// 年级重命名时级联更新 students.grade / courses.grade，保持数据一致。
+function rowToGrade(r) {
+  if (!r) return null
+  return {
+    id: r.id,
+    name: r.name,
+    sortOrder: r.sort_order ?? 0,
+    status: r.status || 'active',
+    description: r.description || '',
+    createdAt: r.created_at || '',
+  }
+}
+
+export async function getGrades() {
+  const db = getDb()
+  const rows = db.prepare('SELECT * FROM grades ORDER BY sort_order, datetime(created_at), id').all()
+  return rows.map(rowToGrade)
+}
+
+export async function getGradeById(gradeId) {
+  if (!gradeId) return null
+  const db = getDb()
+  const row = db.prepare('SELECT * FROM grades WHERE id=?').get(gradeId)
+  return row ? rowToGrade(row) : null
+}
+
+export async function addGrade(grade) {
+  const db = getDb()
+  const id = grade?.id || genGradeId()
+  validateStorageId(id, 'grade.id')
+  if (db.prepare('SELECT 1 FROM grades WHERE id = ?').get(id)) {
+    return { created: false, exists: true }
+  }
+  const name = (grade.name || '').trim()
+  if (!name) throw new Error('年级名称不能为空')
+  if (db.prepare('SELECT 1 FROM grades WHERE name = ?').get(name)) {
+    return { created: false, duplicateName: true }
+  }
+  const finalGrade = {
+    id,
+    name,
+    sortOrder: Number(grade.sortOrder || 0),
+    status: grade.status || 'active',
+    description: grade.description || '',
+  }
+  db.prepare(`INSERT INTO grades (id, name, sort_order, status, description) VALUES (?, ?, ?, ?, ?)`).run(
+    finalGrade.id, finalGrade.name, finalGrade.sortOrder, finalGrade.status, finalGrade.description,
+  )
+  return { created: true, exists: false, grade: finalGrade }
+}
+
+export async function updateGrade(grade) {
+  validateStorageId(grade?.id, 'grade.id')
+  const db = getDb()
+  const old = db.prepare('SELECT * FROM grades WHERE id = ?').get(grade.id)
+  if (!old) return { updated: false, notFound: true }
+  const newName = (grade.name || '').trim()
+  if (!newName) throw new Error('年级名称不能为空')
+  // 同名校验（排除自身）
+  const dup = db.prepare('SELECT 1 FROM grades WHERE name=? AND id<>?').get(newName, grade.id)
+  if (dup) return { updated: false, duplicateName: true }
+  const oldName = old.name
+  const newSort = Number(grade.sortOrder ?? old.sort_order)
+  const newStatus = grade.status || old.status
+  const newDesc = grade.description ?? old.description
+
+  const tx = db.transaction(() => {
+    db.prepare(`UPDATE grades SET name=?, sort_order=?, status=?, description=? WHERE id=?`).run(
+      newName, newSort, newStatus, newDesc, grade.id,
+    )
+    // 年级重命名：级联更新学员与课程的 grade 文本字段，保持显示一致
+    if (oldName !== newName) {
+      db.prepare('UPDATE students SET grade=? WHERE grade=?').run(newName, oldName)
+      db.prepare('UPDATE courses SET grade=? WHERE grade=?').run(newName, oldName)
+    }
+    return { renamed: oldName !== newName, oldName, newName }
+  })
+  const r = tx()
+  return { updated: true, notFound: false, ...r, grade: { id: grade.id, name: newName, sortOrder: newSort, status: newStatus, description: newDesc, createdAt: old.created_at || '' } }
+}
+
+export async function deleteGrade(gradeId) {
+  validateStorageId(gradeId, 'grade.id')
+  const db = getDb()
+  const grade = db.prepare('SELECT * FROM grades WHERE id=?').get(gradeId)
+  if (!grade) return { deleted: false, notFound: true }
+  // 引用检查：仍有学员/课程使用该年级名称则拒绝删除
+  const studentCount = db.prepare("SELECT COUNT(*) as c FROM students WHERE grade=?").get(grade.name).c
+  const courseCount = db.prepare("SELECT COUNT(*) as c FROM courses WHERE grade=?").get(grade.name).c
+  if (studentCount > 0 || courseCount > 0) {
+    return { deleted: false, inUse: true, studentCount, courseCount }
+  }
+  db.prepare('DELETE FROM grades WHERE id=?').run(gradeId)
+  return { deleted: true, notFound: false }
+}
+
+// 批量升班：将 fromGradeName 年级的所有学员升级到 toGradeName
+// 用于学年末批量把"三年级"学员整体迁到"四年级"。仅更新学员年级，不影响已有报名/排课。
+export async function promoteStudents(fromGradeName, toGradeName) {
+  if (!fromGradeName || !toGradeName) throw new Error('源年级与目标年级均不能为空')
+  if (fromGradeName === toGradeName) return { promoted: 0, same: true }
+  const db = getDb()
+  const info = db.prepare('UPDATE students SET grade=? WHERE grade=?').run(toGradeName, fromGradeName)
+  return { promoted: info.changes, same: false, fromGradeName, toGradeName }
 }
 
 // ========== 报名记录（计费核心） ==========
@@ -939,19 +1062,65 @@ export async function addTransfer(transfer) {
   validateStorageId(id, 'transfer.id')
   validateStorageId(transfer?.studentId, 'transfer.studentId')
   validateStorageId(transfer?.fromEnrollmentId, 'transfer.fromEnrollmentId')
-  validateStorageId(transfer?.toEnrollmentId, 'transfer.toEnrollmentId')
-  if (transfer.fromEnrollmentId === transfer.toEnrollmentId) {
-    return { created: false, reason: '源与目标报名记录不能相同' }
+  // 目标报名：可传 toEnrollmentId（已有报名），或传 newTargetEnrollment（升班后新建目标报名）
+  const hasExistingTarget = !!transfer?.toEnrollmentId
+  const hasNewTarget = !!transfer?.newTargetEnrollment
+  if (!hasExistingTarget && !hasNewTarget) {
+    return { created: false, reason: '缺少 toEnrollmentId 或 newTargetEnrollment（目标报名记录）' }
+  }
+  if (hasExistingTarget) {
+    validateStorageId(transfer.toEnrollmentId, 'transfer.toEnrollmentId')
+    if (transfer.fromEnrollmentId === transfer.toEnrollmentId) {
+      return { created: false, reason: '源与目标报名记录不能相同' }
+    }
+  }
+  // 校验新建目标报名必要字段
+  if (hasNewTarget) {
+    const nt = transfer.newTargetEnrollment
+    validateStorageId(nt?.courseId, 'newTargetEnrollment.courseId')
+    if (!db.prepare('SELECT 1 FROM courses WHERE id=?').get(nt.courseId)) {
+      throw new Error('目标报名所关联的课程不存在')
+    }
   }
 
   const tx = db.transaction(() => {
     const from = db.prepare('SELECT * FROM enrollments WHERE id=?').get(transfer.fromEnrollmentId)
-    const to = db.prepare('SELECT * FROM enrollments WHERE id=?').get(transfer.toEnrollmentId)
     if (!from) throw new Error('源报名记录不存在')
-    if (!to) throw new Error('目标报名记录不存在')
-    if (from.student_id !== to.student_id) throw new Error('结转仅支持同一学员的报名记录')
     if (from.status !== 'active') throw new Error('源报名记录非进行中，不可结转')
-    if (to.status !== 'active') throw new Error('目标报名记录非进行中，不可结转')
+
+    // 解析目标报名记录：已有则取，新建则在事务内创建（初始 0 课时，由结转注入）
+    let to
+    let toEnrollmentId
+    let createdTargetId = null
+    if (hasExistingTarget) {
+      to = db.prepare('SELECT * FROM enrollments WHERE id=?').get(transfer.toEnrollmentId)
+      if (!to) throw new Error('目标报名记录不存在')
+      if (from.student_id !== to.student_id) throw new Error('结转仅支持同一学员的报名记录')
+      if (to.status !== 'active') throw new Error('目标报名记录非进行中，不可结转')
+      toEnrollmentId = to.id
+    } else {
+      const nt = transfer.newTargetEnrollment
+      // 升班场景：学员在新年级还没报名，结转时即时创建一条 0 课时目标报名
+      toEnrollmentId = genEnrollmentId()
+      createdTargetId = toEnrollmentId
+      const course = db.prepare('SELECT * FROM courses WHERE id=?').get(nt.courseId)
+      const unitPrice = Number(nt.unitPrice ?? course?.unit_price ?? 0)
+      db.prepare(`INSERT INTO enrollments
+        (id, student_id, course_id, status, purchased_hours, gift_hours, remaining_paid_hours, remaining_gift_hours,
+         unit_price, total_amount, paid_amount, discount_amount, channel, sales_id, payment_method, payment_status,
+         contract_no, expired_at, operator_id, enrolled_at, note)
+        VALUES (?, ?, ?, 'active', 0, 0, 0, 0, ?, 0, 0, 0, '', '', '', 'paid', '', ?, ?, ?, ?)`).run(
+        toEnrollmentId,
+        from.student_id,
+        nt.courseId,
+        unitPrice,
+        nt.expiredAt || '',
+        nt.operatorId || transfer.operatorId || '',
+        nt.enrolledAt || new Date().toISOString(),
+        nt.note || '升班结转自动创建',
+      )
+      to = db.prepare('SELECT * FROM enrollments WHERE id=?').get(toEnrollmentId)
+    }
 
     const fromRemainingPaid = from.remaining_paid_hours
     const fromRemainingGift = from.remaining_gift_hours
@@ -998,7 +1167,7 @@ export async function addTransfer(transfer) {
       toPurchasedAdd, toPurchasedAdd,
       toGiftAdd, toGiftAdd,
       transferredAmount, transferredAmount,
-      to.id,
+      toEnrollmentId,
     )
 
     db.prepare(`INSERT INTO transfers
@@ -1008,7 +1177,7 @@ export async function addTransfer(transfer) {
       id,
       transfer.studentId,
       transfer.fromEnrollmentId,
-      transfer.toEnrollmentId,
+      toEnrollmentId,
       mode,
       transferredHours,
       transferredAmount,
@@ -1028,6 +1197,8 @@ export async function addTransfer(transfer) {
       leftoverAmount,
       toPurchasedAdd,
       toGiftAdd,
+      toEnrollmentId,
+      createdTargetEnrollmentId: createdTargetId,
     }
   })
 
@@ -1182,42 +1353,6 @@ export async function batchAddSchedules(schedules) {
   })
   tx()
   return { created, skipped, errors }
-}
-
-// 排课冲突检测：检查给定 { studentId, teacher, location, date, startTime, endTime, excludeId }
-// 是否与已有排课存在时间重叠。返回冲突列表，每条含 type(teacher/student/location) + 冲突排课
-// 时间比较采用字符串 HH:mm（ISO 时间在此格式下字典序即时间序）
-function timeOverlaps(aStart, aEnd, bStart, bEnd) {
-  if (!aStart || !aEnd || !bStart || !bEnd) return false
-  // 半开区间 [start, end) 相交：aStart < bEnd && bStart < aEnd
-  return aStart < bEnd && bStart < aEnd
-}
-
-export async function findScheduleConflicts({
-  studentId, teacher, location, date, startTime, endTime, excludeId,
-}) {
-  if (!date || !startTime || !endTime) return []
-  const db = getDb()
-  // 同一天的所有排课（数量有限，内存中筛选重叠）
-  let sql = 'SELECT * FROM schedules WHERE date=?'
-  const params = [date]
-  if (excludeId) { sql += ' AND id<>?'; params.push(excludeId) }
-  const rows = db.prepare(sql).all(...params)
-  const conflicts = []
-  for (const r of rows) {
-    const s = rowToSchedule(r)
-    if (!timeOverlaps(startTime, endTime, s.startTime, s.endTime)) continue
-    if (teacher && s.teacher && s.teacher === teacher) {
-      conflicts.push({ type: 'teacher', field: '教师', value: teacher, schedule: s })
-    }
-    if (studentId && s.studentId === studentId) {
-      conflicts.push({ type: 'student', field: '学员', value: s.studentName, schedule: s })
-    }
-    if (location && s.location && s.location === location) {
-      conflicts.push({ type: 'location', field: '教室', value: location, schedule: s })
-    }
-  }
-  return conflicts
 }
 
 export async function addSchedule(schedule) {

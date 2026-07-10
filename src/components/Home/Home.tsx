@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { login } from '@/api/admin'
+import { login, getToken, verifyAuth } from '@/api/admin'
 import { LanguageSwitcher, inputClass } from '@/components/ui'
 import { GITHUB_URL } from '@/config'
 
@@ -13,12 +13,37 @@ interface HomeProps {
 // - 不再提供学员搜索（家长通过专属链接进入 H5）
 // - 不再展示公告板
 // - 顶部语言切换，底部项目信息
+// - 挂载时检测已有有效 token，有则自动进入后台（保留登录态）
 export function Home({ appName, onEnterAdmin }: HomeProps) {
   const { t } = useTranslation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [checking, setChecking] = useState(true)
+
+  // 检测已有登录态：若 token 有效则直接进入后台，无需重新登录
+  useEffect(() => {
+    let cancelled = false
+    async function checkSession() {
+      if (!getToken()) {
+        if (!cancelled) setChecking(false)
+        return
+      }
+      try {
+        const result = await verifyAuth()
+        if (!cancelled && result.code === 0 && result.data?.valid) {
+          onEnterAdmin()
+          return
+        }
+      } catch {
+        // token 无效或网络错误，留在登录页
+      }
+      if (!cancelled) setChecking(false)
+    }
+    checkSession()
+    return () => { cancelled = true }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -97,6 +122,12 @@ export function Home({ appName, onEnterAdmin }: HomeProps) {
 
       {/* 主体：左侧简介 + 右侧登录 */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-10">
+        {checking ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <div className="w-10 h-10 border-3 border-slate-200 border-t-brand-500 rounded-full animate-spin mb-3" />
+            <p className="text-sm text-slate-400">正在检查登录状态…</p>
+          </div>
+        ) : (
         <div className="grid md:grid-cols-2 gap-8 items-center">
           {/* 左：项目简介 */}
           <div>
@@ -182,6 +213,7 @@ export function Home({ appName, onEnterAdmin }: HomeProps) {
             </p>
           </div>
         </div>
+        )}
       </main>
 
       {/* 页脚 */}

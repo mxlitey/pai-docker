@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { Student, Course, Enrollment, Transfer, TransferMode } from '@/types'
+import type { Student, Course, Enrollment, Grade, Transfer, TransferMode } from '@/types'
 import { cn } from '@/utils/cn'
 import { listEnrollments, listTransfers, addTransfer } from '@/api/admin'
 import { Button, EmptyState, inputClass, LoadingBlock, SubPageHeader } from '@/components/ui'
@@ -8,6 +8,7 @@ import { Button, EmptyState, inputClass, LoadingBlock, SubPageHeader } from '@/c
 interface TransferAdminProps {
   students: Student[]
   courses: Course[]
+  grades: Grade[]
   busy: boolean
   onBack: () => void
   showToast: (type: 'success' | 'error' | 'info', message: string) => void
@@ -40,6 +41,7 @@ function isAuthError(e: Error): boolean {
 export function TransferAdmin({
   students,
   courses,
+  grades,
   busy,
   onBack,
   showToast,
@@ -54,6 +56,10 @@ export function TransferAdmin({
   const [studentId, setStudentId] = useState('')
   const [fromEnrollmentId, setFromEnrollmentId] = useState('')
   const [toEnrollmentId, setToEnrollmentId] = useState('')
+  // 目标报名模式：existing = 选择已有报名；new = 新建目标报名（升班结转）
+  const [targetMode, setTargetMode] = useState<'existing' | 'new'>('existing')
+  // 新建目标报名所选的课程 ID
+  const [newTargetCourseId, setNewTargetCourseId] = useState('')
   const [mode, setMode] = useState<TransferMode>('amount')
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -131,12 +137,22 @@ export function TransferAdmin({
   const targetEnrollment = toEnrollmentId
     ? enrollmentMap.get(toEnrollmentId)
     : undefined
+  // 新建目标报名所选课程（升班结转时目标报名尚不存在，用课程单价预览）
+  const newTargetCourse = newTargetCourseId
+    ? courseMap.get(newTargetCourseId)
+    : undefined
 
   // 实时预览：选定源 + 目标 + 方式后计算
+  // 目标单价来源：existing 模式取 targetEnrollment.unitPrice；new 模式取 newTargetCourse.unitPrice
   const preview = useMemo(() => {
-    if (!sourceEnrollment || !targetEnrollment) return null
+    if (!sourceEnrollment) return null
     const fromPrice = sourceEnrollment.unitPrice
-    const toPrice = targetEnrollment.unitPrice
+    const toPrice =
+      targetMode === 'new'
+        ? newTargetCourse?.unitPrice ?? 0
+        : targetEnrollment?.unitPrice ?? 0
+    const hasTarget = targetMode === 'new' ? !!newTargetCourse : !!targetEnrollment
+    if (!hasTarget) return null
     if (mode === 'amount') {
       if (toPrice <= 0) {
         return { kind: 'amount-error' as const, reason: '目标课程单价为 0，无法按金额折算' }
@@ -160,7 +176,7 @@ export function TransferAdmin({
       paid: sourceEnrollment.remainingPaidHours,
       gift: sourceEnrollment.remainingGiftHours,
     }
-  }, [sourceEnrollment, targetEnrollment, mode])
+  }, [sourceEnrollment, targetEnrollment, newTargetCourse, targetMode, mode])
 
   // 结转流水按时间倒序
   const sortedTransfers = useMemo(() => {
@@ -175,6 +191,8 @@ export function TransferAdmin({
     setStudentId(id)
     setFromEnrollmentId('')
     setToEnrollmentId('')
+    setNewTargetCourseId('')
+    setTargetMode('existing')
   }
 
   const handleFromChange = (id: string) => {
@@ -189,6 +207,8 @@ export function TransferAdmin({
     setStudentId('')
     setFromEnrollmentId('')
     setToEnrollmentId('')
+    setNewTargetCourseId('')
+    setTargetMode('existing')
     setMode('amount')
     setNote('')
   }
@@ -202,25 +222,45 @@ export function TransferAdmin({
       showToast('error', '请选择源报名记录')
       return
     }
-    if (!toEnrollmentId) {
-      showToast('error', '请选择目标报名记录')
-      return
-    }
-    if (fromEnrollmentId === toEnrollmentId) {
-      showToast('error', '源报名与目标报名不能相同')
-      return
+    if (targetMode === 'existing') {
+      if (!toEnrollmentId) {
+        showToast('error', '请选择目标报名记录')
+        return
+      }
+      if (fromEnrollmentId === toEnrollmentId) {
+        showToast('error', '源报名与目标报名不能相同')
+        return
+      }
+    } else {
+      // new 模式：必须选择目标课程
+      if (!newTargetCourseId) {
+        showToast('error', t('transfer.selectNewCourse'))
+        return
+      }
     }
     setSubmitting(true)
     try {
-      const result = await addTransfer({
-        studentId,
-        fromEnrollmentId,
-        toEnrollmentId,
-        mode,
-        note: note.trim() || undefined,
-      })
+      const result =
+        targetMode === 'existing'
+          ? await addTransfer({
+              studentId,
+              fromEnrollmentId,
+              toEnrollmentId,
+              mode,
+              note: note.trim() || undefined,
+            })
+          : await addTransfer({
+              studentId,
+              fromEnrollmentId,
+              newTargetEnrollment: {
+                courseId: newTargetCourseId,
+                unitPrice: newTargetCourse?.unitPrice,
+              },
+              mode,
+              note: note.trim() || undefined,
+            })
       if (result.code === 0) {
-        showToast('success', t('transfer.success'))
+        showToast('success', targetMode === 'new' ? t('transfer.newTargetCreated') : t('transfer.success'))
         resetForm()
         // 刷新流水与报名（源/目标剩余已变）
         await reload()
@@ -262,8 +302,9 @@ export function TransferAdmin({
   const canSubmit =
     !!studentId &&
     !!fromEnrollmentId &&
-    !!toEnrollmentId &&
-    fromEnrollmentId !== toEnrollmentId
+    (targetMode === 'existing'
+      ? !!toEnrollmentId && fromEnrollmentId !== toEnrollmentId
+      : !!newTargetCourseId)
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -347,21 +388,75 @@ export function TransferAdmin({
                 <select disabled className={cn(inputClass, 'bg-white text-slate-400')}>
                   <option value="">请先选择学员</option>
                 </select>
-              ) : targetOptions.length === 0 ? (
-                <p className="text-xs text-slate-400 py-2 px-3 border border-dashed border-slate-200 rounded-md">
-                  该学员无其他可转入的课程报名记录，请先在报名管理新增
-                </p>
               ) : (
-                <select
-                  value={toEnrollmentId}
-                  onChange={(e) => setToEnrollmentId(e.target.value)}
-                  className={cn(inputClass, 'bg-white')}
-                >
-                  <option value="">请选择目标报名</option>
-                  {targetOptions.map((e) => (
-                    <option key={e.id} value={e.id}>{enrollmentLabel(e)}</option>
-                  ))}
-                </select>
+                <div className="space-y-2">
+                  {/* 目标模式切换：选择已有报名 / 新建目标报名（升班结转） */}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTargetMode('existing')}
+                      className={cn(
+                        'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
+                        targetMode === 'existing'
+                          ? 'border-brand-400 bg-brand-50 text-brand-700'
+                          : 'border-slate-200 text-slate-500 hover:border-slate-300',
+                      )}
+                    >
+                      {t('transfer.selectExisting')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTargetMode('new')}
+                      className={cn(
+                        'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
+                        targetMode === 'new'
+                          ? 'border-brand-400 bg-brand-50 text-brand-700'
+                          : 'border-slate-200 text-slate-500 hover:border-slate-300',
+                      )}
+                    >
+                      {t('transfer.newTarget')}
+                    </button>
+                  </div>
+
+                  {targetMode === 'existing' ? (
+                    targetOptions.length === 0 ? (
+                      <p className="text-xs text-slate-400 py-2 px-3 border border-dashed border-slate-200 rounded-md">
+                        该学员无其他可转入的课程报名记录，可点击「{t('transfer.newTarget')}」直接新建
+                      </p>
+                    ) : (
+                      <select
+                        value={toEnrollmentId}
+                        onChange={(e) => setToEnrollmentId(e.target.value)}
+                        className={cn(inputClass, 'bg-white')}
+                      >
+                        <option value="">请选择目标报名</option>
+                        {targetOptions.map((e) => (
+                          <option key={e.id} value={e.id}>{enrollmentLabel(e)}</option>
+                        ))}
+                      </select>
+                    )
+                  ) : (
+                    <>
+                      <p className="text-xs text-slate-400">{t('transfer.newTargetHint')}</p>
+                      <select
+                        value={newTargetCourseId}
+                        onChange={(e) => setNewTargetCourseId(e.target.value)}
+                        className={cn(inputClass, 'bg-white')}
+                      >
+                        <option value="">{t('transfer.selectNewCourse')}</option>
+                        {courses.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                            {c.grade ? `（${c.grade}）` : ''}
+                            {typeof c.unitPrice === 'number' && c.unitPrice > 0
+                              ? `（¥${c.unitPrice}/课时）`
+                              : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>

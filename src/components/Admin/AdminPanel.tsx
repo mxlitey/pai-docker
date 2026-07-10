@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { Student, Course, EnrollmentSummary } from '@/types'
+import type { Student, Course, EnrollmentSummary, Grade } from '@/types'
 import { searchStudents, getAnnouncement } from '@/api'
 import {
   verifyAuth,
@@ -15,6 +15,7 @@ import {
   updateCourse,
   deleteCourse,
   listEnrollments,
+  listGrades,
   getToken,
   clearToken,
   getBootstrapStatus,
@@ -24,6 +25,7 @@ import { canSeeModule } from '@/utils/permission'
 import { AnnouncementAdmin } from './AnnouncementAdmin'
 import { ShareLinksAdmin } from './ShareLinksAdmin'
 import { StudentAdmin } from './StudentAdmin'
+import { GradeAdmin } from './GradeAdmin'
 import { CourseAdmin } from './CourseAdmin'
 import { ScheduleAdmin } from './ScheduleAdmin'
 import { AttendanceAdmin } from './AttendanceAdmin'
@@ -49,6 +51,7 @@ interface AdminPanelProps {
 // 后台子页面类型：null 表示后台主页，其他值表示对应二级页面
 type SubPage =
   | 'students'
+  | 'grades'
   | 'courses'
   | 'enrollments'
   | 'transfers'
@@ -77,6 +80,7 @@ function readSubPageFromHash(): SubPage {
     if (!sub) return null
     const valid: SubPage[] = [
       'students',
+      'grades',
       'courses',
       'enrollments',
       'transfers',
@@ -120,6 +124,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
   const [checking, setChecking] = useState<boolean>(true)
   const [students, setStudents] = useState<Student[]>([])
   const [courses, setCourses] = useState<Course[]>([])
+  const [grades, setGrades] = useState<Grade[]>([])
   // 学员报名汇总：studentId -> 汇总（从全部 active enrollment 聚合）
   const [enrollmentSummaries, setEnrollmentSummaries] = useState<Record<string, EnrollmentSummary>>({})
 
@@ -180,6 +185,18 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     } catch (e) {
       // 课程加载失败不阻塞主流程
       console.error('加载课程列表失败:', e)
+    }
+  }, [])
+
+  // 加载年级列表（学员/课程/报名/结转页均需按年级选择或过滤）
+  const loadGrades = useCallback(async () => {
+    try {
+      const result = await listGrades()
+      if (result.code === 0) {
+        setGrades(result.data.grades)
+      }
+    } catch (e) {
+      console.error('加载年级列表失败:', e)
     }
   }, [])
 
@@ -273,8 +290,9 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     if (!authed) return
     loadStudents()
     loadCourses()
+    loadGrades()
     loadEnrollmentSummaries()
-  }, [authed, loadStudents, loadCourses, loadEnrollmentSummaries])
+  }, [authed, loadStudents, loadCourses, loadGrades, loadEnrollmentSummaries])
 
   // 公告：进入公告管理页时加载当前内容
   const handleLoadAnnouncement = useCallback(async () => {
@@ -524,12 +542,32 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
       <>
         <StudentAdmin
           students={students}
+          grades={grades}
           summaries={enrollmentSummaries}
           busy={busy}
           onBack={() => goSubPage(null)}
           onDelete={handleDeleteStudent}
           onAdd={handleAddStudent}
           onUpdate={handleUpdateStudent}
+          onGradesChange={loadGrades}
+        />
+      </>
+    )
+  }
+
+  // 年级管理二级页面
+  if (activeSubPage === 'grades') {
+    return (
+      <>
+        <GradeAdmin
+          grades={grades}
+          students={students}
+          courses={courses}
+          busy={busy}
+          onBack={() => goSubPage(null)}
+          onGradesChange={loadGrades}
+          onStudentsChange={loadStudents}
+          showToast={showToast}
         />
       </>
     )
@@ -541,6 +579,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
       <>
         <CourseAdmin
           courses={courses}
+          grades={grades}
           busy={busy}
           onBack={() => goSubPage(null)}
           onDelete={handleDeleteCourse}
@@ -558,6 +597,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
         <EnrollmentAdmin
           students={students}
           courses={courses}
+          grades={grades}
           busy={busy}
           onBack={() => goSubPage(null)}
           showToast={showToast}
@@ -574,6 +614,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
         <TransferAdmin
           students={students}
           courses={courses}
+          grades={grades}
           busy={busy}
           onBack={() => goSubPage(null)}
           showToast={showToast}
@@ -652,36 +693,37 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     return <LeadAdmin onBack={() => goSubPage(null)} />
   }
 
-  // 模块入口定义：按分类组织，每个入口含权限点、标题、描述、图标、跳转目标
-  // 按当前用户权限过滤后再渲染
+  // 模块入口定义：按日常使用顺序排列（先建档 → 后续业务 → 数据/系统）
+  // 每个入口含权限点、标题、描述、图标、跳转目标，按当前用户权限过滤后再渲染
   const moduleEntries = [
-    // ===== 教务管理 =====
+    // ===== 教务管理（按使用顺序：建档 → 课程 → 教师 → 报名 → 结转 → 排课 → 点名）=====
     { tab: 'teaching', perm: 'students:view', sub: 'students', title: t('nav.students'), desc: '学员档案、报名汇总、续费预警', icon: 'students' },
-    { tab: 'teaching', perm: 'courses:view', sub: 'courses', title: t('nav.courses'), desc: '课程信息、单价、计费方式', icon: 'courses' },
+    { tab: 'teaching', perm: 'grades:view', sub: 'grades', title: t('nav.grades'), desc: '年级维护、批量升班、课程关联', icon: 'grades' },
+    { tab: 'teaching', perm: 'courses:view', sub: 'courses', title: t('nav.courses'), desc: '课程信息、单价、计费方式、关联年级', icon: 'courses' },
+    { tab: 'teaching', perm: 'teachers:view', sub: 'teachers', title: t('nav.teachers'), desc: '课后反馈、教师绩效、评分', icon: 'teachers' },
     { tab: 'teaching', perm: 'enrollments:view', sub: 'enrollments', title: t('nav.enrollments'), desc: '报名、购课赠课、课时余额', icon: 'enrollments' },
     { tab: 'teaching', perm: 'transfers:view', sub: 'transfers', title: t('nav.transfers'), desc: '升班转课结转，按金额或课时', icon: 'transfers' },
-    { tab: 'teaching', perm: 'schedules:view', sub: 'schedules', title: t('nav.schedules'), desc: '排课、批量排课、智能排课助手', icon: 'schedules' },
+    { tab: 'teaching', perm: 'schedules:view', sub: 'schedules', title: t('nav.schedules'), desc: '排课、批量排课、点名扣减', icon: 'schedules' },
     { tab: 'teaching', perm: 'attendance:view', sub: 'attendance', title: t('nav.attendance'), desc: '按日期点名、批量点名、到课统计', icon: 'attendance' },
-    // ===== 教师与反馈 =====
-    { tab: 'teaching', perm: 'teachers:view', sub: 'teachers', title: t('nav.teachers'), desc: '课后反馈、教师绩效、评分', icon: 'teachers' },
-    // ===== 营销运营 =====
-    { tab: 'marketing', perm: 'coupons:view', sub: 'coupons', title: t('nav.coupons'), desc: '折扣/满减优惠券，报名抵扣', icon: 'coupons' },
-    { tab: 'marketing', perm: 'memberships:view', sub: 'memberships', title: t('nav.memberships'), desc: '月卡/期卡/年卡/次卡管理', icon: 'memberships' },
+    // ===== 营销运营（按使用顺序：招生获客 → 公告 → 优惠 → 会员）=====
     { tab: 'marketing', perm: 'leads:view', sub: 'leads', title: t('nav.leads'), desc: 'CRM 线索、阶段流转、转化分析', icon: 'leads' },
     { tab: 'marketing', perm: 'announcement:view', sub: 'announcement', title: t('nav.announcement'), desc: '首页/家长端公告内容', icon: 'announcement' },
-    // ===== 数据分析 =====
-    { tab: 'data', perm: 'reports:view', sub: 'reports', title: t('nav.reports'), desc: '营收、课时、出勤、结转统计', icon: 'reports' },
+    { tab: 'marketing', perm: 'coupons:view', sub: 'coupons', title: t('nav.coupons'), desc: '折扣/满减优惠券，报名抵扣', icon: 'coupons' },
+    { tab: 'marketing', perm: 'memberships:view', sub: 'memberships', title: t('nav.memberships'), desc: '月卡/期卡/年卡/次卡管理', icon: 'memberships' },
+    // ===== 数据分析（先看大盘 → 再看明细）=====
     { tab: 'data', perm: 'dashboard:view', sub: 'dashboard', title: t('nav.dashboard'), desc: '经营关键指标实时大屏', icon: 'dashboard' },
-    // ===== 系统管理 =====
-    { tab: 'system', perm: 'students:view', sub: 'shareLinks', title: t('nav.shareLinks'), desc: '生成家长端专属访问链接', icon: 'shareLinks' },
+    { tab: 'data', perm: 'reports:view', sub: 'reports', title: t('nav.reports'), desc: '营收、课时、出勤、结转统计', icon: 'reports' },
+    // ===== 系统管理（配置 → 账号 → 家长端链接 → 日志）=====
     { tab: 'system', perm: 'settings:manage', sub: 'settings', title: t('nav.settings'), desc: '项目名称、备份恢复、有效期', icon: 'settings' },
     { tab: 'system', perm: 'admins:view', sub: 'admins', title: t('nav.admins'), desc: '账号增删、权限分配、启停', icon: 'admins' },
+    { tab: 'system', perm: 'students:view', sub: 'shareLinks', title: t('nav.shareLinks'), desc: '生成家长端专属访问链接', icon: 'shareLinks' },
     { tab: 'system', perm: 'audit:view', sub: 'auditLogs', title: t('nav.auditLogs'), desc: '写操作留痕，按模块/人筛选', icon: 'auditLogs' },
   ] as const
 
   // 图标 SVG（命令式映射，避免每个入口重复写 svg）
   const iconMap: Record<string, React.ReactNode> = {
     students: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4z" />,
+    grades: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />,
     courses: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />,
     enrollments: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />,
     transfers: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />,
@@ -748,8 +790,8 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
       </header>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
-        {/* 分类选项卡 */}
-        <div className="flex items-center gap-1 mb-5 border-b border-slate-200 overflow-x-auto">
+        {/* 分类选项卡：仅允许横向滑动，禁止纵向滑动（移动端修复） */}
+        <div className="flex items-center gap-1 mb-5 border-b border-slate-200 overflow-x-auto overflow-y-hidden touch-pan-x overscroll-x-contain">
           {tabs.map((tab) => {
             const count = moduleEntries.filter(
               (e) => e.tab === tab.key && canSeeModule(currentAdmin, e.perm),

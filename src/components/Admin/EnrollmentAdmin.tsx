@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { BatchEnrollmentItem, Course, Enrollment, EnrollmentStatus, Student } from '@/types'
+import type { BatchEnrollmentItem, Course, Enrollment, EnrollmentStatus, Grade, Student } from '@/types'
 import { cn } from '@/utils/cn'
 import { getCourseDotClass } from '@/utils/courseColors'
 import {
@@ -10,6 +10,7 @@ import {
   listEnrollments,
   updateEnrollment,
 } from '@/api/admin'
+import { SearchBar } from '@/components/SearchBar'
 import {
   Button,
   confirmDialog,
@@ -27,6 +28,7 @@ import {
 interface EnrollmentAdminProps {
   students: Student[]
   courses: Course[]
+  grades: Grade[] // 年级列表（学员/课程按年级名称关联，报名时按学员年级过滤可选课程）
   busy: boolean // 父级全局忙碌状态，禁用按钮
   onBack: () => void
   showToast: (type: 'success' | 'error' | 'info', message: string) => void
@@ -145,6 +147,7 @@ function exportEnrollmentsCsv(
 export function EnrollmentAdmin({
   students,
   courses,
+  grades,
   busy,
   onBack,
   showToast,
@@ -439,6 +442,7 @@ export function EnrollmentAdmin({
         <EnrollmentEditModal
           students={students}
           courses={courses}
+          grades={grades}
           onClose={() => setAdding(false)}
           onSaved={async () => {
             await loadEnrollments()
@@ -453,6 +457,7 @@ export function EnrollmentAdmin({
         <EnrollmentEditModal
           students={students}
           courses={courses}
+          grades={grades}
           enrollment={editing}
           onClose={() => setEditing(null)}
           onSaved={async () => {
@@ -527,6 +532,7 @@ function renderRemaining(e: Enrollment) {
 interface EnrollmentEditModalProps {
   students: Student[]
   courses: Course[]
+  grades: Grade[]
   enrollment?: Enrollment // 有值 = 编辑模式；无值 = 新增模式
   onClose: () => void
   onSaved: () => Promise<void> // 成功后刷新列表（await 完成后再关闭弹窗）
@@ -550,6 +556,7 @@ interface EnrollmentForm {
 function EnrollmentEditModal({
   students,
   courses,
+  grades,
   enrollment,
   onClose,
   onSaved,
@@ -559,6 +566,7 @@ function EnrollmentEditModal({
   const { t } = useTranslation()
   const isEdit = !!enrollment
   const courseMap = useMemo(() => new Map(courses.map((c) => [c.id, c])), [courses])
+  const studentMap = useMemo(() => new Map(students.map((s) => [s.id, s])), [students])
 
   const [form, setForm] = useState<EnrollmentForm>(() => {
     if (enrollment) {
@@ -586,12 +594,52 @@ function EnrollmentEditModal({
       note: '',
     }
   })
+  // 新增模式下通过 SearchBar 搜索选中的学员对象（用于按年级过滤可选课程）
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(
+    enrollment ? studentMap.get(enrollment.studentId) || null : null,
+  )
   // 实付金额是否被用户手动改过：
   // 新增模式默认未触碰 → 随购课/单价实时同步默认值（=购课×单价）；
   // 编辑模式默认已触碰 → 保留已存储的实付金额，不自动覆盖
   const [paidTouched, setPaidTouched] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  // 按所选学员的年级过滤可选课程：
+  // - 学员有年级 X → 仅显示年级 X 的课程 + 未设年级的课程
+  // - 学员无年级 → 显示全部课程
+  const filteredCourses = useMemo(() => {
+    if (!selectedStudent || !selectedStudent.grade) return courses
+    return courses.filter((c) => !c.grade || c.grade === selectedStudent.grade)
+  }, [courses, selectedStudent])
+
+  // 选中学员：更新 studentId，若已选课程不再匹配新年级则清空
+  const handleStudentSelect = (student: Student) => {
+    setSelectedStudent(student)
+    setForm((f) => {
+      const next: EnrollmentForm = { ...f, studentId: student.id }
+      if (f.courseId) {
+        const stillValid =
+          !student.grade ||
+          courses.some((c) => c.id === f.courseId && (!c.grade || c.grade === student.grade))
+        if (!stillValid) {
+          next.courseId = ''
+          next.unitPrice = ''
+          next.paidAmount = ''
+        }
+      }
+      return next
+    })
+    setError('')
+  }
+
+  // 搜索框内容变化：若与已选学员名不同，说明用户在重新搜索，清除已选
+  const handleStudentQueryChange = (query: string) => {
+    if (selectedStudent && query !== selectedStudent.name) {
+      setSelectedStudent(null)
+      setForm((f) => ({ ...f, studentId: '', courseId: '' }))
+    }
+  }
 
   // 应付金额预览 = 购课课时 × 单价（实时计算）
   const previewTotal =
@@ -808,25 +856,30 @@ function EnrollmentEditModal({
           <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
             <span className="text-rose-500 mr-0.5">*</span>{t('enrollment.student')}
           </span>
-          <select
-            value={form.studentId}
-            onChange={(e) => setField('studentId', e.target.value)}
-            className={cn(inputClass, 'bg-white')}
-            disabled={isEdit}
-            autoFocus={!isEdit}
-          >
-            <option value="">{t('enrollment.studentRequired')}</option>
-            {/* 编辑模式下，若学员已被删除，补充显示其 id */}
-            {isEdit && !students.some((s) => s.id === form.studentId) && form.studentId && (
-              <option value={form.studentId}>{form.studentId}（已缺失）</option>
+          <div className="flex-1">
+            {isEdit ? (
+              // 编辑模式：学员不可修改，只读展示
+              <div className="pt-2 text-sm text-slate-700">
+                {studentMap.get(form.studentId)?.name || form.studentId}
+                {studentMap.get(form.studentId)?.grade ? `（${studentMap.get(form.studentId)!.grade}）` : ''}
+              </div>
+            ) : (
+              // 新增模式：复用搜索学员组件
+              <>
+                <SearchBar
+                  onSelectStudent={handleStudentSelect}
+                  onQueryChange={handleStudentQueryChange}
+                  initialValue={selectedStudent?.name || ''}
+                  containerClassName="max-w-none"
+                />
+                {selectedStudent && (
+                  <div className="mt-1 text-xs text-slate-400">
+                    {t('enrollment.studentSelected', { name: selectedStudent.name, grade: selectedStudent.grade || t('grade.noGrade') })}
+                  </div>
+                )}
+              </>
             )}
-            {students.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-                {s.grade ? `（${s.grade}）` : ''}
-              </option>
-            ))}
-          </select>
+          </div>
         </div>
 
         {/* 课程 */}
@@ -834,26 +887,35 @@ function EnrollmentEditModal({
           <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
             <span className="text-rose-500 mr-0.5">*</span>{t('enrollment.course')}
           </span>
-          <select
-            value={form.courseId}
-            onChange={(e) => handleCourseChange(e.target.value)}
-            className={cn(inputClass, 'bg-white')}
-            disabled={isEdit}
-          >
-            <option value="">{t('enrollment.courseRequired')}</option>
-            {/* 编辑模式下，若课程已被删除，补充显示其 id */}
-            {isEdit && !courses.some((c) => c.id === form.courseId) && form.courseId && (
-              <option value={form.courseId}>{form.courseId}（已缺失）</option>
+          <div className="flex-1">
+            <select
+              value={form.courseId}
+              onChange={(e) => handleCourseChange(e.target.value)}
+              className={cn(inputClass, 'bg-white')}
+              disabled={isEdit}
+            >
+              <option value="">{t('enrollment.courseRequired')}</option>
+              {/* 编辑模式下，若课程已被删除，补充显示其 id */}
+              {isEdit && !courses.some((c) => c.id === form.courseId) && form.courseId && (
+                <option value={form.courseId}>{form.courseId}（已缺失）</option>
+              )}
+              {(isEdit ? courses : filteredCourses).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.grade ? `（${c.grade}）` : ''}
+                  {typeof c.unitPrice === 'number' && c.unitPrice > 0
+                    ? `（¥${c.unitPrice}/课时）`
+                    : ''}
+                </option>
+              ))}
+            </select>
+            {!isEdit && selectedStudent?.grade && filteredCourses.length === 0 && (
+              <p className="mt-1 text-xs text-amber-600">{t('enrollment.noCourseForGrade')}</p>
             )}
-            {courses.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-                {typeof c.unitPrice === 'number' && c.unitPrice > 0
-                  ? `（¥${c.unitPrice}/课时）`
-                  : ''}
-              </option>
-            ))}
-          </select>
+            {!isEdit && selectedStudent?.grade && filteredCourses.length > 0 && (
+              <p className="mt-1 text-xs text-slate-400">{t('enrollment.courseFilteredByGrade', { grade: selectedStudent.grade })}</p>
+            )}
+          </div>
         </div>
 
         {/* 编辑模式：当前剩余（只读） */}
