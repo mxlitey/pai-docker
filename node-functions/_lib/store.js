@@ -10,6 +10,7 @@ export {
 export * from './store/students.js'
 export * from './store/courses.js'
 export * from './store/grades.js'
+export * from './store/classes.js'
 export * from './store/enrollments.js'
 export * from './store/transfers.js'
 export * from './store/schedules.js'

@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react'
 import type { Student } from '@/types'
-import { generateShareLink } from '@/api/admin'
 import { Button, EmptyState, SubPageHeader, inputClass, toast } from '@/components/ui'
 
 interface ShareLinksAdminProps {
@@ -9,16 +8,11 @@ interface ShareLinksAdminProps {
 }
 
 // 分享链接管理页（家长端专属链接）
-// - 链接格式：{origin}/?s=学员id&t=token
-// - token 由后端用 secret 签发，内含学员手机号后4位；家长进入 H5 后需输入手机号后4位二次校验
-// - 按需生成：点击「复制链接」时向后端请求 token，避免一次性生成大量 token
+// - 链接格式：{origin}/?s=学员id
+// - 家长点击链接后需输入报名时登记的手机号后 4 位验真
 // - 未登记手机号的学员无法生成链接，给出提示
 export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
   const [search, setSearch] = useState('')
-  // 已生成的 token 缓存：studentId -> token（避免重复请求）
-  const [tokenCache, setTokenCache] = useState<Record<string, string>>({})
-  // 正在生成中的 studentId 集合
-  const [generating, setGenerating] = useState<Set<string>>(new Set())
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [batchBusy, setBatchBusy] = useState(false)
 
@@ -27,8 +21,8 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
   // 学员是否有手机号（决定能否生成链接）
   const hasPhone = (s: Student) => !!s.phone && s.phone.replace(/\D/g, '').length >= 4
 
-  const buildLink = (s: Student, token: string) =>
-    `${origin}/?s=${encodeURIComponent(s.id)}&t=${encodeURIComponent(token)}`
+  const buildLink = (s: Student) =>
+    `${origin}/?s=${encodeURIComponent(s.id)}`
 
   // 搜索过滤：按姓名或 ID 模糊匹配
   const filtered = useMemo(() => {
@@ -38,30 +32,6 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
       (s) => s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q),
     )
   }, [students, search])
-
-  // 为单个学员生成 token（带缓存）
-  async function ensureToken(s: Student): Promise<string | null> {
-    if (tokenCache[s.id]) return tokenCache[s.id]
-    setGenerating((prev) => new Set(prev).add(s.id))
-    try {
-      const result = await generateShareLink(s.id)
-      if (result.code === 0 && result.data?.token) {
-        setTokenCache((prev) => ({ ...prev, [s.id]: result.data.token }))
-        return result.data.token
-      }
-      toast.error(result.message || '生成失败')
-      return null
-    } catch (e) {
-      toast.error((e as Error).message || '生成失败')
-      return null
-    } finally {
-      setGenerating((prev) => {
-        const next = new Set(prev)
-        next.delete(s.id)
-        return next
-      })
-    }
-  }
 
   async function copyToClipboard(text: string): Promise<boolean> {
     try {
@@ -88,15 +58,13 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
     }
   }
 
-  // 单条复制：按需生成 token + 复制
+  // 单条复制：只复制链接
   const handleCopy = async (s: Student) => {
     if (!hasPhone(s)) {
       toast.error('该学员未登记手机号，请先在学员档案中填写家长手机号')
       return
     }
-    const token = await ensureToken(s)
-    if (!token) return
-    const text = `${s.name}：${buildLink(s, token)}`
+    const text = buildLink(s)
     if (await copyToClipboard(text)) {
       setCopiedId(s.id)
       setTimeout(() => setCopiedId(null), 2000)
@@ -105,7 +73,7 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
     }
   }
 
-  // 一键复制全部：依次为有手机号的学员生成 token 并拼接
+  // 一键复制全部：有手机号的学员链接逐行拼接
   const handleCopyAll = async () => {
     const targets = filtered.filter(hasPhone)
     if (targets.length === 0) {
@@ -113,16 +81,8 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
       return
     }
     setBatchBusy(true)
-    const lines: string[] = []
-    for (const s of targets) {
-      const token = await ensureToken(s)
-      if (token) lines.push(`${s.name}：${buildLink(s, token)}`)
-    }
+    const lines = targets.map((s) => `${s.name}：${buildLink(s)}`)
     setBatchBusy(false)
-    if (lines.length === 0) {
-      toast.error('生成失败，请稍后重试')
-      return
-    }
     if (await copyToClipboard(lines.join('\n'))) {
       toast.success(`已复制 ${lines.length} 条链接`)
     } else {
@@ -144,11 +104,10 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
               进行身份验证，通过后仅可查看该学员的排课、课时余额与教师课后反馈。
             </p>
             <p>
-              链接格式：<code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono">域名/?s=学员id&amp;t=专属token</code>
-              <span className="ml-2 text-slate-400">链接长期有效，更换手机号后需重新生成</span>
+              链接格式：<code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono">域名/?s=学员id</code>
             </p>
             <p className="text-amber-600">
-              ⚠️ 学员档案未填写手机号时无法生成链接，请先到「学员管理」补充家长手机号。
+              ⚠️ 学员档案未填写手机号时家长无法验真，请先到「学员管理」补充家长手机号。
             </p>
           </div>
         </section>
@@ -175,7 +134,7 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
               disabled={filtered.length === 0}
               className="whitespace-nowrap"
             >
-              {batchBusy ? '生成中…' : '一键复制全部'}
+              {batchBusy ? '复制中…' : '一键复制全部'}
             </Button>
           </div>
         </section>
@@ -196,7 +155,6 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((s) => {
                   const phoneOk = hasPhone(s)
-                  const token = tokenCache[s.id]
                   return (
                     <tr key={s.id} className="hover:bg-slate-50/50">
                       <td className="py-2.5 px-4 font-medium text-slate-800 whitespace-nowrap">
@@ -210,15 +168,15 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
                         )}
                       </td>
                       <td className="py-2.5 px-4 text-slate-600 text-xs font-mono break-all">
-                        {token ? buildLink(s, token) : (phoneOk ? '点击右侧按钮生成' : '—')}
+                        {phoneOk ? buildLink(s) : '—'}
                       </td>
                       <td className="py-2.5 px-4 text-right whitespace-nowrap">
                         <button
                           onClick={() => handleCopy(s)}
-                          disabled={!phoneOk || generating.has(s.id)}
+                          disabled={!phoneOk}
                           className="btn-ghost border border-slate-200 text-xs py-1 px-2.5 hover:bg-brand-50 hover:text-brand-700 hover:border-brand-200 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
-                          {generating.has(s.id) ? '生成中…' : copiedId === s.id ? '已复制' : '复制'}
+                          {copiedId === s.id ? '已复制' : '复制'}
                         </button>
                       </td>
                     </tr>
@@ -231,7 +189,6 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
             <div className="sm:hidden divide-y divide-slate-100">
               {filtered.map((s) => {
                 const phoneOk = hasPhone(s)
-                const token = tokenCache[s.id]
                 return (
                   <div key={s.id} className="p-3 space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
@@ -245,17 +202,12 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
                       </div>
                       <button
                         onClick={() => handleCopy(s)}
-                        disabled={!phoneOk || generating.has(s.id)}
+                        disabled={!phoneOk}
                         className="btn-ghost border border-slate-200 text-xs py-1 px-2.5 hover:bg-brand-50 hover:text-brand-700 hover:border-brand-200 flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        {generating.has(s.id) ? '生成中…' : copiedId === s.id ? '已复制' : '复制'}
+                        {copiedId === s.id ? '已复制' : '复制'}
                       </button>
                     </div>
-                    {token && (
-                      <div className="text-xs text-slate-500 font-mono break-all bg-slate-50 rounded p-2">
-                        {buildLink(s, token)}
-                      </div>
-                    )}
                   </div>
                 )
               })}

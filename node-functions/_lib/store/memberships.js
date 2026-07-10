@@ -1,6 +1,6 @@
 import { getDb } from './core.js'
 import { genMembershipId, genStudentMembershipId } from '../id.js'
-import { todayUtc } from '../time.js'
+import { today } from '../time.js'
 
 // ========== 会员卡 memberships ==========
 export async function getMemberships({ status } = {}) {
@@ -75,7 +75,7 @@ export async function getStudentMemberships({ studentId, status } = {}) {
 export async function addStudentMembership(sm) {
   const db = getDb()
   const id = genStudentMembershipId()
-  const startedAt = sm.startedAt || todayUtc()
+  const startedAt = sm.startedAt || today()
   // 计算到期日
   let expiredAt = sm.expiredAt || ''
   if (!expiredAt && sm.durationDays) {

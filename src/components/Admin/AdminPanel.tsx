@@ -25,6 +25,7 @@ import { AnnouncementAdmin } from './AnnouncementAdmin'
 import { ShareLinksAdmin } from './ShareLinksAdmin'
 import { StudentAdmin } from './StudentAdmin'
 import { GradeAdmin } from './GradeAdmin'
+import { ClassesAdmin } from './ClassesAdmin'
 import { CourseAdmin } from './CourseAdmin'
 import { ScheduleAdmin } from './ScheduleAdmin'
 import { AttendanceAdmin } from './AttendanceAdmin'
@@ -51,6 +52,7 @@ interface AdminPanelProps {
 type SubPage =
   | 'students'
   | 'grades'
+  | 'classes'
   | 'courses'
   | 'enrollments'
   | 'transfers'
@@ -80,6 +82,7 @@ function readSubPageFromHash(): SubPage {
     const valid: SubPage[] = [
       'students',
       'grades',
+      'classes',
       'courses',
       'enrollments',
       'transfers',
@@ -571,6 +574,21 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     )
   }
 
+  // 班级管理二级页面
+  if (activeSubPage === 'classes') {
+    return (
+      <>
+        <ClassesAdmin
+          courses={courses}
+          students={students}
+          busy={busy}
+          onBack={() => goSubPage(null)}
+          showToast={showToast}
+        />
+      </>
+    )
+  }
+
   // 课程管理二级页面
   if (activeSubPage === 'courses') {
     return (
@@ -696,6 +714,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     { tab: 'teaching', perm: 'students:view', sub: 'students', title: '学员管理', desc: '学员档案、报名汇总、续费预警', icon: 'students' },
     { tab: 'teaching', perm: 'grades:view', sub: 'grades', title: '年级管理', desc: '年级维护、批量升班、课程关联', icon: 'grades' },
     { tab: 'teaching', perm: 'courses:view', sub: 'courses', title: '课程管理', desc: '课程信息、单价、计费方式、关联年级', icon: 'courses' },
+    { tab: 'teaching', perm: 'classes:view', sub: 'classes', title: '班级管理', desc: '班级建档、关联课程、固定学员名单', icon: 'classes' },
     { tab: 'teaching', perm: 'teachers:view', sub: 'teachers', title: '教师管理', desc: '课后反馈、教师绩效、评分', icon: 'teachers' },
     { tab: 'teaching', perm: 'enrollments:view', sub: 'enrollments', title: '报名管理', desc: '报名、购课赠课、课时余额', icon: 'enrollments' },
     { tab: 'teaching', perm: 'transfers:view', sub: 'transfers', title: '结转管理', desc: '升班转课结转，按金额或课时', icon: 'transfers' },
@@ -720,6 +739,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
   const iconMap: Record<string, React.ReactNode> = {
     students: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4z" />,
     grades: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />,
+    classes: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />,
     courses: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />,
     enrollments: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />,
     transfers: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />,

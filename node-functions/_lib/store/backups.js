@@ -4,7 +4,7 @@ import {
   readdirSync, statSync, unlinkSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { nowUtc } from '../time.js'
+import { now } from '../time.js'
 
 // ========== 数据备份与恢复 ==========
 
@@ -21,8 +21,7 @@ function ensureBackupDir() {
 // 便于与"凌晨 3 点备份"等本地时间计划对齐
 export function createBackup() {
   ensureBackupDir()
-  const now = new Date()
-  const ts = now.toISOString().slice(0,19).replace('T','_').replace(/:/g,'-')
+  const ts = now().replace(' ', '_').replace(/:/g, '-')
   const filename = `backup-${ts}.db`
   const path = join(BACKUP_DIR, filename)
   const db = getDb()
@@ -30,7 +29,7 @@ export function createBackup() {
   db.pragma('wal_checkpoint(FULL)')
   db.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`)
   const size = statSync(path).size
-  return { ok: true, filename, path, size, createdAt: nowUtc() }
+  return { ok: true, filename, path, size, createdAt: now() }
 }
 
 // 列出所有备份（按时间倒序）

@@ -5,7 +5,7 @@ import type {
   AdminUser, AdminRole, CurrentAdmin, AuditLog, ReportQuery,
   BackupInfo, SystemConfigFull, BatchEnrollmentItem,
   Feedback, TeacherPerformance, Coupon, Membership, StudentMembership,
-  Lead, LeadFollowup, PermissionModule, Grade,
+  Lead, LeadFollowup, PermissionModule, Grade, ClassInfo, ClassMember,
 } from '@/types'
 
 const API_BASE = '/api'
@@ -415,7 +415,76 @@ export async function promoteGrade(
   })
 }
 
-// 批量新增排课（按课程为多个学员在多个日期同时排课）
+// ========== 班级管理 ==========
+
+// 获取班级列表（带成员数 + 关联课程名）
+export async function listClasses(params: { courseId?: string; status?: string } = {}): Promise<ApiResult<{ classes: ClassInfo[] }>> {
+  const qs = new URLSearchParams()
+  if (params.courseId) qs.set('courseId', params.courseId)
+  if (params.status) qs.set('status', params.status)
+  const query = qs.toString()
+  return request(`${API_BASE}/classes${query ? '?' + query : ''}`, { method: 'GET' })
+}
+
+// 新增班级（id 由后端自动生成）
+export async function addClass(
+  cls: Omit<ClassInfo, 'id' | 'createdAt' | 'memberCount' | 'courseName'> & { id?: string },
+): Promise<ApiResult<{ created: boolean; exists: boolean; class: ClassInfo }>> {
+  return request(`${API_BASE}/class-add`, {
+    method: 'POST',
+    body: JSON.stringify({ class: cls }),
+  })
+}
+
+// 更新班级
+export async function updateClass(
+  cls: Partial<ClassInfo> & { id: string; name: string },
+): Promise<ApiResult<{ updated: boolean; notFound: boolean; class: ClassInfo }>> {
+  return request(`${API_BASE}/class-update`, {
+    method: 'PUT',
+    body: JSON.stringify({ class: cls }),
+  })
+}
+
+// 删除班级（仍有排课引用时后端拒绝，返回 inUse + scheduleCount）
+export async function deleteClass(
+  id: string,
+): Promise<ApiResult<{ deleted: boolean; notFound: boolean; inUse: boolean; scheduleCount: number }>> {
+  return request(`${API_BASE}/class-delete`, {
+    method: 'DELETE',
+    body: JSON.stringify({ id }),
+  })
+}
+
+// 查询班级成员名单
+export async function getClassMembers(classId: string): Promise<ApiResult<{ members: ClassMember[] }>> {
+  const qs = new URLSearchParams({ classId })
+  return request(`${API_BASE}/class-members?${qs.toString()}`, { method: 'GET' })
+}
+
+// 批量加班级成员（忽略已存在）
+export async function addClassMembers(
+  classId: string,
+  studentIds: string[],
+): Promise<ApiResult<{ added: number }>> {
+  return request(`${API_BASE}/class-members`, {
+    method: 'POST',
+    body: JSON.stringify({ classId, studentIds }),
+  })
+}
+
+// 批量移除班级成员
+export async function removeClassMembers(
+  classId: string,
+  studentIds: string[],
+): Promise<ApiResult<{ removed: number }>> {
+  return request(`${API_BASE}/class-members`, {
+    method: 'DELETE',
+    body: JSON.stringify({ classId, studentIds }),
+  })
+}
+
+// 批量新增排课（按课程/班级为多个学员在多个日期同时排课）
 export async function batchAddSchedules(body: {
   courseId: string
   courseName: string
@@ -427,6 +496,7 @@ export async function batchAddSchedules(body: {
   endTime?: string
   note?: string
   studentIds: string[]
+  classId?: string
 }): Promise<ApiResult<{ created: number; skipped: number; errors: string[]; totalAttempts?: number }>> {
   return request(`${API_BASE}/schedule-add-batch`, {
     method: 'POST',
@@ -957,20 +1027,6 @@ export async function addFollowup(fu: { leadId: string; content: string; stage?:
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(fu),
-    signal: AbortSignal.timeout(10000),
-  })
-  return resp.json()
-}
-
-// ========== 家长端专属链接生成 ==========
-// 为学员签发家长访问 token（手机号后4位二次校验）
-export async function generateShareLink(
-  studentId: string,
-): Promise<ApiResult<{ token: string; studentId: string; studentName: string }>> {
-  const resp = await fetch(`${API_BASE}/share-link-generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ studentId }),
     signal: AbortSignal.timeout(10000),
   })
   return resp.json()

@@ -1,5 +1,6 @@
 import { getDb, validateStorageId } from './core.js'
 import { genStudentId } from '../id.js'
+import { now } from '../time.js'
 
 // ========== 行 <-> 对象 映射 ==========
 function rowToStudent(r) {
@@ -57,11 +58,11 @@ export async function addStudent(student) {
     source: student.source || '',
   }
   db.prepare(`INSERT INTO students
-    (id, name, grade, phone, parent_name, gender, birthday, status, tags, remark, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    (id, name, grade, phone, parent_name, gender, birthday, status, tags, remark, source, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     finalStudent.id, finalStudent.name, finalStudent.grade, finalStudent.phone,
     finalStudent.parentName, finalStudent.gender, finalStudent.birthday, finalStudent.status,
-    finalStudent.tags, finalStudent.remark, finalStudent.source,
+    finalStudent.tags, finalStudent.remark, finalStudent.source, now(),
   )
   return { created: true, exists: false, student: finalStudent }
 }

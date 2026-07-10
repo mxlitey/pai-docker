@@ -1,6 +1,6 @@
 import { getDb } from './core.js'
 import { genAuditId } from '../id.js'
-import { nowUtc } from '../time.js'
+import { now } from '../time.js'
 
 // ========== 行 <-> 对象 映射 ==========
 function rowToAuditLog(r) {
@@ -41,7 +41,7 @@ export async function addAuditLog({
     before ? JSON.stringify(before) : '',
     after ? JSON.stringify(after) : '',
     ip, userAgent,
-    nowUtc(),
+    now(),
   )
   return id
 }

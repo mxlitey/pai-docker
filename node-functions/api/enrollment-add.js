@@ -4,7 +4,7 @@ import { addEnrollment, getStudentById, getCourseById, json } from '../_lib/stor
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 import { genEnrollmentId } from '../_lib/id.js'
-import { nowUtc } from '../_lib/time.js'
+import { now } from '../_lib/time.js'
 
 async function readBody(request) {
   try {
@@ -69,7 +69,7 @@ export default async function onRequestPost(context) {
       paidAmount: Number(enrollment.paidAmount ?? (purchased * unitPrice)),
       // 有效期：空串表示无有效期（永不过期）；格式 yyyy-MM-dd
       expiredAt: enrollment.expiredAt ? String(enrollment.expiredAt).slice(0, 10) : '',
-      enrolledAt: enrollment.enrolledAt || nowUtc(),
+      enrolledAt: enrollment.enrolledAt || now(),
       note: enrollment.note ? String(enrollment.note).slice(0, 500) : '',
     }
 

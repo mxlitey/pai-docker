@@ -68,11 +68,43 @@ export interface Grade {
   createdAt?: string
 }
 
+// 班级状态
+export type ClassStatus = 'active' | 'inactive'
+
+// 班级信息（人的集合 + 关联课程 + 教师 + 默认时间地点，排课以班级为单位）
+export interface ClassInfo {
+  id: string
+  name: string
+  courseId?: string
+  courseName?: string
+  teacher?: string
+  location?: string
+  color?: string
+  defaultStartTime?: string
+  defaultEndTime?: string
+  capacity?: number
+  status?: ClassStatus
+  remark?: string
+  createdAt?: string
+  memberCount?: number
+}
+
+// 班级成员（join students 取档案信息）
+export interface ClassMember {
+  id: string
+  name: string
+  grade?: string
+  phone?: string
+  status?: string
+  joinedAt?: string
+}
+
 // 排课记录
 export interface Schedule {
   id: string
   studentId: string
   studentName: string
+  classId?: string
   courseId?: string
   courseName: string
   teacher: string

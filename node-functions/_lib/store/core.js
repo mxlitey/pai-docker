@@ -90,10 +90,35 @@ export function getDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_grades_sort ON grades(sort_order);
 
+    CREATE TABLE IF NOT EXISTS classes (
+      id                 TEXT PRIMARY KEY,
+      name               TEXT NOT NULL,
+      course_id          TEXT NOT NULL DEFAULT '',
+      teacher            TEXT DEFAULT '',
+      location           TEXT DEFAULT '',
+      color              TEXT DEFAULT '',
+      default_start_time TEXT DEFAULT '',
+      default_end_time   TEXT DEFAULT '',
+      capacity           INTEGER DEFAULT 0,
+      status             TEXT DEFAULT 'active',
+      remark             TEXT DEFAULT '',
+      created_at         TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_classes_course ON classes(course_id);
+
+    CREATE TABLE IF NOT EXISTS class_members (
+      class_id   TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (class_id, student_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_class_members_student ON class_members(student_id);
+
     CREATE TABLE IF NOT EXISTS schedules (
       id           TEXT PRIMARY KEY,
       student_id   TEXT NOT NULL,
       student_name TEXT NOT NULL,
+      class_id     TEXT DEFAULT '',
       course_id    TEXT DEFAULT '',
       course_name  TEXT NOT NULL,
       teacher      TEXT DEFAULT '',
@@ -113,6 +138,7 @@ export function getDb() {
     CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date);
     CREATE INDEX IF NOT EXISTS idx_schedules_student ON schedules(student_id);
     CREATE INDEX IF NOT EXISTS idx_schedules_course ON schedules(course_id);
+    CREATE INDEX IF NOT EXISTS idx_schedules_class ON schedules(class_id);
 
     CREATE TABLE IF NOT EXISTS enrollments (
       id                    TEXT PRIMARY KEY,
@@ -329,6 +355,7 @@ export function getDb() {
     ['status', "TEXT DEFAULT 'scheduled'"],
     ['room', "TEXT DEFAULT ''"],
     ['makeup_for', "TEXT DEFAULT ''"],
+    ['class_id', "TEXT DEFAULT ''"],
   ]) ensureColumn(db, 'schedules', col, def)
   // enrollments 补齐新增列
   for (const [col, def] of [

@@ -4,7 +4,6 @@ import { AdminPanel } from '@/components/Admin/AdminPanel'
 import { Home } from '@/components/Home/Home'
 import { ParentH5 } from '@/components/Parent/ParentH5'
 import { getAppName, setAppName as setAppNameConfig } from '@/config'
-import { setDisplayTimezone } from '@/utils/tz'
 
 // 页面模式：首页 / 家长端 H5 / 后台管理
 // - home：项目首页（登录入口 + 简介）
@@ -50,13 +49,13 @@ function setAdminHash() {
 export default function App() {
   // 初始页面模式：根据 URL 状态决定，避免刷新时被重置
   // - #admin 或 #admin/子页面 → 后台管理
-  // - ?s= 且 ?t= → 家长端 H5
+  // - ?s= → 家长端 H5
   // - 其他 → 首页
   const [page, setPage] = useState<PageMode>(() => {
     try {
       const url = new URL(window.location.href)
       if (url.hash === '#admin' || url.hash.startsWith('#admin/')) return 'admin'
-      if (url.searchParams.get('s') && url.searchParams.get('t')) return 'parent'
+      if (url.searchParams.get('s')) return 'parent'
     } catch {
       // 忽略
     }
@@ -72,7 +71,6 @@ export default function App() {
       if (!active) return
       setAppNameConfig(cfg.appName)
       setAppNameState(cfg.appName)
-      if (cfg.timezone) setDisplayTimezone(cfg.timezone)
     })
     return () => {
       active = false
@@ -86,7 +84,7 @@ export default function App() {
         const url = new URL(window.location.href)
         if (url.hash === '#admin' || url.hash.startsWith('#admin/')) {
           setPage('admin')
-        } else if (url.searchParams.get('s') && url.searchParams.get('t')) {
+        } else if (url.searchParams.get('s')) {
           setPage('parent')
         } else {
           setPage('home')

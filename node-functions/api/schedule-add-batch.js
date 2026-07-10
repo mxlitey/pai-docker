@@ -1,9 +1,10 @@
 // 批量新增排课 API
 // POST /api/schedule-add-batch
-// body: { courseId, courseName, teacher, location, color, dates: string[], startTime, endTime, note, studentIds: [] }
+// body: { courseId, courseName, teacher, location, color, dates: string[], startTime, endTime, note, studentIds: [], classId? }
 // 为每个 (date, studentId) 组合生成一条排课记录，一次性写入
+// classId 可选：传则关联班级（以班级为单位排课），不传则按手选学员排课（兼容旧逻辑）
 // dates 为多日期数组，支持一次性排多天的课
-import { batchAddSchedules, getStudents, getCourseById, json } from '../_lib/store.js'
+import { batchAddSchedules, getStudents, getCourseById, getClassById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 import { genScheduleId } from '../_lib/id.js'
@@ -33,6 +34,7 @@ export default async function onRequestPost(context) {
     endTime,
     note,
     studentIds,
+    classId,
   } = body
 
   // 字段校验
@@ -67,6 +69,13 @@ export default async function onRequestPost(context) {
     if (!course) {
       return json({ code: 1, message: `课程 id="${courseId}" 不存在`, data: null }, 404)
     }
+    // classId 可选：传则校验班级存在
+    if (classId) {
+      const cls = await getClassById(classId)
+      if (!cls) {
+        return json({ code: 1, message: `班级 id="${classId}" 不存在`, data: null }, 404)
+      }
+    }
     // 校验学员是否存在，并构建 id->name 映射
     const students = await getStudents()
     const studentMap = new Map(students.map((s) => [s.id, s]))
@@ -93,6 +102,7 @@ export default async function onRequestPost(context) {
           id,
           studentId: sid,
           studentName: student.name,
+          classId: classId || '',
           courseId,
           courseName,
           teacher: teacher || '',

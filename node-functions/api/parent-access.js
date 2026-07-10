@@ -1,9 +1,9 @@
-// 家长端 H5 访问 API（无需管理员登录，凭专属链接 token + 手机号后4位二次校验）
+// 家长端 H5 访问 API（无需管理员登录，凭学员 ID + 手机号后4位验真）
 //
-// GET  /api/parent-access?s=studentId&t=token
-//   → 校验 token 签名，返回脱敏的学员名与手机号提示，供 H5 渲染验证页
-// POST /api/parent-access  body: { studentId, token, phoneSuffix }
-//   → 二次校验手机号后4位，通过后返回学员信息 + 近期排课 + 报名余额 + 教师课后反馈
+// GET  /api/parent-access?s=studentId
+//   → 返回脱敏的学员名与手机号提示，供 H5 渲染验证页
+// POST /api/parent-access  body: { studentId, phoneSuffix }
+//   → 校验手机号后4位，通过后返回学员信息 + 近期排课 + 报名余额 + 教师课后反馈
 import {
   json,
   getStudentById,
@@ -11,7 +11,6 @@ import {
   getEnrollments,
   getFeedback,
 } from '../_lib/store.js'
-import { verifyParentToken, getTokenSecret } from '../_lib/auth.js'
 
 async function readBody(request) {
   try {
@@ -35,24 +34,12 @@ function maskName(name) {
   return name[0] + '*'.repeat(name.length - 2) + name[name.length - 1]
 }
 
-// 校验 token 并匹配 studentId，返回 payload 或 null
-async function checkToken(studentId, token) {
-  if (!studentId || !token) return null
-  const secret = getTokenSecret()
-  const payload = await verifyParentToken(token, secret)
-  if (!payload) return null
-  if (payload.sid !== studentId) return null
-  return payload
-}
-
 // GET：返回脱敏提示信息（不泄露学员全名与完整手机号）
 export async function onRequestGet({ request }) {
   const url = new URL(request.url)
   const studentId = url.searchParams.get('s')
-  const token = url.searchParams.get('t')
-  const payload = await checkToken(studentId, token)
-  if (!payload) {
-    return json({ code: 1, message: '链接无效或已失效，请联系老师获取新的专属链接', data: null }, 403)
+  if (!studentId) {
+    return json({ code: 1, message: '链接缺少学员参数', data: null }, 400)
   }
   const student = await getStudentById(studentId)
   if (!student) {
@@ -64,33 +51,33 @@ export async function onRequestGet({ request }) {
     data: {
       studentId,
       studentName: maskName(student.name),
-      // 提示家长输入登记手机号的后4位
       phoneHint: '请输入报名时登记的手机号后 4 位',
     },
   })
 }
 
-// POST：二次校验手机号后4位，通过后返回完整数据
+// POST：校验手机号后4位，通过后返回完整数据
 export async function onRequestPost(context) {
   const { request } = context
   const body = await readBody(request)
-  const { studentId, token, phoneSuffix } = body
-  const payload = await checkToken(studentId, token)
-  if (!payload) {
-    return json({ code: 1, message: '链接无效或已失效', data: null }, 403)
+  const { studentId, phoneSuffix } = body
+  if (!studentId) {
+    return json({ code: 1, message: '缺少学员参数', data: null }, 400)
   }
 
   const input = String(phoneSuffix || '').replace(/\D/g, '').slice(-4)
   if (!input) {
     return json({ code: 1, message: '请输入手机号后 4 位', data: null }, 400)
   }
-  // 双重比对：与 token 内 ps 一致，且与学员当前手机号后4位一致
   const student = await getStudentById(studentId)
   if (!student) {
     return json({ code: 1, message: '学员信息不存在', data: null }, 404)
   }
   const actualPs = phoneLast4(student.phone)
-  if (input !== payload.ps || input !== actualPs) {
+  if (!actualPs) {
+    return json({ code: 1, message: '该学员未登记手机号，请联系老师', data: null }, 400)
+  }
+  if (input !== actualPs) {
     return json({ code: 1, message: '手机号后 4 位不正确，请核对后重试', data: null }, 403)
   }
 
@@ -119,7 +106,7 @@ export async function onRequestPost(context) {
     const all = await getEnrollments({ studentId, status: 'active' })
     enrollments = all.map((e) => ({
       courseId: e.courseId,
-      courseName: '', // 课程名由前端按需展开，此处仅给余额
+      courseName: '',
       status: e.status,
       purchasedHours: e.purchasedHours,
       giftHours: e.giftHours,

@@ -1,5 +1,6 @@
 import { getDb, validateStorageId } from './core.js'
 import { genCourseId } from '../id.js'
+import { now } from '../time.js'
 
 // ========== 行 <-> 对象 映射 ==========
 function rowToCourse(r) {
@@ -64,11 +65,11 @@ export async function addCourse(course) {
     description: course.description || '',
   }
   db.prepare(`INSERT INTO courses
-    (id, name, teacher, location, color, default_start_time, default_end_time, unit_price, billing_type, capacity, term, status, category, grade, description)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    (id, name, teacher, location, color, default_start_time, default_end_time, unit_price, billing_type, capacity, term, status, category, grade, description, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     finalCourse.id, finalCourse.name, finalCourse.teacher, finalCourse.location, finalCourse.color,
     finalCourse.defaultStartTime, finalCourse.defaultEndTime, finalCourse.unitPrice, finalCourse.billingType,
-    finalCourse.capacity, finalCourse.term, finalCourse.status, finalCourse.category, finalCourse.grade, finalCourse.description,
+    finalCourse.capacity, finalCourse.term, finalCourse.status, finalCourse.category, finalCourse.grade, finalCourse.description, now(),
   )
   return { created: true, exists: false, course: finalCourse }
 }

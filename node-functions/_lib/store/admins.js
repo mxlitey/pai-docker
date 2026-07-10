@@ -1,6 +1,6 @@
 import { getDb } from './core.js'
 import { genAdminId } from '../id.js'
-import { nowUtc } from '../time.js'
+import { now } from '../time.js'
 
 // ========== 行 <-> 对象 映射 ==========
 function rowToAdmin(r) {
@@ -105,7 +105,7 @@ export async function deleteAdmin(id) {
 export async function recordLogin(id, ip) {
   const db = getDb()
   db.prepare('UPDATE admins SET last_login_at=?, last_login_ip=? WHERE id=?')
-    .run(nowUtc(), ip || '', id)
+    .run(now(), ip || '', id)
 }
 
 // 兼容旧调用：返回首个超管

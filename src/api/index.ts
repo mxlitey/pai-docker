@@ -109,7 +109,7 @@ export async function getConfig(): Promise<SystemConfig> {
 }
 
 // ========== 家长端 H5 专属访问 ==========
-// 家长通过专属链接（含 token）进入，需输入手机号后4位二次校验
+// 家长通过专属链接（含学员 ID）进入，需输入手机号后4位验真
 
 export interface ParentAccessHint {
   studentId: string
@@ -136,20 +136,18 @@ export interface ParentAccessData {
   feedback: import('@/types').Feedback[]
 }
 
-// GET：校验 token，返回脱敏提示信息（家长进入 H5 时先调）
+// GET：返回脱敏提示信息（家长进入 H5 时先调）
 export async function getParentAccessHint(
   studentId: string,
-  token: string,
 ): Promise<ParentAccessHint> {
-  const qs = new URLSearchParams({ s: studentId, t: token })
+  const qs = new URLSearchParams({ s: studentId })
   const data = await request<ParentAccessHint>(`${API_BASE}/parent-access?${qs}`)
   return data
 }
 
-// POST：二次校验手机号后4位，通过后返回完整数据
+// POST：校验手机号后4位，通过后返回完整数据
 export async function verifyParentAccess(
   studentId: string,
-  token: string,
   phoneSuffix: string,
 ): Promise<ParentAccessData> {
   let resp: Response
@@ -157,7 +155,7 @@ export async function verifyParentAccess(
     resp = await fetch(`${API_BASE}/parent-access`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentId, token, phoneSuffix }),
+      body: JSON.stringify({ studentId, phoneSuffix }),
       signal: AbortSignal.timeout(10000),
     })
   } catch {

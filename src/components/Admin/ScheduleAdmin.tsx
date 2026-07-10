@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Course, Schedule, Student } from '@/types'
+import type { Course, Schedule, Student, ClassInfo } from '@/types'
 import { getSchedules } from '@/api'
-import { deleteSchedule, searchSchedules } from '@/api/admin'
+import { deleteSchedule, searchSchedules, listClasses } from '@/api/admin'
 import { SearchBar } from '@/components/SearchBar'
 import { cn } from '@/utils/cn'
 import {
@@ -41,8 +41,28 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
   const [loadingSchedules, setLoadingSchedules] = useState(false)
   const [busy, setBusy] = useState(false)
 
+  // 班级列表：排课弹窗按班级带出成员名单
+  const [classes, setClasses] = useState<ClassInfo[]>([])
+
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
   const [addingSchedule, setAddingSchedule] = useState(false)
+
+  // 加载班级列表（active 状态）
+  const loadClasses = useCallback(async () => {
+    try {
+      const result = await listClasses({ status: 'active' })
+      if (result.code === 0) {
+        setClasses(result.data.classes)
+      }
+    } catch (e) {
+      console.error('加载班级列表失败:', e)
+    }
+  }, [])
+
+  // 进入页面时加载班级（供排课弹窗使用）
+  useEffect(() => {
+    loadClasses()
+  }, [loadClasses])
 
   // 按学员加载排课
   const loadSchedulesByStudent = useCallback(async (studentId: string) => {
@@ -373,6 +393,7 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
         <ScheduleAddModal
           courses={courses}
           students={students}
+          classes={classes}
           onClose={() => setAddingSchedule(false)}
           onUpdated={handleEditorUpdated}
         />

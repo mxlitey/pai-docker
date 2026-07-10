@@ -1,5 +1,6 @@
 import { getDb } from './core.js'
 import { genCouponId } from '../id.js'
+import { now } from '../time.js'
 
 // ========== 优惠券 coupons ==========
 export async function getCoupons({ status } = {}) {
@@ -21,13 +22,13 @@ export async function addCoupon(coupon) {
   const db = getDb()
   const id = genCouponId()
   db.prepare(`INSERT INTO coupons
-    (id, code, name, type, value, min_amount, valid_from, valid_to, usage_limit, used_count, status, remark)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    (id, code, name, type, value, min_amount, valid_from, valid_to, usage_limit, used_count, status, remark, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     id, coupon.code || id, coupon.name || '', coupon.type || 'discount',
     Math.max(0, Number(coupon.value) || 0), Math.max(0, Number(coupon.minAmount) || 0),
     coupon.validFrom || '', coupon.validTo || '',
     Math.max(0, Math.floor(Number(coupon.usageLimit) || 0)), 0,
-    coupon.status || 'active', coupon.remark || '',
+    coupon.status || 'active', coupon.remark || '', now(),
   )
   return { id, coupon: { ...coupon, id } }
 }

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { BackupInfo } from '@/types'
 import { getConfig } from '@/api'
-import { fmtDateTimeFull, setDisplayTimezone } from '@/utils/tz'
+import { fmtDateTimeFull } from '@/utils/tz'
 import { parseCron, describeCron } from '@/utils/cron'
 import {
   getSystemConfig,
@@ -245,7 +245,6 @@ export function SystemSettingsAdmin({
       const result = await updateSystemConfig({ timezone: tz })
       if (result.code === 0) {
         setOriginalTimezone(tz)
-        setDisplayTimezone(tz)
         toast.success('时区已更新')
       } else {
         toast.error(result.message || '保存失败')

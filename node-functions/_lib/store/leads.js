@@ -1,6 +1,6 @@
 import { getDb } from './core.js'
 import { genLeadId, genFollowupId } from '../id.js'
-import { nowUtc } from '../time.js'
+import { now } from '../time.js'
 
 // ========== CRM 线索 leads ==========
 export async function getLeads({ stage, assignedTo } = {}) {
@@ -22,10 +22,10 @@ export async function getLeads({ stage, assignedTo } = {}) {
 export async function addLead(lead) {
   const db = getDb()
   const id = genLeadId()
-  const now = nowUtc()
+  const nowStr = now()
   db.prepare(`INSERT INTO leads (id, name, phone, grade, source, stage, intention, assigned_to, remark, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
     id, lead.name || '', lead.phone || '', lead.grade || '', lead.source || '',
-    lead.stage || 'new', lead.intention || '', lead.assignedTo || '', lead.remark || '', now, now,
+    lead.stage || 'new', lead.intention || '', lead.assignedTo || '', lead.remark || '', nowStr, nowStr,
   )
   return { id, lead: { ...lead, id } }
 }
@@ -34,7 +34,7 @@ export async function updateLead(id, patch) {
   const db = getDb()
   const old = db.prepare('SELECT * FROM leads WHERE id=?').get(id)
   if (!old) throw new Error('线索不存在')
-  const now = nowUtc()
+  const nowStr = now()
   db.prepare(`UPDATE leads SET name=?, phone=?, grade=?, source=?, stage=?, intention=?, assigned_to=?, remark=?, converted=?, student_id=?, updated_at=? WHERE id=?`).run(
     patch.name !== undefined ? patch.name : old.name,
     patch.phone !== undefined ? patch.phone : old.phone,
@@ -46,7 +46,7 @@ export async function updateLead(id, patch) {
     patch.remark !== undefined ? patch.remark : old.remark,
     patch.converted !== undefined ? (patch.converted ? 1 : 0) : old.converted,
     patch.studentId !== undefined ? patch.studentId : old.student_id,
-    now, id,
+    nowStr, id,
   )
   return { id }
 }
@@ -75,6 +75,6 @@ export async function addFollowup(fu) {
     id, fu.leadId, fu.content || '', fu.stage || '', fu.operatorId || '',
   )
   // 同步更新线索的 updated_at
-  db.prepare('UPDATE leads SET updated_at=? WHERE id=?').run(nowUtc(), fu.leadId)
+  db.prepare('UPDATE leads SET updated_at=? WHERE id=?').run(now(), fu.leadId)
   return { id }
 }

@@ -1,6 +1,6 @@
 import { getDb, validateStorageId } from './core.js'
 import { genTransferId, genEnrollmentId } from '../id.js'
-import { nowUtc } from '../time.js'
+import { now } from '../time.js'
 
 // ========== 行 <-> 对象 映射 ==========
 function rowToTransfer(r) {
@@ -85,7 +85,7 @@ export async function addTransfer(transfer) {
         unitPrice,
         nt.expiredAt || '',
         nt.operatorId || transfer.operatorId || '',
-        nt.enrolledAt || nowUtc(),
+        nt.enrolledAt || now(),
         nt.note || '升班结转自动创建',
       )
       to = db.prepare('SELECT * FROM enrollments WHERE id=?').get(toEnrollmentId)
