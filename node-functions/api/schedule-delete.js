@@ -1,6 +1,6 @@
 // 排课删除 API
 // DELETE /api/schedule  body: { id, studentId, date }
-import { deleteSchedule, json } from '../_lib/store.js'
+import { deleteSchedule, getScheduleById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -35,6 +35,21 @@ export default async function onRequestDelete(context) {
   }
 
   try {
+    // 状态校验：已到课/缺勤/已取消的排课不允许删除
+    const current = await getScheduleById(id)
+    if (!current) {
+      return json({ code: 1, message: '排课记录不存在', data: null }, 404)
+    }
+    if (current.status === 'cancelled') {
+      return json({ code: 1, message: '已取消的排课不允许删除', data: null }, 409)
+    }
+    if (current.attended === true) {
+      return json({ code: 1, message: '已到课的排课不允许删除', data: null }, 409)
+    }
+    if (current.attended === false) {
+      return json({ code: 1, message: '已缺勤的排课不允许删除', data: null }, 409)
+    }
+
     const result = await deleteSchedule(id, studentId, date)
     if (result.count > 0) {
       const before = result.before || null

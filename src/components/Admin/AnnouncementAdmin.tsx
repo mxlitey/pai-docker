@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { fmtDateTime } from '@/utils/tz'
 import { Button, SubPageHeader } from '@/components/ui'
 
 interface AnnouncementAdminProps {
@@ -26,15 +27,9 @@ export function AnnouncementAdmin({
   // 公告编辑/预览切换
   const [announceTab, setAnnounceTab] = useState<'edit' | 'preview'>('edit')
 
-  // 格式化更新时间
+  // 格式化更新时间（后端存储 UTC，按浏览器本地时区显示）
   const updatedAtLabel = announcementUpdatedAt
-    ? new Date(announcementUpdatedAt).toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
+    ? fmtDateTime(announcementUpdatedAt)
     : ''
 
   return (

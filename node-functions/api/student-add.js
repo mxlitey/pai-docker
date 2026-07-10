@@ -20,7 +20,15 @@ function validateStudent(s) {
   if (typeof s.name !== 'string' || s.name.length > 32) {
     throw new Error('name 需为 1-32 字符的字符串')
   }
-  if (s.grade && typeof s.grade !== 'string') {
+  // 手机必填
+  if (!s.phone || !String(s.phone).trim()) {
+    throw new Error('缺少 phone（手机号为必填项）')
+  }
+  // 年级必填
+  if (!s.grade || !String(s.grade).trim()) {
+    throw new Error('缺少 grade（年级为必填项）')
+  }
+  if (typeof s.grade !== 'string') {
     throw new Error('grade 需为字符串')
   }
   // 课时不再由学员维护（改为报名记录 enrollment 维护），忽略前端可能传入的 hours 字段

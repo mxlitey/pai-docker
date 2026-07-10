@@ -5,7 +5,7 @@
 // 前缀规范（统一 3 字母，便于一眼识别实体类型）：
 //   stu_ 学员  crs_ 课程  sch_ 排课  enr_ 报名  trf_ 结转
 //   adm_ 管理员  aud_ 审计日志  fdb_ 课后反馈  cup_ 优惠券
-//   mem_ 会员卡  smm_ 学员会员卡  led_ 线索  fol_ 线索跟进  grd_ 年级
+//   mem_ 会员卡  smm_ 学员会员卡  led_ 线索  fol_ 线索跟进  grd_ 年级  cls_ 班级  chg_ 调课记录
 let idCounter = 0
 
 function nextSeq() {
@@ -35,3 +35,6 @@ export const genStudentMembershipId = () => makeId('smm_')
 export const genLeadId = () => makeId('led_')
 export const genFollowupId = () => makeId('fol_')
 export const genGradeId = () => makeId('grd_')
+export const genClassId = () => makeId('cls_')
+export const genScheduleChangeId = () => makeId('chg_')
+export const genAccountTxId = () => makeId('atx_')

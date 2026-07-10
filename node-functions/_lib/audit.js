@@ -14,12 +14,10 @@ export const FIELD_LABELS = {
   students: {
     name: '姓名', grade: '年级', phone: '手机号', parentName: '家长姓名',
     gender: '性别', birthday: '生日', status: '状态', tags: '标签',
-    remark: '备注', source: '来源',
+    remark: '备注', source: '来源', balance: '账户余额',
   },
   courses: {
-    name: '课程名', teacher: '教师', location: '上课地点', color: '颜色',
-    defaultStartTime: '默认开始时间', defaultEndTime: '默认结束时间',
-    unitPrice: '单价', billingType: '计费方式', capacity: '容量',
+    name: '课程名', color: '颜色', billingType: '计费方式',
     term: '学期', status: '状态', category: '分类', grade: '年级', description: '描述',
   },
   enrollments: {
@@ -38,8 +36,12 @@ export const FIELD_LABELS = {
     name: '年级名', sortOrder: '排序', status: '状态', description: '描述',
   },
   transfers: {
-    mode: '结转方式', transferredHours: '结转课时', transferredAmount: '结转金额',
-    leftoverAmount: '剩余金额', note: '备注', reason: '原因',
+    studentId: '学员', fromEnrollmentId: '源报名', toEnrollmentId: '目标报名',
+    refundAmount: '退课金额', giftMode: '赠课处理', note: '备注', reason: '原因',
+  },
+  accounts: {
+    type: '流水类型', amount: '金额', balanceAfter: '变动后余额',
+    note: '备注', refType: '关联类型', refId: '关联ID',
   },
 }
 
@@ -48,7 +50,8 @@ const VALUE_LABELS = {
   status: { active: '进行中', inactive: '停用', settled: '已结转', finished: '已完结', expired: '已过期', scheduled: '已排课' },
   billingType: { per_lesson: '按课时', per_term: '按学期', per_month: '按月' },
   gender: { male: '男', female: '女' },
-  mode: { amount: '按金额', hours: '按课时' },
+  giftMode: { discard: '赠课作废', refund: '赠课折算' },
+  type: { recharge: '充值', refund: '退课转入', enroll_deduct: '报名抵扣', withdraw: '提现' },
 }
 
 function valueLabel(field, val) {

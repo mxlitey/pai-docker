@@ -1,6 +1,6 @@
 import { getDb } from './core.js'
 import { genMembershipId, genStudentMembershipId } from '../id.js'
-import { todayLocal, formatLocal } from '../time.js'
+import { today } from '../time.js'
 
 // ========== 会员卡 memberships ==========
 export async function getMemberships({ status } = {}) {
@@ -75,13 +75,13 @@ export async function getStudentMemberships({ studentId, status } = {}) {
 export async function addStudentMembership(sm) {
   const db = getDb()
   const id = genStudentMembershipId()
-  const startedAt = sm.startedAt || todayLocal()
+  const startedAt = sm.startedAt || today()
   // 计算到期日
   let expiredAt = sm.expiredAt || ''
   if (!expiredAt && sm.durationDays) {
     const d = new Date(startedAt + 'T00:00:00')
     d.setDate(d.getDate() + Math.max(1, Math.floor(Number(sm.durationDays) || 30)))
-    expiredAt = formatLocal(d, 'yyyy-MM-dd')
+    expiredAt = d.toISOString().slice(0,10)
   }
   db.prepare(`INSERT INTO student_memberships (id, student_id, membership_id, status, started_at, expired_at, paid_amount, operator_id) VALUES (?,?,?,?,?,?,?,?)`).run(
     id, sm.studentId, sm.membershipId, sm.status || 'active', startedAt, expiredAt,

@@ -1,5 +1,6 @@
 import { getDb, validateStorageId } from './core.js'
 import { genStudentId } from '../id.js'
+import { now } from '../time.js'
 
 // ========== 行 <-> 对象 映射 ==========
 function rowToStudent(r) {
@@ -16,6 +17,7 @@ function rowToStudent(r) {
     tags: r.tags || '',
     remark: r.remark || '',
     source: r.source || '',
+    balance: typeof r.balance === 'number' ? r.balance : Number(r.balance || 0),
     createdAt: r.created_at || '',
   }
 }
@@ -57,13 +59,14 @@ export async function addStudent(student) {
     source: student.source || '',
   }
   db.prepare(`INSERT INTO students
-    (id, name, grade, phone, parent_name, gender, birthday, status, tags, remark, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    (id, name, grade, phone, parent_name, gender, birthday, status, tags, remark, source, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     finalStudent.id, finalStudent.name, finalStudent.grade, finalStudent.phone,
     finalStudent.parentName, finalStudent.gender, finalStudent.birthday, finalStudent.status,
-    finalStudent.tags, finalStudent.remark, finalStudent.source,
+    finalStudent.tags, finalStudent.remark, finalStudent.source, now(),
   )
-  return { created: true, exists: false, student: finalStudent }
+  // 返回 DB 行（含 balance 等默认字段）
+  return { created: true, exists: false, student: rowToStudent(db.prepare('SELECT * FROM students WHERE id=?').get(id)) }
 }
 
 export async function updateStudent(student) {
@@ -105,6 +108,7 @@ export async function deleteStudentWithSchedules(studentId) {
     const del = db.prepare('DELETE FROM schedules WHERE student_id=?').run(studentId)
     db.prepare('DELETE FROM enrollments WHERE student_id=?').run(studentId)
     db.prepare('DELETE FROM transfers WHERE student_id=?').run(studentId)
+    db.prepare('DELETE FROM account_transactions WHERE student_id=?').run(studentId)
     const stu = db.prepare('DELETE FROM students WHERE id=?').run(studentId)
     return { deletedScheduleFiles: del.changes > 0 ? 1 : 0, studentRemoved: stu.changes > 0, before }
   })

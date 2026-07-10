@@ -14,7 +14,8 @@ import {
   getDb, countAdmins, createBackup, purgeOldBackups,
   expireOverdueEnrollments,
 } from './node-functions/_lib/store.js'
-import { loadConfig, getConfigPath, getBackupKeepDays, getBackupInterval, getBackupMaxCount, BACKUP_INTERVALS } from './node-functions/_lib/config-file.js'
+import { loadConfig, getConfigPath, getBackupKeepDays, getBackupCron, getBackupMaxCount } from './node-functions/_lib/config-file.js'
+import { nextCronTime, describeCron } from './node-functions/_lib/cron.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = __dirname
@@ -277,47 +278,38 @@ async function main() {
     console.log(`[启动] 静态资源目录：${STATIC_DIR}`)
   })
 
-  // 6. 定时任务：按配置频率自动备份 + 清理过期备份 + 课时过期处理
-  //    频率由 config.backupInterval 控制（daily / hourly / every-Nm 等）
-  //    daily 锚定凌晨 3:00 执行；其余按固定间隔从启动起循环
-  //    每个周期重新读取配置，频率变更后无需重启即可生效
-  const DAY_MS = 86400000
+  // 6. 定时任务：按 cron 表达式自动备份 + 清理过期备份 + 课时过期处理
+  //    cron 表达式由 config.backupCron 控制（默认 '0 3 * * *'，即每天 3:00）
+  //    执行时刻按 TZ 环境变量计算；TZ=Asia/Shanghai 时即北京时间 3:00
+  //    每个周期重新读取配置，cron 变更后无需重启即可生效
   // 启动后立即执行一次过期处理，确保状态及时
   try { expireOverdueEnrollments() } catch (e) { console.error('[定时] 过期处理失败:', e?.message) }
 
   let backupTimer = null
   const scheduleNextBackup = () => {
     if (backupTimer) clearTimeout(backupTimer)
-    const interval = getBackupInterval()
-    const intervalMs = BACKUP_INTERVALS[interval] || BACKUP_INTERVALS.daily
-    let delay
-    let nextRunLabel
-    if (interval === 'daily') {
-      // 锚定凌晨 3:00（本地时间）：new Date()/setHours 受 TZ 环境变量控制，
-      // 设置 TZ=Asia/Shanghai 后即在北京时间 3:00 执行
-      const now = new Date()
-      const next3am = new Date(now)
-      next3am.setHours(3, 0, 0, 0)
-      if (next3am <= now) next3am.setTime(next3am.getTime() + DAY_MS)
-      delay = next3am.getTime() - now.getTime()
-      nextRunLabel = next3am.toLocaleString()
-    } else {
-      // 固定间隔：首次延迟 = intervalMs（启动后等一个周期再首次执行，避免与启动初始化抢资源）
-      delay = intervalMs
-      nextRunLabel = `${intervalMs / 1000}s 后`
+    const cronExpr = getBackupCron()
+    const next = nextCronTime(cronExpr, new Date())
+    if (!next) {
+      console.warn(`[定时] cron "${cronExpr}" 在 366 天内无匹配时刻，跳过调度`)
+      // 1 小时后重试（配置可能被修正）
+      backupTimer = setTimeout(scheduleNextBackup, 3600000)
+      return
     }
+    const delay = next.getTime() - Date.now()
+    const desc = describeCron(cronExpr)
+    console.log(`[定时] 自动备份：${desc}（cron: ${cronExpr}，下次执行：${next.toLocaleString()}）`)
     backupTimer = setTimeout(() => {
       runDailyMaintenance()
-      // 执行完后再调度下一次（此时会重新读取最新配置，频率变更可即时生效）
+      // 执行完后再调度下一次（此时会重新读取最新配置，cron 变更可即时生效）
       scheduleNextBackup()
     }, delay)
-    console.log(`[定时] 自动备份频率：${interval}（下次执行：${nextRunLabel}）`)
   }
   scheduleNextBackup()
 }
 
 // 自动维护：备份 → 清理旧备份（按天数+份数）→ 过期处理
-// 按 backupInterval 配置的频率循环执行（不再仅每日）
+// 按 backupCron 配置的 cron 表达式调度执行
 function runDailyMaintenance() {
   try {
     const result = createBackup()

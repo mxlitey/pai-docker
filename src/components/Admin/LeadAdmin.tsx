@@ -1,6 +1,7 @@
 // CRM 线索管理页 —— 阶段筛选 / 增删改 / 跟进记录 / 转化学员标记
 import { useEffect, useState } from 'react'
 import type { Lead, LeadStage, LeadFollowup } from '@/types'
+import { fmtDateTime } from '@/utils/tz'
 import {
   getLeads,
   addLead,
@@ -629,7 +630,7 @@ function FollowupModal({ lead, onClose, onChanged }: FollowupModalProps) {
               >
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <span className="text-xs text-slate-400">
-                    {fu.createdAt || ''}
+                    {fmtDateTime(fu.createdAt)}
                   </span>
                   {fu.stage && STAGE_OPTIONS.includes(fu.stage as LeadStage) && (
                     <span

@@ -31,8 +31,10 @@ export const ROLE_PERMISSIONS = {
     'students:view', 'students:create', 'students:update', 'students:delete',
     'courses:view', 'courses:create', 'courses:update', 'courses:delete',
     'grades:view', 'grades:create', 'grades:update', 'grades:delete',
+    'classes:view', 'classes:create', 'classes:update', 'classes:delete',
     'enrollments:view', 'enrollments:create', 'enrollments:update', 'enrollments:delete',
     'transfers:view', 'transfers:create',
+    'accounts:view', 'accounts:recharge', 'accounts:withdraw',
     'schedules:view', 'schedules:create', 'schedules:update', 'schedules:delete',
     'attendance:view', 'attendance:update',
     'announcement:view', 'announcement:update',
@@ -47,7 +49,8 @@ export const ROLE_PERMISSIONS = {
   ],
   teacher: [
     'schedules:view', 'attendance:view', 'attendance:update',
-    'enrollments:view', 'students:view', 'courses:view', 'grades:view', 'reports:view',
+    'enrollments:view', 'students:view', 'courses:view', 'grades:view', 'classes:view', 'reports:view',
+    'accounts:view',
     'feedback:view', 'feedback:create', 'feedback:update',
   ],
 }
@@ -73,6 +76,12 @@ export const PERMISSION_DEFINITIONS = [
     { key: 'grades:update', label: '编辑' },
     { key: 'grades:delete', label: '删除' },
   ]},
+  { module: 'classes', label: '班级管理', actions: [
+    { key: 'classes:view', label: '查看' },
+    { key: 'classes:create', label: '新增' },
+    { key: 'classes:update', label: '编辑' },
+    { key: 'classes:delete', label: '删除' },
+  ]},
   { module: 'enrollments', label: '报名管理', actions: [
     { key: 'enrollments:view', label: '查看' },
     { key: 'enrollments:create', label: '新增' },
@@ -82,6 +91,11 @@ export const PERMISSION_DEFINITIONS = [
   { module: 'transfers', label: '结转管理', actions: [
     { key: 'transfers:view', label: '查看' },
     { key: 'transfers:create', label: '新增' },
+  ]},
+  { module: 'accounts', label: '账户管理', actions: [
+    { key: 'accounts:view', label: '查看' },
+    { key: 'accounts:recharge', label: '充值' },
+    { key: 'accounts:withdraw', label: '提现/退款' },
   ]},
   { module: 'schedules', label: '排课管理', actions: [
     { key: 'schedules:view', label: '查看' },
@@ -409,43 +423,6 @@ export async function requirePermission(context, permission) {
   // 注入最新 permissions 供后续审计使用
   if (latest) context.admin.permissions = latest.permissions
   return null
-}
-
-// ========== 家长端专属链接 Token ==========
-// 与管理员 token 隔离：payload 形状不同，互相无法通过对方校验
-// payload = { sid: studentId, ps: phoneSuffix(后4位), ts }
-// 用途：家长通过专属链接访问 H5，链接携带 token；进入后需再输入手机号后4位二次校验
-
-// 签发家长访问 token（仅服务端持有 secret，故仅由 share-link-generate API 调用）
-export async function signParentToken(secret, { sid, ps } = {}) {
-  const fullPayload = { typ: 'parent', sid: sid || '', ps: ps || '', ts: Date.now() }
-  const payloadStr = JSON.stringify(fullPayload)
-  const enc = new TextEncoder()
-  const payloadB64 = bufToB64Url(enc.encode(payloadStr))
-  const sig = await hmacSign(secret, payloadB64)
-  return `${payloadB64}.${sig}`
-}
-
-// 校验家长 token：返回 payload 或 null
-// maxAgeMs 默认 365 天（专属链接长期有效，靠手机号后4位做二次校验）
-export async function verifyParentToken(token, secret, maxAgeMs = 365 * 24 * 60 * 60 * 1000) {
-  if (!token || !secret) return null
-  const parts = token.split('.')
-  if (parts.length !== 2) return null
-  const [payloadB64, sig] = parts
-  const expected = await hmacSign(secret, payloadB64)
-  if (!constantTimeEqual(sig, expected)) return null
-  let payload
-  try {
-    payload = JSON.parse(b64UrlToStr(payloadB64))
-  } catch {
-    return null
-  }
-  if (!payload || payload.typ !== 'parent') return null
-  if (typeof payload.ts !== 'number') return null
-  if (Date.now() - payload.ts > maxAgeMs) return null
-  if (payload.ts > Date.now() + 60_000) return null
-  return payload
 }
 
 // 从请求中提取客户端 IP（审计用）

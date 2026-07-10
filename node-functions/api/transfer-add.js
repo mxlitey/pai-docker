@@ -1,13 +1,10 @@
-// 新增结转 API
-// POST /api/transfer-add  body: { transfer: { studentId, fromEnrollmentId, toEnrollmentId?, newTargetEnrollment?, mode, note } }
-// mode: 'amount'(默认，按金额折算) / 'hours'(按课时平移)
-// 目标报名两种方式：
-//   1) toEnrollmentId：选择已有报名（常规续报/转课）
-//   2) newTargetEnrollment: { courseId, unitPrice?, expiredAt?, note? }：升班后还没报名，结转时即时创建目标报名
-import { addTransfer, getStudentById, json } from '../_lib/store.js'
+// 退课 API（重构后的结转第一步）
+// POST /api/transfer-add  body: { transfer: { studentId, fromEnrollmentId, giftMode, note? } }
+// 退课：源报名剩余课时按报名单价折算成金额，存入学员账户余额；源报名标记 settled。
+// giftMode: 'discard'（默认，赠课作废）/ 'refund'（赠课也折算）
+import { refundEnrollment, getStudentById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
-import { genTransferId } from '../_lib/id.js'
 
 async function readBody(request) {
   try {
@@ -18,24 +15,11 @@ async function readBody(request) {
 }
 
 function validateTransfer(t) {
-  if (!t) throw new Error('结转数据不能为空')
+  if (!t) throw new Error('退课数据不能为空')
   if (!t.studentId) throw new Error('缺少 studentId')
   if (!t.fromEnrollmentId) throw new Error('缺少 fromEnrollmentId（源报名记录）')
-  const hasExisting = !!t.toEnrollmentId
-  const hasNew = !!t.newTargetEnrollment
-  if (!hasExisting && !hasNew) {
-    throw new Error('缺少 toEnrollmentId 或 newTargetEnrollment（目标报名记录）')
-  }
-  if (hasExisting && t.fromEnrollmentId === t.toEnrollmentId) {
-    throw new Error('源与目标报名记录不能相同')
-  }
-  if (hasNew) {
-    if (!t.newTargetEnrollment.courseId) {
-      throw new Error('新建目标报名缺少 courseId')
-    }
-  }
-  if (t.mode && !['amount', 'hours'].includes(t.mode)) {
-    throw new Error('mode 仅允许 amount(按金额) 或 hours(按课时)')
+  if (t.giftMode && !['discard', 'refund'].includes(t.giftMode)) {
+    throw new Error('giftMode 仅允许 discard / refund')
   }
 }
 
@@ -58,19 +42,14 @@ export default async function onRequestPost(context) {
 
   try {
     const finalTransfer = {
-      id: transfer.id || genTransferId(),
+      id: transfer.id || undefined,
       studentId: transfer.studentId.trim(),
       fromEnrollmentId: transfer.fromEnrollmentId.trim(),
-      toEnrollmentId: transfer.toEnrollmentId ? transfer.toEnrollmentId.trim() : '',
-      newTargetEnrollment: transfer.newTargetEnrollment || null,
-      mode: transfer.mode === 'hours' ? 'hours' : 'amount',
+      giftMode: transfer.giftMode || 'discard',
       note: transfer.note ? String(transfer.note).slice(0, 500) : '',
+      reason: transfer.reason || '',
     }
-    const result = await addTransfer(finalTransfer)
-    if (result.created === false) {
-      return json({ code: 1, message: result.reason || '结转失败', data: null }, 400)
-    }
-    // 获取学员名用于审计
+    const result = await refundEnrollment({ transfer: finalTransfer })
     let studentName = finalTransfer.studentId
     try {
       const found = await getStudentById(finalTransfer.studentId)
@@ -82,26 +61,21 @@ export default async function onRequestPost(context) {
       targetType: 'transfer',
       targetId: result.id || '',
       targetName: studentName,
-      summary: result.createdTargetEnrollmentId
-        ? `升班结转「${studentName}」（${result.mode === 'amount' ? '按金额' : '按课时'}，新建目标报名 ${result.createdTargetEnrollmentId.slice(-6)}）`
-        : `结转「${studentName}」（${result.mode === 'amount' ? '按金额' : '按课时'}）`,
+      summary: `退课「${studentName}」：折算 ¥${result.refundAmount} 入账户（${result.giftMode === 'refund' ? '赠课折算' : '赠课作废'}，余额 ¥${result.balanceAfter}）`,
       after: {
-        transferredHours: result.transferredHours,
-        transferredAmount: result.transferredAmount,
-        leftoverAmount: result.leftoverAmount,
-        createdTargetEnrollmentId: result.createdTargetEnrollmentId || null,
+        refundAmount: result.refundAmount,
+        refundHours: result.refundHours,
+        giftMode: result.giftMode,
+        balanceAfter: result.balanceAfter,
       },
     })
     return json({
       code: 0,
-      message:
-        result.mode === 'amount'
-          ? `已按金额结转：转移 ${result.transferredHours} 课时（折合 ¥${result.transferredAmount}），目标新增 ${result.toPurchasedAdd} 课时`
-          : `已按课时结转：付费 ${result.toPurchasedAdd} 课时 + 赠课 ${result.toGiftAdd} 课时`,
+      message: `已退课：折算 ¥${result.refundAmount} 入账户余额，当前余额 ¥${result.balanceAfter}`,
       data: result,
     })
   } catch (e) {
-    console.error('[transfer-add] 新增异常:', e?.message || String(e))
-    return json({ code: 1, message: e.message || '结转失败，请稍后重试', data: null }, 500)
+    console.error('[transfer-add] 退课异常:', e?.message || String(e))
+    return json({ code: 1, message: e.message || '退课失败，请稍后重试', data: null }, 500)
   }
 }

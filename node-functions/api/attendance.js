@@ -21,7 +21,8 @@ async function handleGet(context) {
     return json({ code: 1, message: 'date 参数必填，格式 yyyy-MM-dd', data: null }, 400)
   }
   try {
-    const schedules = await searchSchedules({ startDate: date, endDate: date })
+    const schedules = (await searchSchedules({ startDate: date, endDate: date }))
+      .filter((s) => s.status !== 'cancelled')
     return json({ code: 0, message: 'ok', data: { schedules, total: schedules.length } })
   } catch (e) {
     console.error('[attendance] 查询异常:', e?.message || String(e))

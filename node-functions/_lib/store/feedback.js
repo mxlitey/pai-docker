@@ -1,5 +1,6 @@
 import { getDb } from './core.js'
 import { genFeedbackId } from '../id.js'
+import { now } from '../time.js'
 
 // ========== 课后反馈 feedback ==========
 export async function getFeedback({ scheduleId, teacherId, studentId, courseId } = {}) {
@@ -25,10 +26,10 @@ export async function addFeedback(fb) {
   const db = getDb()
   const id = genFeedbackId()
   db.prepare(`INSERT INTO feedback
-    (id, schedule_id, course_id, teacher_id, teacher_name, student_id, student_name, date, content, rating)
-    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
+    (id, schedule_id, course_id, teacher_id, teacher_name, student_id, student_name, date, content, rating, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
     id, fb.scheduleId || '', fb.courseId || '', fb.teacherId || '', fb.teacherName || '',
-    fb.studentId || '', fb.studentName || '', fb.date || '', fb.content || '', Math.max(0, Math.min(5, Math.floor(Number(fb.rating) || 0))),
+    fb.studentId || '', fb.studentName || '', fb.date || '', fb.content || '', Math.max(0, Math.min(5, Math.floor(Number(fb.rating) || 0))), now(),
   )
   return { id, feedback: { ...fb, id } }
 }

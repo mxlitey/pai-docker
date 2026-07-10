@@ -24,11 +24,12 @@ export async function getReportRevenue({ startDate, endDate, groupBy } = {}) {
     groupByClause = 'GROUP BY key ORDER BY key'
   } else if (groupBy === 'course') {
     join = 'LEFT JOIN courses ON enrollments.course_id = courses.id'
-    selectKey = 'COALESCE(courses.name, "") AS key'
+    selectKey = "COALESCE(courses.name, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   } else if (groupBy === 'teacher') {
-    join = 'LEFT JOIN courses ON enrollments.course_id = courses.id'
-    selectKey = 'COALESCE(courses.teacher, "") AS key'
+    // 报名关联课程，课程已无 teacher 字段；通过 schedules 取教师（取该课程下排课的教师）
+    join = 'LEFT JOIN (SELECT DISTINCT course_id, teacher FROM schedules WHERE teacher != "") sc ON sc.course_id = enrollments.course_id'
+    selectKey = "COALESCE(sc.teacher, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   }
 
@@ -72,10 +73,10 @@ export async function getReportHoursConsumption({ startDate, endDate, groupBy } 
     selectKey = 'substr(date, 1, 7) AS key'
     groupByClause = 'GROUP BY key ORDER BY key'
   } else if (groupBy === 'course') {
-    selectKey = 'COALESCE(course_name, "") AS key'
+    selectKey = "COALESCE(course_name, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   } else if (groupBy === 'teacher') {
-    selectKey = 'COALESCE(teacher, "") AS key'
+    selectKey = "COALESCE(teacher, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   }
 
@@ -96,7 +97,7 @@ export async function getReportHoursConsumption({ startDate, endDate, groupBy } 
 // 课时余额报表：活跃报名的剩余与总课时，按 created_at 过滤（可选）
 export async function getReportHoursBalance({ startDate, endDate, groupBy } = {}) {
   const db = getDb()
-  const where = ["status = 'active'"]
+  const where = ["enrollments.status = 'active'"]
   const params = []
   if (startDate) { where.push('created_at >= ?'); params.push(startDate + ' 00:00:00') }
   if (endDate) { where.push('created_at <= ?'); params.push(endDate + ' 23:59:59') }
@@ -106,11 +107,11 @@ export async function getReportHoursBalance({ startDate, endDate, groupBy } = {}
   let join = ''
   if (groupBy === 'course') {
     join = 'LEFT JOIN courses ON enrollments.course_id = courses.id'
-    selectKey = 'COALESCE(courses.name, "") AS key'
+    selectKey = "COALESCE(courses.name, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   } else if (groupBy === 'teacher') {
-    join = 'LEFT JOIN courses ON enrollments.course_id = courses.id'
-    selectKey = 'COALESCE(courses.teacher, "") AS key'
+    join = 'LEFT JOIN (SELECT DISTINCT course_id, teacher FROM schedules WHERE teacher != "") sc ON sc.course_id = enrollments.course_id'
+    selectKey = "COALESCE(sc.teacher, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   }
 
@@ -151,10 +152,10 @@ export async function getReportAttendanceRate({ startDate, endDate, groupBy } = 
     selectKey = 'substr(date, 1, 7) AS key'
     groupByClause = 'GROUP BY key ORDER BY key'
   } else if (groupBy === 'course') {
-    selectKey = 'COALESCE(course_name, "") AS key'
+    selectKey = "COALESCE(course_name, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   } else if (groupBy === 'teacher') {
-    selectKey = 'COALESCE(teacher, "") AS key'
+    selectKey = "COALESCE(teacher, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   }
 
@@ -207,8 +208,7 @@ export async function getReportTransfers({ startDate, endDate, groupBy } = {}) {
   }
 
   const sql = `SELECT ${selectKey},
-      COALESCE(SUM(transferred_amount), 0) AS amount,
-      COALESCE(SUM(transferred_hours), 0) AS hours,
+      COALESCE(SUM(refund_amount), 0) AS amount,
       COUNT(*) AS count
     FROM transfers
     WHERE ${where.join(' AND ')}
@@ -217,15 +217,13 @@ export async function getReportTransfers({ startDate, endDate, groupBy } = {}) {
   const rows = rawRows.map(r => ({
     key: r.key == null ? '全部' : String(r.key),
     amount: Number(r.amount) || 0,
-    hours: Number(r.hours) || 0,
     count: Number(r.count) || 0,
   }))
   const summary = rows.reduce((acc, r) => {
     acc.amount += r.amount
-    acc.hours += r.hours
     acc.count += r.count
     return acc
-  }, { amount: 0, hours: 0, count: 0 })
+  }, { amount: 0, count: 0 })
   return { rows, summary }
 }
 
@@ -243,13 +241,13 @@ export async function getReportEnrollmentStats({ startDate, endDate, groupBy } =
   let join = ''
   if (groupBy === 'course') {
     join = 'LEFT JOIN courses ON enrollments.course_id = courses.id'
-    selectKey = 'COALESCE(courses.name, "") AS key'
+    selectKey = "COALESCE(courses.name, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   } else if (groupBy === 'channel') {
-    selectKey = 'COALESCE(channel, "") AS key'
+    selectKey = "COALESCE(channel, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   } else if (groupBy === 'status') {
-    selectKey = 'COALESCE(status, "") AS key'
+    selectKey = "COALESCE(status, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   }
 

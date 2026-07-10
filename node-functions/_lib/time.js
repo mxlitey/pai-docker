@@ -1,42 +1,42 @@
-// 本地时间工具 —— 统一基于 TZ 环境变量生成可读的本地时间字符串
+// 时间工具 —— 按项目设置的时区生成时间字符串
 //
-// 背景：SQLite 的 datetime('now') 与 JS 的 new Date().toISOString() 均固定返回 UTC，
-// 不会随 TZ 环境变量变化，导致后台显示的时间始终是 UTC。本模块用本地时间方法
-// (toLocaleString 系列，受 TZ 控制) 生成 'yyyy-MM-dd HH:mm:ss' / 'yyyy-MM-dd' 字符串，
-// 供所有写入数据库的时间字段统一使用，确保全系统时间一致且符合设置的当地时区。
-//
-// 说明：
-// - 存储统一使用本地时间字符串（无时区后缀），与历史 datetime('now') 产出的 UTC 字符串
-//   在格式上完全兼容（都是 'yyyy-MM-dd HH:mm:ss'），排序、范围比较均不受影响。
-// - 新旧数据可能并存（旧 UTC / 新本地），由于本系统为单时区自部署场景，差异通常为几小时，
-//   不影响业务正确性；后续写入将全部为本地时间。
+// 设计原则（方案 A：后端按项目时区写入，前端零转换）：
+// - 数据库存储项目时区的时间字符串（'yyyy-MM-dd HH:mm:ss'），前端直接显示无需转换
+// - 时区来自 config.json 的 timezone 字段（默认 Asia/Shanghai），可在系统设置页修改
+// - 与服务器物理位置无关：部署在海外服务器，写入的仍是项目时区时间
+// - 纯日期字段（排课 date、有效期 expiredAt、生日 birthday）按业务语义直接存储用户输入值
 
-// 返回本地时间字符串 'yyyy-MM-dd HH:mm:ss'（受 TZ 环境变量控制）
-export function nowLocal() {
-  return formatLocal(new Date(), 'yyyy-MM-dd HH:mm:ss')
+import { getTimezone } from './config-file.js'
+
+// 用 Intl.DateTimeFormat 在项目时区下提取各分量，拼接成 'yyyy-MM-dd HH:mm:ss'
+function formatInTz(d, withTime) {
+  const tz = getTimezone()
+  const opts = {
+    timeZone: tz,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }
+  if (withTime) {
+    opts.hour = '2-digit'
+    opts.minute = '2-digit'
+    opts.second = '2-digit'
+    opts.hour12 = false
+  }
+  const parts = new Intl.DateTimeFormat('en-US', opts).formatToParts(d)
+  const map = {}
+  for (const p of parts) {
+    if (p.type !== 'literal') map[p.type] = p.value
+  }
+  const h = map.hour === '24' ? '00' : (map.hour || '00')
+  const base = `${map.year}-${map.month}-${map.day}`
+  return withTime ? `${base} ${h}:${map.minute}:${map.second}` : base
 }
 
-// 返回本地日期字符串 'yyyy-MM-dd'（受 TZ 环境变量控制）
-export function todayLocal() {
-  return formatLocal(new Date(), 'yyyy-MM-dd')
+// 返回当前项目时区时间字符串 'yyyy-MM-dd HH:mm:ss'
+export function now() {
+  return formatInTz(new Date(), true)
 }
 
-// 将任意 Date 格式化为本地时间字符串
-// 支持 pattern: 'yyyy-MM-dd HH:mm:ss' | 'yyyy-MM-dd' | 'yyyy-MM-dd HH:mm'
-export function formatLocal(date, pattern = 'yyyy-MM-dd HH:mm:ss') {
-  const d = date instanceof Date ? date : new Date(date)
-  // 用本地方法取各分量（受 TZ 控制）
-  const y = d.getFullYear()
-  const mo = String(d.getMonth() + 1).padStart(2, '0')
-  const da = String(d.getDate()).padStart(2, '0')
-  const h = String(d.getHours()).padStart(2, '0')
-  const mi = String(d.getMinutes()).padStart(2, '0')
-  const s = String(d.getSeconds()).padStart(2, '0')
-  if (pattern === 'yyyy-MM-dd') return `${y}-${mo}-${da}`
-  if (pattern === 'yyyy-MM-dd HH:mm') return `${y}-${mo}-${da} ${h}:${mi}`
-  return `${y}-${mo}-${da} ${h}:${mi}:${s}`
+// 返回当前项目时区日期字符串 'yyyy-MM-dd'
+export function today() {
+  return formatInTz(new Date(), false)
 }
-
-// SQLite 表达式：返回本地时间，用于建表 DEFAULT 与显式 INSERT
-// datetime('now','localtime') 受 TZ 环境变量控制（经 C 库 localtime）
-export const SQLITE_LOCAL_NOW = "datetime('now', 'localtime')"

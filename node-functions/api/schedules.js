@@ -46,6 +46,8 @@ export async function onRequestGet(context) {
   } else {
     schedules = await getAllSchedulesByStudent(targetId)
   }
+  // 过滤已取消的排课（调课后原记录标记为 cancelled）
+  schedules = schedules.filter((s) => s.status !== 'cancelled')
 
   // 按日期+时间排序
   schedules.sort((a, b) => {

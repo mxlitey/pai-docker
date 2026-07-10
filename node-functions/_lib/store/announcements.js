@@ -1,5 +1,5 @@
 import { getDb } from './core.js'
-import { nowLocal } from '../time.js'
+import { now } from '../time.js'
 
 // ========== 公告 ==========
 export async function getAnnouncement() {
@@ -13,7 +13,7 @@ export async function saveAnnouncement(content) {
   const db = getDb()
   const payload = {
     content: String(content || ''),
-    updatedAt: nowLocal(),
+    updatedAt: now(),
   }
   db.prepare('UPDATE announcement SET content=?, updated_at=? WHERE id=1').run(payload.content, payload.updatedAt)
   return payload

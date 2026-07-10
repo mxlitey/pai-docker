@@ -4,7 +4,7 @@ import {
   readdirSync, statSync, unlinkSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { nowLocal, formatLocal } from '../time.js'
+import { now } from '../time.js'
 
 // ========== 数据备份与恢复 ==========
 
@@ -21,8 +21,7 @@ function ensureBackupDir() {
 // 便于与"凌晨 3 点备份"等本地时间计划对齐
 export function createBackup() {
   ensureBackupDir()
-  const now = new Date()
-  const ts = formatLocal(now, 'yyyy-MM-dd_HH-mm-ss')
+  const ts = now().replace(' ', '_').replace(/:/g, '-')
   const filename = `backup-${ts}.db`
   const path = join(BACKUP_DIR, filename)
   const db = getDb()
@@ -30,7 +29,7 @@ export function createBackup() {
   db.pragma('wal_checkpoint(FULL)')
   db.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`)
   const size = statSync(path).size
-  return { ok: true, filename, path, size, createdAt: nowLocal() }
+  return { ok: true, filename, path, size, createdAt: now() }
 }
 
 // 列出所有备份（按时间倒序）
@@ -41,7 +40,7 @@ export function listBackups() {
     const p = join(BACKUP_DIR, f)
     const st = statSync(p)
     // 文件 mtime 用本地时间字符串返回，与备份计划时区一致
-    return { filename: f, path: p, size: st.size, createdAt: formatLocal(st.mtime) }
+    return { filename: f, path: p, size: st.size, createdAt: st.mtime.toISOString().slice(0,19).replace('T',' ') }
   }).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   return list
 }

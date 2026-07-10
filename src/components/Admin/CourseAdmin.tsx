@@ -64,10 +64,7 @@ export function CourseAdmin({ courses, grades, busy, onBack, onDelete, onAdd, on
                   <tr className="border-b border-slate-200 text-slate-500 text-xs">
                     <th className="text-left py-2 px-2 font-medium">{'颜色'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'课程名称'}</th>
-                    <th className="text-left py-2 px-2 font-medium">{'教师'}</th>
-                    <th className="text-left py-2 px-2 font-medium">{'地点'}</th>
-                    <th className="text-left py-2 px-2 font-medium">{'默认时间'}</th>
-                    <th className="text-left py-2 px-2 font-medium">{'单价'}</th>
+                    <th className="text-left py-2 px-2 font-medium">{'年级'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'计费'}</th>
                     <th className="text-left py-2 px-2 font-medium">ID</th>
                     <th className="text-right py-2 px-2 font-medium">{'操作'}</th>
@@ -89,22 +86,7 @@ export function CourseAdmin({ courses, grades, busy, onBack, onDelete, onAdd, on
                       </td>
                       <td className="py-2.5 px-2 font-medium text-slate-700">{c.name}</td>
                       <td className="py-2.5 px-2 text-slate-600">
-                        {c.teacher || <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="py-2.5 px-2 text-slate-600">
-                        {c.location || <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="py-2.5 px-2 text-slate-600 text-xs">
-                        {c.defaultStartTime || c.defaultEndTime
-                          ? `${c.defaultStartTime || '--'} - ${c.defaultEndTime || '--'}`
-                          : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="py-2.5 px-2 text-slate-600 whitespace-nowrap">
-                        {c.unitPrice && c.unitPrice > 0 ? (
-                          <span className="text-slate-700 font-medium">¥{c.unitPrice}</span>
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
+                        {c.grade || <span className="text-slate-300">—</span>}
                       </td>
                       <td className="py-2.5 px-2 text-slate-600 text-xs">
                         {c.billingType === 'per_term' ? '按期' : c.billingType === 'per_month' ? '按月' : '按课时'}
@@ -173,18 +155,13 @@ interface CourseEditModalProps {
   onSubmit: (course: Course) => Promise<boolean>
 }
 
-// 时间选择：原生 type="time"，值为 "HH:mm" 或空串
-// 分钟以 5 分钟为单位（step=300 秒），避免双 select 半选丢值问题
-
 function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalProps) {
   const isEdit = !!course
   const [form, setForm] = useState<Course>(
     course
       ? {
           ...course,
-          unitPrice: course.unitPrice ?? 0,
           billingType: course.billingType || 'per_lesson',
-          capacity: course.capacity ?? 0,
           status: course.status || 'active',
           term: course.term || '',
           category: course.category || '',
@@ -195,14 +172,8 @@ function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalP
           // 新增模式：id 留空，由后端生成回填
           id: '',
           name: '',
-          teacher: '',
-          location: '',
           color: 'blue',
-          defaultStartTime: '',
-          defaultEndTime: '',
-          unitPrice: 0,
           billingType: 'per_lesson',
-          capacity: 0,
           status: 'active',
           term: '',
           category: '',
@@ -219,10 +190,6 @@ function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalP
     setErrors((e) => {
       const next = { ...e }
       for (const k of Object.keys(patch)) delete next[k]
-      // 时间字段错误统一挂在 time 上
-      if (patch.defaultStartTime !== undefined || patch.defaultEndTime !== undefined) {
-        delete next.time
-      }
       return next
     })
   }
@@ -246,19 +213,8 @@ function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalP
     if (!form.name.trim()) {
       e.name = '课程名称不能为空'
     }
-    if (form.defaultStartTime && !/^\d{2}:\d{2}$/.test(form.defaultStartTime)) {
-      e.time = '默认开始时间需同时选择小时和分钟'
-    }
-    if (form.defaultEndTime && !/^\d{2}:\d{2}$/.test(form.defaultEndTime)) {
-      e.time = '默认开始时间需同时选择小时和分钟'
-    }
-    const unitPriceNum = Number(form.unitPrice)
-    if (!Number.isFinite(unitPriceNum) || unitPriceNum < 0) {
-      e.unitPrice = '单价需为非负数'
-    }
-    const capacityNum = Number(form.capacity)
-    if (!Number.isFinite(capacityNum) || capacityNum < 0) {
-      e.capacity = '容量需为非负数'
+    if (!form.grade) {
+      e.grade = '请选择年级'
     }
     setErrors(e)
     return Object.keys(e).length === 0
@@ -268,17 +224,10 @@ function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalP
     if (!validate()) return
     setSaving(true)
     const finalCourse: Course = {
-      // 新增模式 id 为空串，由后端生成回填；编辑模式保留原 id
       id: form.id.trim(),
       name: form.name.trim(),
-      teacher: (form.teacher || '').trim(),
-      location: (form.location || '').trim(),
       color: form.color || '',
-      defaultStartTime: form.defaultStartTime || '',
-      defaultEndTime: form.defaultEndTime || '',
-      unitPrice: Number(form.unitPrice),
       billingType: (form.billingType || 'per_lesson') as BillingType,
-      capacity: Number(form.capacity),
       term: (form.term || '').trim(),
       status: (form.status || 'active') as CourseStatus,
       category: (form.category || '').trim(),
@@ -341,69 +290,6 @@ function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalP
           </div>
         </Field>
 
-        {/* 教师 */}
-        <Field label={'教师'}>
-          <input
-            type="text"
-            className={inputClass}
-            value={form.teacher || ''}
-            onChange={(e) => update({ teacher: e.target.value })}
-            placeholder="如：张老师"
-          />
-        </Field>
-
-        {/* 地点 */}
-        <Field label={'地点'}>
-          <input
-            type="text"
-            className={inputClass}
-            value={form.location || ''}
-            onChange={(e) => update({ location: e.target.value })}
-            placeholder="如：A教室201"
-          />
-        </Field>
-
-        {/* 默认时间：原生 type="time"，5 分钟刻度 */}
-        <Field label={'默认时间'} error={errors.time} hint="分钟以 5 分钟为单位">
-          <div className="flex items-center gap-2">
-            <input
-              type="time"
-              step={300}
-              value={form.defaultStartTime || ''}
-              onChange={(e) => update({ defaultStartTime: e.target.value })}
-              className={cn(inputClass, 'bg-white w-32')}
-            />
-            <span className="text-slate-400 px-1">-</span>
-            <input
-              type="time"
-              step={300}
-              value={form.defaultEndTime || ''}
-              onChange={(e) => update({ defaultEndTime: e.target.value })}
-              className={cn(inputClass, 'bg-white w-32')}
-            />
-          </div>
-        </Field>
-
-        {/* 单价 */}
-        <Field
-          label={'单价'}
-          error={errors.unitPrice}
-          hint="报名时按此单价计费；可填 0 表示免费"
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400 text-sm">¥</span>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              value={form.unitPrice ?? 0}
-              onChange={(e) => update({ unitPrice: Number(e.target.value) })}
-              className={inputClass}
-              placeholder="每课时单价，如 200"
-            />
-          </div>
-        </Field>
-
         {/* 计费方式 */}
         <Field label="计费方式">
           <select
@@ -415,18 +301,6 @@ function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalP
             <option value="per_term">按期（整期收费）</option>
             <option value="per_month">按月（包月收费）</option>
           </select>
-        </Field>
-
-        {/* 容量 */}
-        <Field label={'容量'} error={errors.capacity} hint="课程最大容纳人数">
-          <input
-            type="number"
-            min={0}
-            value={form.capacity ?? 0}
-            onChange={(e) => update({ capacity: Number(e.target.value) })}
-            className={inputClass}
-            placeholder="如 20"
-          />
         </Field>
 
         {/* 学期 */}
@@ -464,13 +338,13 @@ function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalP
         </Field>
 
         {/* 关联年级：报名时按学员年级过滤可选课程 */}
-        <Field label={'年级'} hint="报名时仅可选对应年级的课程">
+        <Field label={'年级'} required error={errors.grade} hint="年级为必选项">
           <select
             className={inputClass}
             value={form.grade || ''}
             onChange={(e) => update({ grade: e.target.value })}
           >
-            <option value="">{'不指定年级'}</option>
+            <option value="">{'请选择年级'}</option>
             {grades.map((g) => (
               <option key={g.id} value={g.name}>{g.name}</option>
             ))}

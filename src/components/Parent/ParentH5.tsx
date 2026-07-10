@@ -33,15 +33,14 @@ export function ParentH5({ appName }: { appName: string }) {
   const [verifying, setVerifying] = useState(false)
   const [data, setData] = useState<ParentAccessData | null>(null)
 
-  // 从 URL 读取 s / t 参数
+  // 从 URL 读取 s 参数（学员 ID）
   const params = new URLSearchParams(window.location.search)
   const studentId = params.get('s') || ''
-  const token = params.get('t') || ''
 
   useEffect(() => {
     let cancelled = false
     async function init() {
-      if (!studentId || !token) {
+      if (!studentId) {
         if (!cancelled) {
           setErrorMsg('链接缺少必要参数，请通过老师发送的专属链接访问')
           setPhase('error')
@@ -49,7 +48,7 @@ export function ParentH5({ appName }: { appName: string }) {
         return
       }
       try {
-        const hint = await getParentAccessHint(studentId, token)
+        const hint = await getParentAccessHint(studentId)
         if (cancelled) return
         setStudentName(hint.studentName)
         setPhoneHint(hint.phoneHint)
@@ -75,7 +74,7 @@ export function ParentH5({ appName }: { appName: string }) {
     setVerifying(true)
     setErrorMsg('')
     try {
-      const result = await verifyParentAccess(studentId, token, phoneSuffix)
+      const result = await verifyParentAccess(studentId, phoneSuffix)
       setData(result)
       setStudentName(result.student.name)
       setPhase('verified')

@@ -4,7 +4,7 @@ import { addEnrollment, getStudentById, getCourseById, json } from '../_lib/stor
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 import { genEnrollmentId } from '../_lib/id.js'
-import { nowLocal } from '../_lib/time.js'
+import { now } from '../_lib/time.js'
 
 async function readBody(request) {
   try {
@@ -67,9 +67,10 @@ export default async function onRequestPost(context) {
       unitPrice,
       totalAmount: Number(enrollment.totalAmount ?? (purchased * unitPrice)),
       paidAmount: Number(enrollment.paidAmount ?? (purchased * unitPrice)),
+      useBalance: !!enrollment.useBalance,
       // 有效期：空串表示无有效期（永不过期）；格式 yyyy-MM-dd
       expiredAt: enrollment.expiredAt ? String(enrollment.expiredAt).slice(0, 10) : '',
-      enrolledAt: enrollment.enrolledAt || nowLocal(),
+      enrolledAt: enrollment.enrolledAt || now(),
       note: enrollment.note ? String(enrollment.note).slice(0, 500) : '',
     }
 
@@ -94,18 +95,21 @@ export default async function onRequestPost(context) {
       const c = await getCourseById(finalEnrollment.courseId)
       if (c) courseName = c.name
     } catch {}
+    const deductInfo = result.balanceDeduct > 0
+      ? `，余额抵扣 ¥${result.balanceDeduct}，现金补差 ¥${result.cashPaid}`
+      : ''
     await writeAudit(context, {
       action: 'create',
       module: 'enrollments',
       targetType: 'enrollment',
       targetId: result.enrollment?.id || id,
       targetName: `${studentName} ${courseName}`,
-      summary: `报名「${studentName}」→「${courseName}」：购买 ${purchased} 课时` + (gift > 0 ? `，赠课 ${gift} 课时` : ''),
+      summary: `报名「${studentName}」→「${courseName}」：购买 ${purchased} 课时` + (gift > 0 ? `，赠课 ${gift} 课时` : '') + deductInfo,
       after: result.enrollment || finalEnrollment,
     })
     return json({
       code: 0,
-      message: '报名已新增',
+      message: '报名已新增' + deductInfo,
       data: { ...result, enrollment: finalEnrollment },
     })
   } catch (e) {

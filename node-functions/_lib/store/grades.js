@@ -1,5 +1,6 @@
 import { getDb, validateStorageId } from './core.js'
 import { genGradeId } from '../id.js'
+import { now } from '../time.js'
 
 // ========== 年级管理 ==========
 // 年级作为主数据：学员/课程通过 grade 文本字段（年级名称）关联，便于显示与升班批量更新。
@@ -48,8 +49,8 @@ export async function addGrade(grade) {
     status: grade.status || 'active',
     description: grade.description || '',
   }
-  db.prepare(`INSERT INTO grades (id, name, sort_order, status, description) VALUES (?, ?, ?, ?, ?)`).run(
-    finalGrade.id, finalGrade.name, finalGrade.sortOrder, finalGrade.status, finalGrade.description,
+  db.prepare(`INSERT INTO grades (id, name, sort_order, status, description, created_at) VALUES (?, ?, ?, ?, ?, ?)`).run(
+    finalGrade.id, finalGrade.name, finalGrade.sortOrder, finalGrade.status, finalGrade.description, now(),
   )
   return { created: true, exists: false, grade: finalGrade }
 }

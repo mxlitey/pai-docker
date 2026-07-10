@@ -3,9 +3,10 @@
 import type {
   Schedule, Student, Course, Enrollment, Transfer,
   AdminUser, AdminRole, CurrentAdmin, AuditLog, ReportQuery,
-  BackupInfo, SystemConfigFull, BatchEnrollmentItem,
+  BackupInfo, SystemConfigFull,
   Feedback, TeacherPerformance, Coupon, Membership, StudentMembership,
-  Lead, LeadFollowup, PermissionModule, Grade,
+  Lead, LeadFollowup, PermissionModule, Grade, ClassInfo, ClassMember,
+  ScheduleChange, AccountTransaction,
 } from '@/types'
 
 const API_BASE = '/api'
@@ -266,6 +267,71 @@ export async function deleteSchedule(
   })
 }
 
+// 调课：原排课标记 cancelled + 新排课插入 + 写入调课记录
+// 插班字段（newTeacher/newCourseId/newCourseName/newClassId/newLocation）可选，传则覆盖原排课对应字段
+export async function rescheduleSchedule(
+  scheduleId: string,
+  newDate: string,
+  newStartTime?: string,
+  newEndTime?: string,
+  reason?: string,
+  insertOpts?: {
+    newTeacher?: string
+    newCourseId?: string
+    newCourseName?: string
+    newClassId?: string
+    newLocation?: string
+    newColor?: string
+  },
+): Promise<ApiResult<{ changeId: string; originalScheduleId: string; newScheduleId: string }>> {
+  return request(`${API_BASE}/schedule-reschedule`, {
+    method: 'POST',
+    body: JSON.stringify({
+      scheduleId, newDate, newStartTime, newEndTime, reason,
+      ...insertOpts,
+    }),
+  })
+}
+
+// 补课：保留原缺勤排课 + 生成新排课（设 makeup_for）
+// 插班字段（newTeacher/newCourseId/newCourseName/newClassId/newLocation）可选，传则覆盖原排课对应字段
+export async function makeupSchedule(
+  scheduleId: string,
+  newDate: string,
+  newStartTime?: string,
+  newEndTime?: string,
+  reason?: string,
+  insertOpts?: {
+    newTeacher?: string
+    newCourseId?: string
+    newCourseName?: string
+    newClassId?: string
+    newLocation?: string
+    newColor?: string
+  },
+): Promise<ApiResult<{ originalScheduleId: string; newScheduleId: string }>> {
+  return request(`${API_BASE}/schedule-makeup`, {
+    method: 'POST',
+    body: JSON.stringify({
+      scheduleId, newDate, newStartTime, newEndTime, reason,
+      ...insertOpts,
+    }),
+  })
+}
+
+// 查询调课历史（按排课ID或学员ID）
+export async function listScheduleChanges(
+  params: { scheduleId?: string; studentId?: string; limit?: number },
+): Promise<ApiResult<{ changes: ScheduleChange[]; total: number }>> {
+  const qs = new URLSearchParams()
+  if (params.scheduleId) qs.set('scheduleId', params.scheduleId)
+  if (params.studentId) qs.set('studentId', params.studentId)
+  if (params.limit) qs.set('limit', String(params.limit))
+  return request(`${API_BASE}/schedule-changes?${qs.toString()}`, {
+    method: 'GET',
+  })
+}
+
 // ========== 学员管理 ==========
 
 // 删除学员及其所有排课/报名/结转
@@ -415,7 +481,76 @@ export async function promoteGrade(
   })
 }
 
-// 批量新增排课（按课程为多个学员在多个日期同时排课）
+// ========== 班级管理 ==========
+
+// 获取班级列表（带成员数 + 关联课程名）
+export async function listClasses(params: { courseId?: string; status?: string } = {}): Promise<ApiResult<{ classes: ClassInfo[] }>> {
+  const qs = new URLSearchParams()
+  if (params.courseId) qs.set('courseId', params.courseId)
+  if (params.status) qs.set('status', params.status)
+  const query = qs.toString()
+  return request(`${API_BASE}/classes${query ? '?' + query : ''}`, { method: 'GET' })
+}
+
+// 新增班级（id 由后端自动生成）
+export async function addClass(
+  cls: Omit<ClassInfo, 'id' | 'createdAt' | 'memberCount' | 'courseName'> & { id?: string },
+): Promise<ApiResult<{ created: boolean; exists: boolean; class: ClassInfo }>> {
+  return request(`${API_BASE}/class-add`, {
+    method: 'POST',
+    body: JSON.stringify({ class: cls }),
+  })
+}
+
+// 更新班级
+export async function updateClass(
+  cls: Partial<ClassInfo> & { id: string; name: string },
+): Promise<ApiResult<{ updated: boolean; notFound: boolean; class: ClassInfo }>> {
+  return request(`${API_BASE}/class-update`, {
+    method: 'PUT',
+    body: JSON.stringify({ class: cls }),
+  })
+}
+
+// 删除班级（仍有排课引用时后端拒绝，返回 inUse + scheduleCount）
+export async function deleteClass(
+  id: string,
+): Promise<ApiResult<{ deleted: boolean; notFound: boolean; inUse: boolean; scheduleCount: number }>> {
+  return request(`${API_BASE}/class-delete`, {
+    method: 'DELETE',
+    body: JSON.stringify({ id }),
+  })
+}
+
+// 查询班级成员名单
+export async function getClassMembers(classId: string): Promise<ApiResult<{ members: ClassMember[] }>> {
+  const qs = new URLSearchParams({ classId })
+  return request(`${API_BASE}/class-members?${qs.toString()}`, { method: 'GET' })
+}
+
+// 批量加班级成员（忽略已存在）
+export async function addClassMembers(
+  classId: string,
+  studentIds: string[],
+): Promise<ApiResult<{ added: number }>> {
+  return request(`${API_BASE}/class-members`, {
+    method: 'POST',
+    body: JSON.stringify({ classId, studentIds }),
+  })
+}
+
+// 批量移除班级成员
+export async function removeClassMembers(
+  classId: string,
+  studentIds: string[],
+): Promise<ApiResult<{ removed: number }>> {
+  return request(`${API_BASE}/class-members`, {
+    method: 'DELETE',
+    body: JSON.stringify({ classId, studentIds }),
+  })
+}
+
+// 批量新增排课（按课程/班级为多个学员在多个日期同时排课）
 export async function batchAddSchedules(body: {
   courseId: string
   courseName: string
@@ -427,6 +562,8 @@ export async function batchAddSchedules(body: {
   endTime?: string
   note?: string
   studentIds: string[]
+  classId?: string
+  makeupFor?: string
 }): Promise<ApiResult<{ created: number; skipped: number; errors: string[]; totalAttempts?: number }>> {
   return request(`${API_BASE}/schedule-add-batch`, {
     method: 'POST',
@@ -499,10 +636,11 @@ export async function addEnrollment(
     id?: string
     totalAmount?: number
     paidAmount?: number
+    useBalance?: boolean
     enrolledAt?: string
     note?: string
   },
-): Promise<ApiResult<{ created: boolean; exists: boolean; enrollment: Enrollment }>> {
+): Promise<ApiResult<{ created: boolean; exists: boolean; balanceDeduct?: number; balanceAfter?: number; cashPaid?: number; enrollment: Enrollment }>> {
   return request(`${API_BASE}/enrollment-add`, {
     method: 'POST',
     body: JSON.stringify({ enrollment }),
@@ -533,7 +671,7 @@ export async function deleteEnrollment(
   })
 }
 
-// ========== 结转管理 ==========
+// ========== 退课/结转管理 ==========
 
 export async function listTransfers(params: {
   studentId?: string
@@ -544,34 +682,56 @@ export async function listTransfers(params: {
   return request(`${API_BASE}/transfers${query ? '?' + query : ''}`, { method: 'GET' })
 }
 
+// 退课：源报名剩余课时折算成金额，存入学员账户余额
 export async function addTransfer(transfer: {
   studentId: string
   fromEnrollmentId: string
-  // 目标报名二选一：toEnrollmentId 选已有报名；newTargetEnrollment 升班时即时新建
-  toEnrollmentId?: string
-  newTargetEnrollment?: {
-    courseId: string
-    unitPrice?: number
-    expiredAt?: string
-    note?: string
-  }
-  mode: 'amount' | 'hours'
+  giftMode?: 'discard' | 'refund'
   note?: string
   reason?: string
 }): Promise<ApiResult<{
   created: boolean
-  mode: string
-  transferredHours: number
-  transferredAmount: number
-  leftoverAmount: number
-  toPurchasedAdd: number
-  toGiftAdd: number
-  toEnrollmentId: string
-  createdTargetEnrollmentId: string | null
+  refundAmount: number
+  refundHours: number
+  giftMode: string
+  balanceAfter: number
 }>> {
   return request(`${API_BASE}/transfer-add`, {
     method: 'POST',
     body: JSON.stringify({ transfer }),
+  })
+}
+
+// ========== 账户管理 ==========
+
+export async function listAccountTransactions(params: {
+  studentId?: string
+} = {}): Promise<ApiResult<{ transactions: AccountTransaction[] }>> {
+  const qs = new URLSearchParams()
+  if (params.studentId) qs.set('studentId', params.studentId)
+  const query = qs.toString()
+  return request(`${API_BASE}/account-transactions${query ? '?' + query : ''}`, { method: 'GET' })
+}
+
+export async function rechargeAccount(params: {
+  studentId: string
+  amount: number
+  note?: string
+}): Promise<ApiResult<{ id: string; type: string; amount: number; balanceAfter: number }>> {
+  return request(`${API_BASE}/account-recharge`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function withdrawAccount(params: {
+  studentId: string
+  amount: number
+  note?: string
+}): Promise<ApiResult<{ id: string; type: string; amount: number; balanceAfter: number }>> {
+  return request(`${API_BASE}/account-withdraw`, {
+    method: 'POST',
+    body: JSON.stringify(params),
   })
 }
 
@@ -681,9 +841,9 @@ export async function getSystemConfig(): Promise<ApiResult<SystemConfigFull>> {
   return request<SystemConfigFull>(`${API_BASE}/config`)
 }
 
-// 更新系统配置（appName / renewalThreshold / backupKeepDays / backupInterval / backupMaxCount 任意子集）
+// 更新系统配置（appName / renewalThreshold / backupKeepDays / backupCron / backupMaxCount 任意子集）
 export async function updateSystemConfig(
-  patch: Partial<Pick<SystemConfigFull, 'appName' | 'renewalThreshold' | 'backupKeepDays' | 'backupInterval' | 'backupMaxCount'>>,
+  patch: Partial<Pick<SystemConfigFull, 'appName' | 'renewalThreshold' | 'backupKeepDays' | 'backupCron' | 'backupMaxCount' | 'timezone'>>,
 ): Promise<ApiResult<Partial<SystemConfigFull>>> {
   const resp = await fetch(`${API_BASE}/config`, {
     method: 'PUT',
@@ -734,21 +894,6 @@ export async function expireOverdue(): Promise<ApiResult<{ affected: number }>> 
   const resp = await fetch(`${API_BASE}/expire`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    signal: AbortSignal.timeout(15000),
-  })
-  return resp.json()
-}
-
-// ========== 批量报名 ==========
-
-export async function batchEnroll(
-  courseId: string,
-  items: BatchEnrollmentItem[],
-): Promise<ApiResult<{ count: number; results: { studentId: string; enrollmentId: string; ok: boolean }[] }>> {
-  const resp = await fetch(`${API_BASE}/enrollment-batch`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ courseId, items }),
     signal: AbortSignal.timeout(15000),
   })
   return resp.json()
@@ -957,20 +1102,6 @@ export async function addFollowup(fu: { leadId: string; content: string; stage?:
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(fu),
-    signal: AbortSignal.timeout(10000),
-  })
-  return resp.json()
-}
-
-// ========== 家长端专属链接生成 ==========
-// 为学员签发家长访问 token（手机号后4位二次校验）
-export async function generateShareLink(
-  studentId: string,
-): Promise<ApiResult<{ token: string; studentId: string; studentName: string }>> {
-  const resp = await fetch(`${API_BASE}/share-link-generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ studentId }),
     signal: AbortSignal.timeout(10000),
   })
   return resp.json()

@@ -1,5 +1,6 @@
 import { getDb, validateStorageId, validateMonth, validateDate } from './core.js'
 import { genScheduleId } from '../id.js'
+import { now } from '../time.js'
 
 // ========== 行 <-> 对象 映射 ==========
 function rowToSchedule(r) {
@@ -8,6 +9,7 @@ function rowToSchedule(r) {
     id: r.id,
     studentId: r.student_id,
     studentName: r.student_name,
+    classId: r.class_id || '',
     courseId: r.course_id || '',
     courseName: r.course_name,
     teacher: r.teacher || '',
@@ -21,6 +23,7 @@ function rowToSchedule(r) {
     status: r.status || 'scheduled',
     room: r.room || '',
     makeupFor: r.makeup_for || '',
+    rescheduledFrom: r.rescheduled_from || '',
   }
 }
 
@@ -42,13 +45,14 @@ export async function saveSchedulesByMonth(studentId, month, schedules) {
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM schedules WHERE student_id=? AND substr(date,1,7)=?').run(studentId, month)
     const stmt = db.prepare(`INSERT INTO schedules
-      (id, student_id, student_name, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, room, makeup_for)
-      VALUES (@id, @student_id, @student_name, @course_id, @course_name, @teacher, @location, @date, @start_time, @end_time, @note, @color, @attended, @status, @room, @makeup_for)`)
+      (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, room, makeup_for, rescheduled_from, created_at)
+      VALUES (@id, @student_id, @student_name, @class_id, @course_id, @course_name, @teacher, @location, @date, @start_time, @end_time, @note, @color, @attended, @status, @room, @makeup_for, @rescheduled_from, @created_at)`)
     for (const s of schedules) {
       stmt.run({
         id: s.id,
         student_id: s.studentId,
         student_name: s.studentName,
+        class_id: s.classId || '',
         course_id: s.courseId || '',
         course_name: s.courseName,
         teacher: s.teacher || '',
@@ -62,6 +66,8 @@ export async function saveSchedulesByMonth(studentId, month, schedules) {
         status: s.status || 'scheduled',
         room: s.room || '',
         makeup_for: s.makeupFor || '',
+        rescheduled_from: s.rescheduledFrom || '',
+        created_at: now(),
       })
     }
   })
@@ -106,13 +112,21 @@ export async function searchSchedules({ startDate, endDate, courseId } = {}) {
   return rows.map(rowToSchedule)
 }
 
+// 按 ID 查单条排课（调课/补课等场景需要）
+export async function getScheduleById(scheduleId) {
+  const db = getDb()
+  const row = db.prepare('SELECT * FROM schedules WHERE id=?').get(scheduleId)
+  return row ? rowToSchedule(row) : null
+}
+
 function insertSchedule(db, s, id) {
   db.prepare(`INSERT INTO schedules
-    (id, student_id, student_name, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, room, makeup_for)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, room, makeup_for, rescheduled_from, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id,
     s.studentId,
     s.studentName,
+    s.classId || '',
     s.courseId || '',
     s.courseName,
     s.teacher || '',
@@ -126,6 +140,8 @@ function insertSchedule(db, s, id) {
     s.status || 'scheduled',
     s.room || '',
     s.makeupFor || '',
+    s.rescheduledFrom || '',
+    now(),
   )
 }
 
@@ -194,10 +210,11 @@ export async function updateSchedule(oldSchedule, newSchedule) {
     if (!exist) throw new Error('未找到原排课记录')
     const before = rowToSchedule(exist)
     db.prepare(`UPDATE schedules SET
-      student_id=?, student_name=?, course_id=?, course_name=?, teacher=?, location=?, date=?, start_time=?, end_time=?, note=?, color=?, status=?, room=?, makeup_for=?
+      student_id=?, student_name=?, class_id=?, course_id=?, course_name=?, teacher=?, location=?, date=?, start_time=?, end_time=?, note=?, color=?, status=?, room=?, makeup_for=?, rescheduled_from=?
       WHERE id=?`).run(
       newSchedule.studentId,
       newSchedule.studentName,
+      newSchedule.classId || '',
       newSchedule.courseId || '',
       newSchedule.courseName,
       newSchedule.teacher || '',
@@ -210,6 +227,7 @@ export async function updateSchedule(oldSchedule, newSchedule) {
       newSchedule.status || 'scheduled',
       newSchedule.room || '',
       newSchedule.makeupFor || '',
+      newSchedule.rescheduledFrom || '',
       newSchedule.id,
     )
     const after = rowToSchedule(db.prepare('SELECT * FROM schedules WHERE id=?').get(newSchedule.id))

@@ -19,19 +19,11 @@ function validateCourse(c) {
   if (typeof c.name !== 'string' || c.name.length > 64) {
     throw new Error('name 需为 1-64 字符的字符串')
   }
-  if (c.teacher && typeof c.teacher !== 'string') throw new Error('teacher 需为字符串')
-  if (c.location && typeof c.location !== 'string') throw new Error('location 需为字符串')
+  // 年级必填
+  if (!c.grade || !String(c.grade).trim()) {
+    throw new Error('缺少 grade（年级为必填项）')
+  }
   if (c.color && typeof c.color !== 'string') throw new Error('color 需为字符串')
-  if (c.defaultStartTime && !/^\d{2}:\d{2}$/.test(c.defaultStartTime)) {
-    throw new Error('defaultStartTime 格式应为 HH:mm')
-  }
-  if (c.defaultEndTime && !/^\d{2}:\d{2}$/.test(c.defaultEndTime)) {
-    throw new Error('defaultEndTime 格式应为 HH:mm')
-  }
-  if (c.unitPrice !== undefined && c.unitPrice !== null && c.unitPrice !== '') {
-    const n = Number(c.unitPrice)
-    if (!Number.isFinite(n) || n < 0) throw new Error('unitPrice 需为非负数')
-  }
   if (c.billingType && !['per_lesson', 'per_term', 'per_month'].includes(c.billingType)) {
     throw new Error('billingType 仅允许 per_lesson / per_term / per_month')
   }
@@ -61,15 +53,9 @@ export default async function onRequestPost(context) {
     const finalCourse = {
       id: course.id ? course.id.trim() : '',
       name: course.name.trim(),
-      teacher: course.teacher ? course.teacher.trim() : '',
-      location: course.location ? course.location.trim() : '',
+      grade: course.grade ? course.grade.trim() : '',
       color: course.color || '',
-      defaultStartTime: course.defaultStartTime || '',
-      defaultEndTime: course.defaultEndTime || '',
-      unitPrice: course.unitPrice !== undefined && course.unitPrice !== null && course.unitPrice !== ''
-        ? Number(course.unitPrice) : 0,
       billingType: course.billingType || 'per_lesson',
-      capacity: Number(course.capacity || 0),
       term: course.term || '',
       status: course.status || 'active',
       category: course.category || '',
@@ -91,7 +77,7 @@ export default async function onRequestPost(context) {
       targetType: 'course',
       targetId: finalCourse.id,
       targetName: finalCourse.name,
-      summary: `新增课程「${finalCourse.name}」` + (finalCourse.teacher ? `（教师：${finalCourse.teacher}）` : ''),
+      summary: `新增课程「${finalCourse.name}」` + (finalCourse.grade ? `（${finalCourse.grade}）` : ''),
       after: finalCourse,
     })
     return json({

@@ -1,6 +1,7 @@
 // 管理员账号管理页（仅超管使用）—— 增删改管理员账号、重置密码、启停账号
 import { useCallback, useEffect, useState } from 'react'
 import type { AdminUser, AdminRole, CurrentAdmin, PermissionModule } from '@/types'
+import { fmtDateTimeFull } from '@/utils/tz'
 import {
   listAdmins,
   addAdmin,
@@ -49,10 +50,9 @@ function roleLabel(role: AdminRole): string {
   }
 }
 
-// 简易日期格式化：2024-01-02T03:04:05 -> 2024-01-02 03:04:05
+// 时间按浏览器本地时区显示（后端存储 UTC）
 function fmtDate(s?: string): string {
-  if (!s) return '—'
-  return String(s).replace('T', ' ').slice(0, 19)
+  return fmtDateTimeFull(s)
 }
 
 export function AdminUserAdmin({ onBack }: AdminUserAdminProps) {

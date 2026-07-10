@@ -4,9 +4,6 @@ export type BillingType = 'per_lesson' | 'per_term' | 'per_month'
 // 报名记录状态
 export type EnrollmentStatus = 'active' | 'settled' | 'finished'
 
-// 结转方式
-export type TransferMode = 'amount' | 'hours'
-
 // 管理员角色
 export type AdminRole = 'superadmin' | 'admin' | 'teacher'
 
@@ -35,6 +32,7 @@ export interface Student {
   tags?: string
   remark?: string
   source?: string
+  balance?: number
   createdAt?: string
 }
 
@@ -42,14 +40,8 @@ export interface Student {
 export interface Course {
   id: string
   name: string
-  teacher?: string
-  location?: string
   color?: string
-  defaultStartTime?: string
-  defaultEndTime?: string
-  unitPrice?: number
   billingType?: BillingType
-  capacity?: number
   term?: string
   status?: CourseStatus
   category?: string
@@ -68,11 +60,44 @@ export interface Grade {
   createdAt?: string
 }
 
+// 班级状态
+export type ClassStatus = 'active' | 'inactive'
+
+// 班级信息（人的集合 + 关联课程 + 教师 + 默认时间地点，排课以班级为单位）
+export interface ClassInfo {
+  id: string
+  name: string
+  courseId?: string
+  grade?: string
+  courseName?: string
+  teacher?: string
+  location?: string
+  color?: string
+  defaultStartTime?: string
+  defaultEndTime?: string
+  capacity?: number
+  status?: ClassStatus
+  remark?: string
+  createdAt?: string
+  memberCount?: number
+}
+
+// 班级成员（join students 取档案信息）
+export interface ClassMember {
+  id: string
+  name: string
+  grade?: string
+  phone?: string
+  status?: string
+  joinedAt?: string
+}
+
 // 排课记录
 export interface Schedule {
   id: string
   studentId: string
   studentName: string
+  classId?: string
   courseId?: string
   courseName: string
   teacher: string
@@ -86,6 +111,26 @@ export interface Schedule {
   status?: ScheduleStatus
   room?: string
   makeupFor?: string
+  rescheduledFrom?: string
+}
+
+// 调课记录
+export interface ScheduleChange {
+  id: string
+  originalScheduleId: string
+  newScheduleId: string
+  studentId: string
+  studentName?: string
+  courseName?: string
+  beforeDate: string
+  beforeStartTime?: string
+  beforeEndTime?: string
+  afterDate: string
+  afterStartTime?: string
+  afterEndTime?: string
+  reason?: string
+  operatorId?: string
+  createdAt?: string
 }
 
 // 报名记录（计费核心）
@@ -114,20 +159,33 @@ export interface Enrollment {
   createdAt?: string
 }
 
-// 结转流水
+// 结转流水（退课→账户→报名抵扣）
 export interface Transfer {
   id: string
   studentId: string
   fromEnrollmentId: string
   toEnrollmentId: string
-  mode: TransferMode
-  transferredHours: number
-  transferredAmount: number
-  leftoverAmount: number
-  fromUnitPrice: number
-  toUnitPrice: number
+  refundAmount: number
+  giftMode: 'discard' | 'refund'
   operatorId?: string
   reason?: string
+  note?: string
+  createdAt?: string
+}
+
+// 账户流水类型
+export type AccountTxType = 'recharge' | 'refund' | 'enroll_deduct' | 'withdraw'
+
+// 账户流水
+export interface AccountTransaction {
+  id: string
+  studentId: string
+  type: AccountTxType
+  amount: number
+  balanceAfter: number
+  refType?: string
+  refId?: string
+  operatorId?: string
   note?: string
   createdAt?: string
 }
@@ -257,34 +315,19 @@ export interface BackupInfo {
   createdAt: string
 }
 
-// 自动备份频率枚举
-export type BackupInterval =
-  | 'every-1m'
-  | 'every-5m'
-  | 'every-15m'
-  | 'every-30m'
-  | 'hourly'
-  | 'every-6h'
-  | 'every-12h'
-  | 'daily'
+// 自动备份 cron 表达式（5 字段：分 时 日 月 周）
+// 例：'0 3 * * *' = 每天 3:00；'*/30 * * * *' = 每 30 分钟；'0 3 * * 1' = 每周一 3:00
+export type BackupCron = string
 
 // 系统配置（含续费预警阈值、备份保留天数等）
 export interface SystemConfigFull {
   appName: string
   renewalThreshold: number
   backupKeepDays: number
-  backupInterval: BackupInterval
+  backupCron: BackupCron
   backupMaxCount: number
+  timezone: string
   moduleEnabled: Record<string, boolean>
-}
-
-// 批量报名条目
-export interface BatchEnrollmentItem {
-  studentId: string
-  purchasedHours: number
-  giftHours?: number
-  unitPrice?: number
-  paidAmount?: number
 }
 
 // ========== 课后反馈 ==========

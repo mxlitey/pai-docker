@@ -35,6 +35,11 @@ export default async function onRequestGet(context) {
     endDate: url.searchParams.get('endDate') || '',
     groupBy: url.searchParams.get('groupBy') || '',
   }
-  const result = await handler(params)
-  return json({ code: 0, message: 'ok', data: result })
+  try {
+    const result = await handler(params)
+    return json({ code: 0, message: 'ok', data: result })
+  } catch (e) {
+    console.error(`[reports] ${type} 查询异常:`, e?.message || String(e))
+    return json({ code: 1, message: '报表查询失败：' + (e?.message || '未知错误'), data: null }, 500)
+  }
 }

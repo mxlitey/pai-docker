@@ -1,6 +1,7 @@
 import { getDb, validateStorageId } from './core.js'
 import { genEnrollmentId } from '../id.js'
-import { nowLocal, todayLocal } from '../time.js'
+import { now, today } from '../time.js'
+import { adjustBalanceTx } from './accounts.js'
 
 // ========== 行 <-> 对象 映射 ==========
 function rowToEnrollment(r) {
@@ -68,45 +69,83 @@ export async function addEnrollment(enrollment) {
   validateStorageId(id, 'enrollment.id')
   validateStorageId(enrollment?.studentId, 'enrollment.studentId')
   validateStorageId(enrollment?.courseId, 'enrollment.courseId')
-  if (!db.prepare('SELECT 1 FROM students WHERE id=?').get(enrollment.studentId)) {
-    return { created: false, notFound: 'student' }
-  }
-  if (!db.prepare('SELECT 1 FROM courses WHERE id=?').get(enrollment.courseId)) {
-    return { created: false, notFound: 'course' }
-  }
-  if (db.prepare('SELECT 1 FROM enrollments WHERE id=?').get(id)) {
-    return { created: false, exists: true }
-  }
-  const purchased = Number(enrollment.purchasedHours || 0)
-  const gift = Number(enrollment.giftHours || 0)
-  const unitPrice = Number(enrollment.unitPrice || 0)
-  db.prepare(`INSERT INTO enrollments
-    (id, student_id, course_id, status, purchased_hours, gift_hours, remaining_paid_hours, remaining_gift_hours,
-     unit_price, total_amount, paid_amount, discount_amount, channel, sales_id, payment_method, payment_status,
-     contract_no, expired_at, operator_id, enrolled_at, note)
-    VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    id,
-    enrollment.studentId,
-    enrollment.courseId,
-    purchased,
-    gift,
-    purchased,
-    gift,
-    unitPrice,
-    Number(enrollment.totalAmount ?? (purchased * unitPrice)),
-    Number(enrollment.paidAmount ?? (purchased * unitPrice)),
-    Number(enrollment.discountAmount || 0),
-    enrollment.channel || '',
-    enrollment.salesId || '',
-    enrollment.paymentMethod || '',
-    enrollment.paymentStatus || 'paid',
-    enrollment.contractNo || '',
-    enrollment.expiredAt || '',
-    enrollment.operatorId || '',
-    enrollment.enrolledAt || nowLocal(),
-    enrollment.note || '',
-  )
-  return { created: true, exists: false, enrollment: { ...(rowToEnrollment(db.prepare('SELECT * FROM enrollments WHERE id=?').get(id))), id } }
+
+  const useBalance = !!enrollment.useBalance
+  const tx = db.transaction(() => {
+    if (!db.prepare('SELECT 1 FROM students WHERE id=?').get(enrollment.studentId)) {
+      return { created: false, notFound: 'student' }
+    }
+    if (!db.prepare('SELECT 1 FROM courses WHERE id=?').get(enrollment.courseId)) {
+      return { created: false, notFound: 'course' }
+    }
+    if (db.prepare('SELECT 1 FROM enrollments WHERE id=?').get(id)) {
+      return { created: false, exists: true }
+    }
+    const purchased = Number(enrollment.purchasedHours || 0)
+    const gift = Number(enrollment.giftHours || 0)
+    const unitPrice = Number(enrollment.unitPrice || 0)
+    const totalAmount = Number(enrollment.totalAmount ?? (purchased * unitPrice))
+    let paidAmount = Number(enrollment.paidAmount ?? totalAmount)
+
+    // 余额抵扣：从学员账户余额扣除 min(余额, paidAmount)，剩余为现金补差
+    let balanceDeduct = 0
+    let balanceAfter = 0
+    if (useBalance && paidAmount > 0) {
+      const stu = db.prepare('SELECT balance FROM students WHERE id=?').get(enrollment.studentId)
+      const cur = Number(stu?.balance || 0)
+      balanceDeduct = Math.min(cur, paidAmount)
+      balanceDeduct = Math.round(balanceDeduct * 100) / 100
+      if (balanceDeduct > 0) {
+        const r = adjustBalanceTx(db, {
+          studentId: enrollment.studentId,
+          type: 'enroll_deduct',
+          amount: balanceDeduct,
+          direction: 'out',
+          refType: 'enrollment',
+          refId: id,
+          operatorId: enrollment.operatorId || '',
+          note: `报名抵扣：${enrollment.courseId}`,
+        })
+        balanceAfter = r.balanceAfter
+      }
+    }
+
+    db.prepare(`INSERT INTO enrollments
+      (id, student_id, course_id, status, purchased_hours, gift_hours, remaining_paid_hours, remaining_gift_hours,
+       unit_price, total_amount, paid_amount, discount_amount, channel, sales_id, payment_method, payment_status,
+       contract_no, expired_at, operator_id, enrolled_at, note)
+      VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      id,
+      enrollment.studentId,
+      enrollment.courseId,
+      purchased,
+      gift,
+      purchased,
+      gift,
+      unitPrice,
+      totalAmount,
+      paidAmount,
+      Number(enrollment.discountAmount || 0),
+      enrollment.channel || '',
+      enrollment.salesId || '',
+      enrollment.paymentMethod || '',
+      enrollment.paymentStatus || 'paid',
+      enrollment.contractNo || '',
+      enrollment.expiredAt || '',
+      enrollment.operatorId || '',
+      enrollment.enrolledAt || now(),
+      enrollment.note || '',
+    )
+    return {
+      created: true,
+      exists: false,
+      balanceDeduct,
+      balanceAfter,
+      cashPaid: Math.round((paidAmount - balanceDeduct) * 100) / 100,
+      enrollment: { ...(rowToEnrollment(db.prepare('SELECT * FROM enrollments WHERE id=?').get(id))), id },
+    }
+  })
+  return tx()
 }
 
 // 更新报名：续费/补赠课/改价/改状态（课时为绝对值语义，差值即增量）
@@ -222,44 +261,15 @@ export async function getEnrollmentSummaries(studentIds) {
 // 返回 { affected }
 export function expireOverdueEnrollments() {
   const db = getDb()
-  const today = todayLocal()
+  const todayStr = today()
   const info = db.prepare(
     `UPDATE enrollments
        SET status='expired'
      WHERE status='active'
        AND expired_at <> ''
        AND expired_at < ?`,
-  ).run(today)
+  ).run(todayStr)
   return { affected: info.changes || 0 }
-}
-
-// ========== 批量报名 ==========
-// 批量为多个学员报名同一课程
-// items: [{ studentId, purchasedHours, giftHours, unitPrice, paidAmount }]
-export async function batchAddEnrollments(courseId, items, operatorId) {
-  if (!courseId) throw new Error('缺少 courseId')
-  if (!Array.isArray(items) || items.length === 0) throw new Error('报名条目不能为空')
-  const db = getDb()
-  const results = []
-  const enroll = db.transaction(() => {
-    for (const it of items) {
-      const id = genEnrollmentId()
-      const ph = Math.max(0, Math.floor(Number(it.purchasedHours) || 0))
-      const gh = Math.max(0, Math.floor(Number(it.giftHours) || 0))
-      const up = Math.max(0, Number(it.unitPrice) || 0)
-      const paid = Math.max(0, Number(it.paidAmount) || 0)
-      const total = ph * up
-      db.prepare(`INSERT INTO enrollments
-        (id, student_id, course_id, status, purchased_hours, gift_hours,
-         remaining_paid_hours, remaining_gift_hours, unit_price, total_amount,
-         paid_amount, discount_amount, payment_status, operator_id, enrolled_at, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(id, it.studentId, courseId, 'active', ph, gh, ph, gh, up, total, paid, 0, 'paid', operatorId || '', nowLocal(), nowLocal())
-      results.push({ studentId: it.studentId, enrollmentId: id, ok: true })
-    }
-  })
-  enroll()
-  return { results, count: results.length }
 }
 
 // 导出报名记录

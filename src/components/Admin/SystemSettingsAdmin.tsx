@@ -1,7 +1,9 @@
 // 系统设置二级页面：修改项目名称、续费预警阈值、数据备份与恢复等系统配置
 import { useCallback, useEffect, useState } from 'react'
-import type { BackupInfo, BackupInterval } from '@/types'
+import type { BackupInfo } from '@/types'
 import { getConfig } from '@/api'
+import { fmtDateTimeFull } from '@/utils/tz'
+import { parseCron, describeCron } from '@/utils/cron'
 import {
   getSystemConfig,
   updateSystemConfig,
@@ -56,12 +58,20 @@ export function SystemSettingsAdmin({
   // 自动备份保留天数
   const [backupKeepDays, setBackupKeepDays] = useState(7)
   const [originalKeepDays, setOriginalKeepDays] = useState(7)
-  // 自动备份频率（分钟/小时/天级别）
-  const [backupInterval, setBackupInterval] = useState<BackupInterval>('daily')
-  const [originalBackupInterval, setOriginalBackupInterval] = useState<BackupInterval>('daily')
+  // 自动备份 cron 表达式
+  const [backupCron, setBackupCron] = useState('0 3 * * *')
+  const [originalBackupCron, setOriginalBackupCron] = useState('0 3 * * *')
+  // cron 可读描述（前端实时预览）
+  const [cronDesc, setCronDesc] = useState('')
+  const [cronError, setCronError] = useState('')
   // 自动备份最大保留份数
   const [backupMaxCount, setBackupMaxCount] = useState(500)
   const [originalBackupMaxCount, setOriginalBackupMaxCount] = useState(500)
+  // 显示时区
+  const [timezone, setTimezone] = useState('Asia/Shanghai')
+  const [originalTimezone, setOriginalTimezone] = useState('Asia/Shanghai')
+  const [timezoneError, setTimezoneError] = useState('')
+  const [savingTimezone, setSavingTimezone] = useState(false)
   const [loading, setLoading] = useState(true)
 
   // 备份列表
@@ -104,10 +114,14 @@ export function SystemSettingsAdmin({
         setOriginalThreshold(cfg.renewalThreshold)
         setBackupKeepDays(cfg.backupKeepDays)
         setOriginalKeepDays(cfg.backupKeepDays)
-        setBackupInterval(cfg.backupInterval)
-        setOriginalBackupInterval(cfg.backupInterval)
+        setBackupCron(cfg.backupCron || '0 3 * * *')
+        setOriginalBackupCron(cfg.backupCron || '0 3 * * *')
         setBackupMaxCount(cfg.backupMaxCount)
         setOriginalBackupMaxCount(cfg.backupMaxCount)
+        if (cfg.timezone) {
+          setTimezone(cfg.timezone)
+          setOriginalTimezone(cfg.timezone)
+        }
       } else if (fullR.status === 'rejected') {
         toast.error((fullR.reason as Error)?.message || '加载配置失败')
       }
@@ -124,7 +138,7 @@ export function SystemSettingsAdmin({
   const dirty = appName !== originalAppName || renewalThreshold !== originalThreshold
   const keepDaysDirty =
     backupKeepDays !== originalKeepDays ||
-    backupInterval !== originalBackupInterval ||
+    backupCron !== originalBackupCron ||
     backupMaxCount !== originalBackupMaxCount
 
   const handleSave = async () => {
@@ -186,7 +200,63 @@ export function SystemSettingsAdmin({
     }
   }
 
-  // 单独保存自动备份策略（保留天数 + 频率 + 最大份数）
+  // cron 表达式实时校验与描述预览
+  useEffect(() => {
+    const expr = backupCron.trim()
+    if (!expr) {
+      setCronDesc('')
+      setCronError('cron 表达式不能为空')
+      return
+    }
+    try {
+      parseCron(expr)
+      setCronError('')
+      setCronDesc(describeCron(expr))
+    } catch (e) {
+      setCronDesc('')
+      setCronError((e as Error).message || 'cron 表达式格式错误')
+    }
+  }, [backupCron])
+
+  // 时区标识实时校验
+  useEffect(() => {
+    const tz = timezone.trim()
+    if (!tz) {
+      setTimezoneError('时区不能为空')
+      return
+    }
+    try {
+      Intl.DateTimeFormat('en-US', { timeZone: tz })
+      setTimezoneError('')
+    } catch {
+      setTimezoneError('无效的时区标识（如 Asia/Shanghai、America/New_York）')
+    }
+  }, [timezone])
+
+  // 保存显示时区
+  const handleSaveTimezone = async () => {
+    const tz = timezone.trim()
+    if (timezoneError) {
+      toast.error('时区标识格式错误，请修正后再保存')
+      return
+    }
+    setSavingTimezone(true)
+    try {
+      const result = await updateSystemConfig({ timezone: tz })
+      if (result.code === 0) {
+        setOriginalTimezone(tz)
+        toast.success('时区已更新')
+      } else {
+        toast.error(result.message || '保存失败')
+      }
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setSavingTimezone(false)
+    }
+  }
+
+  // 单独保存自动备份策略（保留天数 + cron + 最大份数）
   const handleSaveKeepDays = async () => {
     const n = Number(backupKeepDays)
     if (!Number.isFinite(n) || n < 1) {
@@ -198,17 +268,21 @@ export function SystemSettingsAdmin({
       toast.error('最大保留份数需为不小于 1 的数值')
       return
     }
+    if (cronError) {
+      toast.error('cron 表达式格式错误，请修正后再保存')
+      return
+    }
     setSavingKeepDays(true)
     try {
       const result = await updateSystemConfig({
         backupKeepDays: n,
-        backupInterval,
+        backupCron: backupCron.trim(),
         backupMaxCount: mc,
       })
       if (result.code === 0) {
         setOriginalKeepDays(n)
         setBackupKeepDays(n)
-        setOriginalBackupInterval(backupInterval)
+        setOriginalBackupCron(backupCron.trim())
         setOriginalBackupMaxCount(mc)
         toast.success('备份策略已更新')
       } else {
@@ -340,6 +414,44 @@ export function SystemSettingsAdmin({
               </div>
             </section>
 
+            {/* 显示时区 */}
+            <section className="card p-5">
+              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2 mb-1">
+                <span className="w-1 h-4 bg-brand-500 rounded"></span>
+                {'显示时区'}
+              </h2>
+              <p className="text-xs text-slate-500 mb-4 ml-3">
+                所有时间（创建时间、审计日志、备份时间等）均按此时区显示，与访问者浏览器时区无关。后端统一存储 UTC，此处仅影响前端展示。
+              </p>
+              <div className="ml-3">
+                <div className="flex items-end gap-3">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                      placeholder="Asia/Shanghai"
+                      className={inputClass}
+                      spellCheck={false}
+                    />
+                    {timezoneError ? (
+                      <p className="text-xs text-red-500 mt-1.5">{timezoneError}</p>
+                    ) : (
+                      <p className="text-xs text-slate-400 mt-1.5">{'IANA 时区标识，如 Asia/Shanghai、America/New_York、Europe/London'}</p>
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    loading={savingTimezone}
+                    disabled={timezone === originalTimezone || !!timezoneError}
+                    onClick={handleSaveTimezone}
+                  >
+                    {'保存'}
+                  </Button>
+                </div>
+              </div>
+            </section>
+
             {/* 续费预警与有效期 */}
             <section className="card p-5">
               <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2 mb-1">
@@ -390,25 +502,23 @@ export function SystemSettingsAdmin({
                   </div>
                   <div className="flex-1 min-w-[220px]">
                     <label className="block text-sm font-medium text-slate-700 mb-1">
-                      {'自动备份频率'}
+                      {'自动备份 Cron 表达式'}
                     </label>
-                    <select
-                      value={backupInterval}
-                      onChange={(e) => setBackupInterval(e.target.value as BackupInterval)}
+                    <input
+                      type="text"
+                      value={backupCron}
+                      onChange={(e) => setBackupCron(e.target.value)}
+                      placeholder="0 3 * * *"
                       className={inputClass}
-                    >
-                      <option value="every-1m">{'每 1 分钟'}</option>
-                      <option value="every-5m">{'每 5 分钟'}</option>
-                      <option value="every-15m">{'每 15 分钟'}</option>
-                      <option value="every-30m">{'每 30 分钟'}</option>
-                      <option value="hourly">{'每小时'}</option>
-                      <option value="every-6h">{'每 6 小时'}</option>
-                      <option value="every-12h">{'每 12 小时'}</option>
-                      <option value="daily">{'每天（凌晨 3:00）'}</option>
-                    </select>
-                    <p className="text-xs text-slate-400 mt-1.5">
-                      {'可设为分钟/小时/天级别；daily 锚定凌晨 3:00，其余按固定间隔循环。修改后下个周期生效'}
-                    </p>
+                      spellCheck={false}
+                    />
+                    {cronError ? (
+                      <p className="text-xs text-red-500 mt-1.5">{cronError}</p>
+                    ) : cronDesc ? (
+                      <p className="text-xs text-emerald-600 mt-1.5">{cronDesc}</p>
+                    ) : (
+                      <p className="text-xs text-slate-400 mt-1.5">{'格式：分 时 日 月 周（如 0 3 * * * = 每天 3:00）'}</p>
+                    )}
                   </div>
                   <div className="min-w-[140px]">
                     <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -486,7 +596,7 @@ export function SystemSettingsAdmin({
                                 {formatSize(b.size)}
                               </td>
                               <td className="py-2 px-1 text-slate-600 whitespace-nowrap">
-                                {new Date(b.createdAt).toLocaleString()}
+                                {fmtDateTimeFull(b.createdAt)}
                               </td>
                               <td className="py-2 px-1 text-right">
                                 <div className="inline-flex gap-2">

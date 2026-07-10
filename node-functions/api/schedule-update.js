@@ -1,7 +1,7 @@
 // 排课修改 API
 // PUT /api/schedule  body: { old: Schedule, new: Schedule }
 // 处理跨月/跨学员的存储路径迁移
-import { updateSchedule, json } from '../_lib/store.js'
+import { updateSchedule, getScheduleById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit, buildUpdateSummary } from '../_lib/audit.js'
 
@@ -54,6 +54,21 @@ export default async function onRequestPut(context) {
   }
 
   try {
+    // 状态校验：已到课/缺勤/已取消的排课不允许编辑
+    const current = await getScheduleById(oldSchedule.id)
+    if (!current) {
+      return json({ code: 1, message: '排课记录不存在', data: null }, 404)
+    }
+    if (current.status === 'cancelled') {
+      return json({ code: 1, message: '已取消的排课不允许编辑', data: null }, 409)
+    }
+    if (current.attended === true) {
+      return json({ code: 1, message: '已到课的排课不允许编辑', data: null }, 409)
+    }
+    if (current.attended === false) {
+      return json({ code: 1, message: '已缺勤的排课不允许编辑', data: null }, 409)
+    }
+
     const result = await updateSchedule(oldSchedule, newSchedule)
     const before = result.before || oldSchedule
     const after = result.after || newSchedule

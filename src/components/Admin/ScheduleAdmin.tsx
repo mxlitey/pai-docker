@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Course, Schedule, Student } from '@/types'
+import type { Course, Schedule, Student, ClassInfo } from '@/types'
 import { getSchedules } from '@/api'
-import { deleteSchedule, searchSchedules } from '@/api/admin'
+import { deleteSchedule, searchSchedules, listClasses } from '@/api/admin'
 import { SearchBar } from '@/components/SearchBar'
 import { cn } from '@/utils/cn'
 import {
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui'
 import { ScheduleEditor } from './ScheduleEditor'
 import { ScheduleAddModal } from './ScheduleAddModal'
+import { RescheduleModal } from './RescheduleModal'
 
 interface ScheduleAdminProps {
   students: Student[]
@@ -41,8 +42,29 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
   const [loadingSchedules, setLoadingSchedules] = useState(false)
   const [busy, setBusy] = useState(false)
 
+  // 班级列表：排课弹窗按班级带出成员名单
+  const [classes, setClasses] = useState<ClassInfo[]>([])
+
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
   const [addingSchedule, setAddingSchedule] = useState(false)
+  const [reschedulingSchedule, setReschedulingSchedule] = useState<Schedule | null>(null)
+
+  // 加载班级列表（active 状态）
+  const loadClasses = useCallback(async () => {
+    try {
+      const result = await listClasses({ status: 'active' })
+      if (result.code === 0) {
+        setClasses(result.data.classes)
+      }
+    } catch (e) {
+      console.error('加载班级列表失败:', e)
+    }
+  }, [])
+
+  // 进入页面时加载班级（供排课弹窗使用）
+  useEffect(() => {
+    loadClasses()
+  }, [loadClasses])
 
   // 按学员加载排课
   const loadSchedulesByStudent = useCallback(async (studentId: string) => {
@@ -315,7 +337,10 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
                   </tr>
                 </thead>
                 <tbody>
-                  {schedules.map((s) => (
+                  {schedules.map((s) => {
+                    // 仅未点名且未取消的排课才可编辑/删除；到课、缺勤、已取消的排课不可改不可删
+                    const canModify = s.status !== 'cancelled' && s.attended !== true && s.attended !== false
+                    return (
                     <tr
                       key={s.id}
                       className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
@@ -326,8 +351,45 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
                         </td>
                       )}
                       <td className="py-2.5 px-2">
-                        <div className="font-medium text-slate-700">{s.courseName}</div>
+                        <div className="font-medium text-slate-700 flex items-center gap-1.5 flex-wrap">
+                          {s.courseName}
+                          {s.makeupFor && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded" title={`补课自 ${s.makeupFor}`}>
+                              补课
+                            </span>
+                          )}
+                          {s.rescheduledFrom && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded" title={`调课自 ${s.rescheduledFrom}`}>
+                              调课
+                            </span>
+                          )}
+                          {s.status === 'cancelled' && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200 rounded">
+                              已取消
+                            </span>
+                          )}
+                          {s.attended === true && s.status !== 'cancelled' && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-green-50 text-green-700 border border-green-200 rounded">
+                              到课
+                            </span>
+                          )}
+                          {s.attended === false && s.status !== 'cancelled' && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-rose-50 text-rose-700 border border-rose-200 rounded">
+                              缺勤
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-slate-400 font-mono">{s.id}</div>
+                        {s.makeupFor && (
+                          <div className="text-[10px] text-amber-500 font-mono mt-0.5" title="原缺勤排课ID">
+                            ← {s.makeupFor}
+                          </div>
+                        )}
+                        {s.rescheduledFrom && (
+                          <div className="text-[10px] text-blue-400 font-mono mt-0.5" title="原排课ID">
+                            ← {s.rescheduledFrom}
+                          </div>
+                        )}
                       </td>
                       <td className="py-2.5 px-2 text-slate-600">{s.date}</td>
                       <td className="py-2.5 px-2 text-slate-600">
@@ -336,23 +398,49 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
                       <td className="py-2.5 px-2 text-slate-600">{s.teacher}</td>
                       <td className="py-2.5 px-2 text-slate-600">{s.location}</td>
                       <td className="py-2.5 px-2 text-right whitespace-nowrap">
-                        <button
-                          onClick={() => setEditingSchedule(s)}
-                          disabled={busy}
-                          className="text-brand-600 hover:text-brand-700 text-xs font-medium mr-3 disabled:opacity-50"
-                        >
-                          {'编辑'}
-                        </button>
-                        <button
-                          onClick={() => handleDeleteSchedule(s)}
-                          disabled={busy}
-                          className="text-rose-600 hover:text-rose-700 text-xs font-medium disabled:opacity-50"
-                        >
-                          {'删除'}
-                        </button>
+                        {canModify && (
+                          <button
+                            onClick={() => setEditingSchedule(s)}
+                            disabled={busy}
+                            className="text-brand-600 hover:text-brand-700 text-xs font-medium mr-3 disabled:opacity-50"
+                          >
+                            {'编辑'}
+                          </button>
+                        )}
+                        {s.status !== 'cancelled' && s.attended === false && (
+                          <button
+                            onClick={() => setReschedulingSchedule(s)}
+                            disabled={busy}
+                            className="text-amber-600 hover:text-amber-700 text-xs font-medium mr-3 disabled:opacity-50"
+                          >
+                            {'补课'}
+                          </button>
+                        )}
+                        {s.status !== 'cancelled' && s.attended !== true && s.attended !== false && !s.makeupFor && !s.rescheduledFrom && (
+                          <button
+                            onClick={() => setReschedulingSchedule(s)}
+                            disabled={busy}
+                            className="text-blue-600 hover:text-blue-700 text-xs font-medium mr-3 disabled:opacity-50"
+                          >
+                            {'调课'}
+                          </button>
+                        )}
+                        {canModify && (
+                          <button
+                            onClick={() => handleDeleteSchedule(s)}
+                            disabled={busy}
+                            className="text-rose-600 hover:text-rose-700 text-xs font-medium disabled:opacity-50"
+                          >
+                            {'删除'}
+                          </button>
+                        )}
+                        {!canModify && (
+                          <span className="text-xs text-slate-300">—</span>
+                        )}
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -373,10 +461,21 @@ export function ScheduleAdmin({ students, courses, onBack, onToast }: ScheduleAd
         <ScheduleAddModal
           courses={courses}
           students={students}
+          classes={classes}
           onClose={() => setAddingSchedule(false)}
           onUpdated={handleEditorUpdated}
         />
       )}
+
+      {/* 调课弹窗 */}
+      <RescheduleModal
+        schedule={reschedulingSchedule}
+        courses={courses}
+        classes={classes}
+        onClose={() => setReschedulingSchedule(null)}
+        onUpdated={handleEditorUpdated}
+        onToast={onToast}
+      />
 
     </div>
   )

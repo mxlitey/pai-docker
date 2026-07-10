@@ -1,5 +1,6 @@
 import { getDb, validateStorageId } from './core.js'
 import { genCourseId } from '../id.js'
+import { now } from '../time.js'
 
 // ========== 行 <-> 对象 映射 ==========
 function rowToCourse(r) {
@@ -7,14 +8,8 @@ function rowToCourse(r) {
   return {
     id: r.id,
     name: r.name,
-    teacher: r.teacher || '',
-    location: r.location || '',
     color: r.color || '',
-    defaultStartTime: r.default_start_time || '',
-    defaultEndTime: r.default_end_time || '',
-    unitPrice: typeof r.unit_price === 'number' ? r.unit_price : Number(r.unit_price || 0),
     billingType: r.billing_type || 'per_lesson',
-    capacity: r.capacity ?? 0,
     term: r.term || '',
     status: r.status || 'active',
     category: r.category || '',
@@ -49,14 +44,8 @@ export async function addCourse(course) {
   const finalCourse = {
     id,
     name: course.name,
-    teacher: course.teacher || '',
-    location: course.location || '',
     color: course.color || '',
-    defaultStartTime: course.defaultStartTime || '',
-    defaultEndTime: course.defaultEndTime || '',
-    unitPrice: Number(course.unitPrice || 0),
     billingType: course.billingType || 'per_lesson',
-    capacity: Number(course.capacity || 0),
     term: course.term || '',
     status: course.status || 'active',
     category: course.category || '',
@@ -64,11 +53,10 @@ export async function addCourse(course) {
     description: course.description || '',
   }
   db.prepare(`INSERT INTO courses
-    (id, name, teacher, location, color, default_start_time, default_end_time, unit_price, billing_type, capacity, term, status, category, grade, description)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    finalCourse.id, finalCourse.name, finalCourse.teacher, finalCourse.location, finalCourse.color,
-    finalCourse.defaultStartTime, finalCourse.defaultEndTime, finalCourse.unitPrice, finalCourse.billingType,
-    finalCourse.capacity, finalCourse.term, finalCourse.status, finalCourse.category, finalCourse.grade, finalCourse.description,
+    (id, name, color, billing_type, term, status, category, grade, description, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    finalCourse.id, finalCourse.name, finalCourse.color, finalCourse.billingType,
+    finalCourse.term, finalCourse.status, finalCourse.category, finalCourse.grade, finalCourse.description, now(),
   )
   return { created: true, exists: false, course: finalCourse }
 }
@@ -80,18 +68,11 @@ export async function updateCourse(course) {
   if (!old) return { updated: false, notFound: true }
   const before = rowToCourse(old)
   const info = db.prepare(`UPDATE courses SET
-    name=?, teacher=?, location=?, color=?, default_start_time=?, default_end_time=?,
-    unit_price=?, billing_type=?, capacity=?, term=?, status=?, category=?, grade=?, description=?
+    name=?, color=?, billing_type=?, term=?, status=?, category=?, grade=?, description=?
     WHERE id=?`).run(
     course.name,
-    course.teacher || '',
-    course.location || '',
     course.color || '',
-    course.defaultStartTime || '',
-    course.defaultEndTime || '',
-    Number(course.unitPrice || 0),
     course.billingType || 'per_lesson',
-    Number(course.capacity || 0),
     course.term || '',
     course.status || 'active',
     course.category || '',
