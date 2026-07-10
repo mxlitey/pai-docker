@@ -272,35 +272,6 @@ export function expireOverdueEnrollments() {
   return { affected: info.changes || 0 }
 }
 
-// ========== 批量报名 ==========
-// 批量为多个学员报名同一课程
-// items: [{ studentId, purchasedHours, giftHours, unitPrice, paidAmount }]
-export async function batchAddEnrollments(courseId, items, operatorId) {
-  if (!courseId) throw new Error('缺少 courseId')
-  if (!Array.isArray(items) || items.length === 0) throw new Error('报名条目不能为空')
-  const db = getDb()
-  const results = []
-  const enroll = db.transaction(() => {
-    for (const it of items) {
-      const id = genEnrollmentId()
-      const ph = Math.max(0, Math.floor(Number(it.purchasedHours) || 0))
-      const gh = Math.max(0, Math.floor(Number(it.giftHours) || 0))
-      const up = Math.max(0, Number(it.unitPrice) || 0)
-      const paid = Math.max(0, Number(it.paidAmount) || 0)
-      const total = ph * up
-      db.prepare(`INSERT INTO enrollments
-        (id, student_id, course_id, status, purchased_hours, gift_hours,
-         remaining_paid_hours, remaining_gift_hours, unit_price, total_amount,
-         paid_amount, discount_amount, payment_status, operator_id, enrolled_at, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(id, it.studentId, courseId, 'active', ph, gh, ph, gh, up, total, paid, 0, 'paid', operatorId || '', now(), now())
-      results.push({ studentId: it.studentId, enrollmentId: id, ok: true })
-    }
-  })
-  enroll()
-  return { results, count: results.length }
-}
-
 // 导出报名记录
 export function exportEnrollments() {
   const db = getDb()

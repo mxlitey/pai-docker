@@ -330,15 +330,6 @@ export interface SystemConfigFull {
   moduleEnabled: Record<string, boolean>
 }
 
-// 批量报名条目
-export interface BatchEnrollmentItem {
-  studentId: string
-  purchasedHours: number
-  giftHours?: number
-  unitPrice?: number
-  paidAmount?: number
-}
-
 // ========== 课后反馈 ==========
 export interface Feedback {
   id: string

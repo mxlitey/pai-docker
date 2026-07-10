@@ -3,7 +3,7 @@
 import type {
   Schedule, Student, Course, Enrollment, Transfer,
   AdminUser, AdminRole, CurrentAdmin, AuditLog, ReportQuery,
-  BackupInfo, SystemConfigFull, BatchEnrollmentItem,
+  BackupInfo, SystemConfigFull,
   Feedback, TeacherPerformance, Coupon, Membership, StudentMembership,
   Lead, LeadFollowup, PermissionModule, Grade, ClassInfo, ClassMember,
   ScheduleChange, AccountTransaction,
@@ -894,21 +894,6 @@ export async function expireOverdue(): Promise<ApiResult<{ affected: number }>> 
   const resp = await fetch(`${API_BASE}/expire`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    signal: AbortSignal.timeout(15000),
-  })
-  return resp.json()
-}
-
-// ========== 批量报名 ==========
-
-export async function batchEnroll(
-  courseId: string,
-  items: BatchEnrollmentItem[],
-): Promise<ApiResult<{ count: number; results: { studentId: string; enrollmentId: string; ok: boolean }[] }>> {
-  const resp = await fetch(`${API_BASE}/enrollment-batch`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ courseId, items }),
     signal: AbortSignal.timeout(15000),
   })
   return resp.json()

@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { BatchEnrollmentItem, Course, Enrollment, EnrollmentStatus, Student } from '@/types'
+import type { Course, Enrollment, EnrollmentStatus, Student } from '@/types'
 import { cn } from '@/utils/cn'
 import { getCourseDotClass } from '@/utils/courseColors'
 import { todayLocal } from '@/utils/date'
 import { fmtDateTime } from '@/utils/tz'
 import {
   addEnrollment,
-  batchEnroll,
   deleteEnrollment,
   listEnrollments,
   updateEnrollment,
@@ -23,7 +22,6 @@ import {
   ModalFooter,
   Pagination,
   SubPageHeader,
-  toast,
 } from '@/components/ui'
 
 interface EnrollmentAdminProps {
@@ -157,8 +155,6 @@ export function EnrollmentAdmin({
   const [page, setPage] = useState(1)
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Enrollment | null>(null)
-  // 批量报名弹窗
-  const [batchOpen, setBatchOpen] = useState(false)
   // 本地操作忙碌（删除进行中），与父级 busy 共同禁用按钮
   const [localBusy, setLocalBusy] = useState(false)
 
@@ -263,9 +259,6 @@ export function EnrollmentAdmin({
       <SubPageHeader title={'报名管理'} onBack={onBack} count={sorted.length}>
         <Button variant="outline" onClick={handleExportCsv} disabled={sorted.length === 0}>
           {'导出 CSV'}
-        </Button>
-        <Button variant="ghost" onClick={() => setBatchOpen(true)} disabled={busy}>
-          {'批量报名'}
         </Button>
         <Button variant="primary" onClick={() => setAdding(true)} disabled={actionDisabled}>
           + {'新增报名'}
@@ -461,16 +454,6 @@ export function EnrollmentAdmin({
           }}
           showToast={showToast}
           onAuthError={onAuthError}
-        />
-      )}
-
-      {/* 批量报名弹窗 */}
-      {batchOpen && (
-        <BatchEnrollModal
-          courses={courses}
-          students={students}
-          onClose={() => setBatchOpen(false)}
-          onSuccess={loadEnrollments}
         />
       )}
     </div>
@@ -967,15 +950,20 @@ function EnrollmentEditModal({
         {/* 赠课课时 */}
         <div className="flex items-start gap-4">
           <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'赠课课时'}</span>
-          <input
-            type="number"
-            min={0}
-            step={1}
-            value={form.giftHours}
-            onChange={(e) => setField('giftHours', e.target.value)}
-            className={inputClass}
-            placeholder="默认 0"
-          />
+          <div className="flex-1 space-y-1">
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={form.giftHours}
+              onChange={(e) => setField('giftHours', e.target.value)}
+              className={inputClass}
+              placeholder="默认 0"
+            />
+            <div className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded px-2 py-1.5 leading-relaxed">
+              {'提示：赠课不计入应付金额。如需将赠课计入总课时并参与单价计算，请把赠课直接累加进「购课课时」，并在备注中注明已赠课。'}
+            </div>
+          </div>
         </div>
 
         {/* 单价 */}
@@ -1085,270 +1073,6 @@ function EnrollmentEditModal({
             className={inputClass}
             placeholder="可选，如：续费、赠课原因等"
           />
-        </div>
-
-        {/* 错误提示 */}
-        {error && (
-          <div className="bg-rose-50 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
-            {error}
-          </div>
-        )}
-      </div>
-    </Modal>
-  )
-}
-
-// ===== 批量报名弹窗 =====
-interface BatchEnrollModalProps {
-  courses: Course[]
-  students: Student[]
-  onClose: () => void
-  onSuccess: () => void // 成功后刷新列表
-}
-
-function BatchEnrollModal({ courses, students, onClose, onSuccess }: BatchEnrollModalProps) {
-  const [courseId, setCourseId] = useState('')
-  const [purchasedHours, setPurchasedHours] = useState('')
-  const [giftHours, setGiftHours] = useState('0')
-  const [unitPrice, setUnitPrice] = useState('0')
-  const [selected, setSelected] = useState<Set<string>>(() => new Set())
-  const [keyword, setKeyword] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  // 按姓名/年级/手机号过滤学员
-  const filteredStudents = useMemo(() => {
-    const kw = keyword.trim().toLowerCase()
-    if (!kw) return students
-    return students.filter((s) =>
-      s.name.toLowerCase().includes(kw) ||
-      (s.grade || '').toLowerCase().includes(kw) ||
-      (s.phone || '').includes(keyword.trim()),
-    )
-  }, [students, keyword])
-
-  // 按选中学员的年级集合过滤可选课程：
-  // - 选中学员有年级 → 仅显示这些年级的课程 + 未设年级的课程
-  // - 选中学员无年级（或年级为空）→ 显示全部课程
-  const selectedGrades = useMemo(() => {
-    const grades = Array.from(selected)
-      .map((id) => students.find((s) => s.id === id)?.grade)
-      .filter((g): g is string => Boolean(g))
-    return new Set<string>(grades)
-  }, [selected, students])
-
-  const filteredCourses = useMemo(() => {
-    return courses.filter(
-      (c) => selectedGrades.size === 0 || !c.grade || selectedGrades.has(c.grade),
-    )
-  }, [courses, selectedGrades])
-
-  // 选中学员变化后，若已选课程不再匹配当前年级过滤，则清空，避免把低年级学员报进高年级课程
-  useEffect(() => {
-    if (courseId && !filteredCourses.some((c) => c.id === courseId)) {
-      setCourseId('')
-    }
-  }, [filteredCourses, courseId])
-
-  // 实付合计预览 = 购课课时 × 单价 × 选中人数
-  const phNum = Number(purchasedHours) || 0
-  const upNum = Number(unitPrice) || 0
-  const paidPreview = round2(phNum * upNum * selected.size)
-
-  const toggleStudent = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-    setError('')
-  }
-
-  const handleSave = async () => {
-    setError('')
-
-    if (!courseId) {
-      setError('请选择课程')
-      return
-    }
-    const ph = Number(purchasedHours)
-    if (!Number.isFinite(ph) || ph < 0 || !Number.isInteger(ph)) {
-      setError('购课课时需为非负整数')
-      return
-    }
-    const gh = giftHours.trim() === '' ? 0 : Number(giftHours)
-    if (!Number.isFinite(gh) || gh < 0 || !Number.isInteger(gh)) {
-      setError('赠课课时需为非负整数')
-      return
-    }
-    const up = unitPrice.trim() === '' ? 0 : Number(unitPrice)
-    if (!Number.isFinite(up) || up < 0) {
-      setError('单价需为非负数')
-      return
-    }
-    if (selected.size === 0) {
-      setError('请至少选择一名学员')
-      return
-    }
-
-    const items: BatchEnrollmentItem[] = Array.from(selected).map((studentId) => ({
-      studentId,
-      purchasedHours: ph,
-      giftHours: gh,
-      unitPrice: up,
-      paidAmount: round2(ph * up),
-    }))
-
-    setSaving(true)
-    try {
-      const r = await batchEnroll(courseId, items)
-      if (r.code === 0) {
-        toast.success(`已批量新增 ${items.length} 条报名`)
-        onSuccess()
-        onClose()
-      } else {
-        toast.error(r.message || '批量报名失败')
-      }
-    } catch (e) {
-      const err = e as Error
-      toast.error(err.message || '批量报名失败')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Modal
-      title={'批量报名'}
-      onClose={onClose}
-      size="lg"
-      footer={
-        <ModalFooter
-          onCancel={onClose}
-          onConfirm={handleSave}
-          loading={saving}
-          confirmText={'批量报名'}
-          confirmDisabled={false}
-        />
-      }
-    >
-      <div className="space-y-4">
-        <div className="text-xs text-slate-400">
-          <span className="text-rose-500">*</span> 为必填项。所填参数将统一应用到全部选中学员。
-        </div>
-
-        {/* 课程 */}
-        <Field label={'课程'} required>
-          {selectedGrades.size > 1 && (
-            <p className="mb-1 text-xs text-amber-600">
-              {`已选学员跨 ${selectedGrades.size} 个年级，课程已按年级过滤`}
-            </p>
-          )}
-          <select
-            value={courseId}
-            onChange={(e) => setCourseId(e.target.value)}
-            className={cn(inputClass, 'bg-white')}
-            autoFocus
-          >
-            <option value="">{'请选择课程'}</option>
-            {filteredCourses.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-                {c.grade ? `（${c.grade}）` : ''}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        {/* 购课课时 */}
-        <Field label={'购课课时'} required hint="统一应用到全部选中学员">
-          <input
-            type="number"
-            min={0}
-            step={1}
-            value={purchasedHours}
-            onChange={(e) => setPurchasedHours(e.target.value)}
-            className={inputClass}
-            placeholder="如：40"
-          />
-        </Field>
-
-        {/* 赠课课时 */}
-        <Field label={'赠课课时'} hint="默认 0">
-          <input
-            type="number"
-            min={0}
-            step={1}
-            value={giftHours}
-            onChange={(e) => setGiftHours(e.target.value)}
-            className={inputClass}
-            placeholder="默认 0"
-          />
-        </Field>
-
-        {/* 单价 */}
-        <Field label={'单价'} hint="每课时单价，默认 0">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400 text-sm">¥</span>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              value={unitPrice}
-              onChange={(e) => setUnitPrice(e.target.value)}
-              className={cn(inputClass, 'flex-1')}
-              placeholder="每课时单价，如 200"
-            />
-          </div>
-        </Field>
-
-        {/* 实付合计（只读预览） */}
-        <Field label="实付合计" hint="= 购课课时 × 单价 × 选中人数">
-          <div className="pt-2 text-sm text-slate-700 font-medium">
-            {formatMoney(paidPreview)}
-          </div>
-        </Field>
-
-        {/* 学员搜索 */}
-        <Field label={'学员'} required hint={`已选 ${selected.size} / ${students.length} 名`}>
-          <input
-            type="text"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            className={inputClass}
-            placeholder="按姓名 / 年级 / 手机号搜索"
-          />
-        </Field>
-
-        {/* 学员多选列表 */}
-        <div className="border border-slate-200 rounded-md max-h-60 overflow-y-auto">
-          {filteredStudents.length === 0 ? (
-            <div className="px-3 py-4 text-sm text-slate-400 text-center">无匹配学员</div>
-          ) : (
-            filteredStudents.map((s) => {
-              const checked = selected.has(s.id)
-              return (
-                <label
-                  key={s.id}
-                  className={cn(
-                    'flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-50 border-b border-slate-100 last:border-0',
-                    checked && 'bg-brand-50/50',
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleStudent(s.id)}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm text-slate-700 font-medium">{s.name}</span>
-                  {s.grade && <span className="text-xs text-slate-400">{s.grade}</span>}
-                  {s.phone && <span className="text-xs text-slate-400">{s.phone}</span>}
-                </label>
-              )
-            })
-          )}
         </div>
 
         {/* 错误提示 */}
