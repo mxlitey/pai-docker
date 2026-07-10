@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { BatchEnrollmentItem, Course, Enrollment, EnrollmentStatus, Grade, Student } from '@/types'
+import type { BatchEnrollmentItem, Course, Enrollment, EnrollmentStatus, Student } from '@/types'
 import { cn } from '@/utils/cn'
 import { getCourseDotClass } from '@/utils/courseColors'
 import {
@@ -28,7 +28,6 @@ import {
 interface EnrollmentAdminProps {
   students: Student[]
   courses: Course[]
-  grades: Grade[] // 年级列表（学员/课程按年级名称关联，报名时按学员年级过滤可选课程）
   busy: boolean // 父级全局忙碌状态，禁用按钮
   onBack: () => void
   showToast: (type: 'success' | 'error' | 'info', message: string) => void
@@ -147,7 +146,6 @@ function exportEnrollmentsCsv(
 export function EnrollmentAdmin({
   students,
   courses,
-  grades,
   busy,
   onBack,
   showToast,
@@ -442,7 +440,6 @@ export function EnrollmentAdmin({
         <EnrollmentEditModal
           students={students}
           courses={courses}
-          grades={grades}
           onClose={() => setAdding(false)}
           onSaved={async () => {
             await loadEnrollments()
@@ -457,7 +454,6 @@ export function EnrollmentAdmin({
         <EnrollmentEditModal
           students={students}
           courses={courses}
-          grades={grades}
           enrollment={editing}
           onClose={() => setEditing(null)}
           onSaved={async () => {
@@ -532,7 +528,6 @@ function renderRemaining(e: Enrollment) {
 interface EnrollmentEditModalProps {
   students: Student[]
   courses: Course[]
-  grades: Grade[]
   enrollment?: Enrollment // 有值 = 编辑模式；无值 = 新增模式
   onClose: () => void
   onSaved: () => Promise<void> // 成功后刷新列表（await 完成后再关闭弹窗）
@@ -556,7 +551,6 @@ interface EnrollmentForm {
 function EnrollmentEditModal({
   students,
   courses,
-  grades,
   enrollment,
   onClose,
   onSaved,

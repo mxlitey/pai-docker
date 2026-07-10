@@ -1,7 +1,7 @@
 // 系统配置 API
 // GET  /api/config   公开接口，返回 appName 等前端需要的配置（首屏加载用）
 // PUT  /api/config    需鉴权，修改 appName 等配置（后台系统设置页调用）
-import { getAllConfig, getAppName, setAppName, setRenewalThreshold, setBackupKeepDays } from '../_lib/config-file.js'
+import { getAllConfig, getAppName, setAppName, setRenewalThreshold, setBackupKeepDays, setBackupInterval, setBackupMaxCount } from '../_lib/config-file.js'
 import { requirePermission } from '../_lib/auth.js'
 import { json } from '../_lib/store.js'
 
@@ -30,9 +30,10 @@ async function handlePut(context) {
     } catch {
       // 忽略解析失败
     }
-    const { appName, renewalThreshold, backupKeepDays } = body
+    const { appName, renewalThreshold, backupKeepDays, backupInterval, backupMaxCount } = body
 
-    if (appName === undefined && renewalThreshold === undefined && backupKeepDays === undefined) {
+    if (appName === undefined && renewalThreshold === undefined && backupKeepDays === undefined
+        && backupInterval === undefined && backupMaxCount === undefined) {
       return json({ code: 1, message: '未提供需要更新的配置项', data: null }, 400)
     }
 
@@ -45,6 +46,12 @@ async function handlePut(context) {
     }
     if (backupKeepDays !== undefined) {
       updated.backupKeepDays = setBackupKeepDays(backupKeepDays)
+    }
+    if (backupInterval !== undefined) {
+      updated.backupInterval = setBackupInterval(backupInterval)
+    }
+    if (backupMaxCount !== undefined) {
+      updated.backupMaxCount = setBackupMaxCount(backupMaxCount)
     }
 
     return json({

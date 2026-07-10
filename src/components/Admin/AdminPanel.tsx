@@ -597,7 +597,6 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
         <EnrollmentAdmin
           students={students}
           courses={courses}
-          grades={grades}
           busy={busy}
           onBack={() => goSubPage(null)}
           showToast={showToast}
@@ -614,7 +613,6 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
         <TransferAdmin
           students={students}
           courses={courses}
-          grades={grades}
           busy={busy}
           onBack={() => goSubPage(null)}
           showToast={showToast}

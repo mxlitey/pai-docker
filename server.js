@@ -12,7 +12,7 @@ import {
   getDb, countAdmins, createBackup, purgeOldBackups,
   expireOverdueEnrollments,
 } from './node-functions/_lib/store.js'
-import { loadConfig, getConfigPath, getBackupKeepDays } from './node-functions/_lib/config-file.js'
+import { loadConfig, getConfigPath, getBackupKeepDays, getBackupInterval, getBackupMaxCount, BACKUP_INTERVALS } from './node-functions/_lib/config-file.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = __dirname
@@ -258,26 +258,46 @@ async function main() {
     console.log(`[启动] 静态资源目录：${STATIC_DIR}`)
   })
 
-  // 6. 定时任务：每日自动备份 + 清理过期备份 + 课时过期处理
-  //    每日凌晨 3:00 执行一次（setInterval 简易调度，进程重启后从启动时间算起）
+  // 6. 定时任务：按配置频率自动备份 + 清理过期备份 + 课时过期处理
+  //    频率由 config.backupInterval 控制（daily / hourly / every-Nm 等）
+  //    daily 锚定凌晨 3:00 执行；其余按固定间隔从启动起循环
+  //    每个周期重新读取配置，频率变更后无需重启即可生效
   const DAY_MS = 86400000
   // 启动后立即执行一次过期处理，确保状态及时
   try { expireOverdueEnrollments() } catch (e) { console.error('[定时] 过期处理失败:', e?.message) }
-  // 计算到下一个凌晨 3:00 的间隔
-  const now = new Date()
-  const next3am = new Date(now)
-  next3am.setHours(3, 0, 0, 0)
-  if (next3am <= now) next3am.setTime(next3am.getTime() + DAY_MS)
-  const firstDelay = next3am.getTime() - now.getTime()
-  setTimeout(() => {
-    // 每日执行
-    runDailyMaintenance()
-    setInterval(runDailyMaintenance, DAY_MS)
-  }, firstDelay)
-  console.log(`[启动] 定时任务已注册：每日 03:00 自动备份 + 过期处理（首次于 ${next3am.toLocaleString()} 执行）`)
+
+  let backupTimer = null
+  const scheduleNextBackup = () => {
+    if (backupTimer) clearTimeout(backupTimer)
+    const interval = getBackupInterval()
+    const intervalMs = BACKUP_INTERVALS[interval] || BACKUP_INTERVALS.daily
+    let delay
+    let nextRunLabel
+    if (interval === 'daily') {
+      // 锚定凌晨 3:00
+      const now = new Date()
+      const next3am = new Date(now)
+      next3am.setHours(3, 0, 0, 0)
+      if (next3am <= now) next3am.setTime(next3am.getTime() + DAY_MS)
+      delay = next3am.getTime() - now.getTime()
+      nextRunLabel = next3am.toLocaleString()
+    } else {
+      // 固定间隔：首次延迟 = intervalMs（启动后等一个周期再首次执行，避免与启动初始化抢资源）
+      delay = intervalMs
+      nextRunLabel = `${intervalMs / 1000}s 后`
+    }
+    backupTimer = setTimeout(() => {
+      runDailyMaintenance()
+      // 执行完后再调度下一次（此时会重新读取最新配置，频率变更可即时生效）
+      scheduleNextBackup()
+    }, delay)
+    console.log(`[定时] 自动备份频率：${interval}（下次执行：${nextRunLabel}）`)
+  }
+  scheduleNextBackup()
 }
 
-// 每日维护：备份 → 清理旧备份 → 过期处理
+// 自动维护：备份 → 清理旧备份（按天数+份数）→ 过期处理
+// 按 backupInterval 配置的频率循环执行（不再仅每日）
 function runDailyMaintenance() {
   try {
     const result = createBackup()
@@ -286,8 +306,8 @@ function runDailyMaintenance() {
     console.error('[定时] 自动备份失败:', e?.message || String(e))
   }
   try {
-    const purged = purgeOldBackups(getBackupKeepDays())
-    if (purged.deleted > 0) console.log(`[定时] 清理过期备份 ${purged.deleted} 份`)
+    const purged = purgeOldBackups(getBackupKeepDays(), getBackupMaxCount())
+    if (purged.deleted > 0) console.log(`[定时] 清理过期/超额备份 ${purged.deleted} 份`)
   } catch (e) {
     console.error('[定时] 清理旧备份失败:', e?.message || String(e))
   }

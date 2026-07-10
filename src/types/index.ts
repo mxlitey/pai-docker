@@ -257,11 +257,24 @@ export interface BackupInfo {
   createdAt: string
 }
 
+// 自动备份频率枚举
+export type BackupInterval =
+  | 'every-1m'
+  | 'every-5m'
+  | 'every-15m'
+  | 'every-30m'
+  | 'hourly'
+  | 'every-6h'
+  | 'every-12h'
+  | 'daily'
+
 // 系统配置（含续费预警阈值、备份保留天数等）
 export interface SystemConfigFull {
   appName: string
   renewalThreshold: number
   backupKeepDays: number
+  backupInterval: BackupInterval
+  backupMaxCount: number
   moduleEnabled: Record<string, boolean>
 }
 

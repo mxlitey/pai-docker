@@ -1968,13 +1968,15 @@ export function deleteBackup(filename) {
   return { ok: true }
 }
 
-// 清理过期备份：删除早于 keepDays 天的备份
-export function purgeOldBackups(keepDays) {
+// 清理过期备份：先按 keepDays 删除过期，再按 maxCount 删除最旧超出份数的
+// maxCount 为可选，传入时按总数裁剪到该份数以内（分钟级备份时防止磁盘撑爆）
+export function purgeOldBackups(keepDays, maxCount) {
   ensureBackupDir()
   const days = Math.max(1, Math.floor(Number(keepDays) || 30))
   const cutoff = Date.now() - days * 86400000
-  const files = readdirSync(BACKUP_DIR).filter((f) => f.endsWith('.db'))
   let deleted = 0
+  // 第一步：按天数删除过期
+  const files = readdirSync(BACKUP_DIR).filter((f) => f.endsWith('.db'))
   for (const f of files) {
     const p = join(BACKUP_DIR, f)
     try {
@@ -1985,6 +1987,23 @@ export function purgeOldBackups(keepDays) {
       }
     } catch {
       // 忽略单个文件错误
+    }
+  }
+  // 第二步：按最大份数裁剪（删除最旧的超出部分）
+  const maxN = Math.max(1, Math.floor(Number(maxCount) || 0))
+  if (maxN > 0) {
+    const remaining = readdirSync(BACKUP_DIR)
+      .filter((f) => f.endsWith('.db'))
+      .map((f) => {
+        const p = join(BACKUP_DIR, f)
+        try { return { name: f, mtime: statSync(p).mtimeMs } } catch { return null }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.mtime - a.mtime) // 新→旧
+    if (remaining.length > maxN) {
+      for (const item of remaining.slice(maxN)) {
+        try { unlinkSync(join(BACKUP_DIR, item.name)); deleted++ } catch { /* 忽略 */ }
+      }
     }
   }
   return { deleted }

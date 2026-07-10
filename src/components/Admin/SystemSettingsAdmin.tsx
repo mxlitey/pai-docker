@@ -1,7 +1,7 @@
 // 系统设置二级页面：修改项目名称、续费预警阈值、数据备份与恢复等系统配置
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { BackupInfo } from '@/types'
+import type { BackupInfo, BackupInterval } from '@/types'
 import { getConfig } from '@/api'
 import {
   getSystemConfig,
@@ -58,6 +58,12 @@ export function SystemSettingsAdmin({
   // 自动备份保留天数
   const [backupKeepDays, setBackupKeepDays] = useState(7)
   const [originalKeepDays, setOriginalKeepDays] = useState(7)
+  // 自动备份频率（分钟/小时/天级别）
+  const [backupInterval, setBackupInterval] = useState<BackupInterval>('daily')
+  const [originalBackupInterval, setOriginalBackupInterval] = useState<BackupInterval>('daily')
+  // 自动备份最大保留份数
+  const [backupMaxCount, setBackupMaxCount] = useState(500)
+  const [originalBackupMaxCount, setOriginalBackupMaxCount] = useState(500)
   const [loading, setLoading] = useState(true)
 
   // 备份列表
@@ -100,6 +106,10 @@ export function SystemSettingsAdmin({
         setOriginalThreshold(cfg.renewalThreshold)
         setBackupKeepDays(cfg.backupKeepDays)
         setOriginalKeepDays(cfg.backupKeepDays)
+        setBackupInterval(cfg.backupInterval)
+        setOriginalBackupInterval(cfg.backupInterval)
+        setBackupMaxCount(cfg.backupMaxCount)
+        setOriginalBackupMaxCount(cfg.backupMaxCount)
       } else if (fullR.status === 'rejected') {
         toast.error((fullR.reason as Error)?.message || t('common.loadingConfig'))
       }
@@ -114,7 +124,10 @@ export function SystemSettingsAdmin({
 
   // 顶部保存：包含项目名称 + 续费预警阈值
   const dirty = appName !== originalAppName || renewalThreshold !== originalThreshold
-  const keepDaysDirty = backupKeepDays !== originalKeepDays
+  const keepDaysDirty =
+    backupKeepDays !== originalKeepDays ||
+    backupInterval !== originalBackupInterval ||
+    backupMaxCount !== originalBackupMaxCount
 
   const handleSave = async () => {
     const trimmed = appName.trim()
@@ -175,20 +188,31 @@ export function SystemSettingsAdmin({
     }
   }
 
-  // 单独保存自动备份保留天数
+  // 单独保存自动备份策略（保留天数 + 频率 + 最大份数）
   const handleSaveKeepDays = async () => {
     const n = Number(backupKeepDays)
     if (!Number.isFinite(n) || n < 1) {
       toast.error('保留天数需为不小于 1 的数值')
       return
     }
+    const mc = Number(backupMaxCount)
+    if (!Number.isFinite(mc) || mc < 1) {
+      toast.error('最大保留份数需为不小于 1 的数值')
+      return
+    }
     setSavingKeepDays(true)
     try {
-      const result = await updateSystemConfig({ backupKeepDays: n })
+      const result = await updateSystemConfig({
+        backupKeepDays: n,
+        backupInterval,
+        backupMaxCount: mc,
+      })
       if (result.code === 0) {
         setOriginalKeepDays(n)
         setBackupKeepDays(n)
-        toast.success('备份保留天数已更新')
+        setOriginalBackupInterval(backupInterval)
+        setOriginalBackupMaxCount(mc)
+        toast.success(t('settings.backupPolicySaved'))
       } else {
         toast.error(result.message || t('common.saveFailed'))
       }
@@ -368,30 +392,69 @@ export function SystemSettingsAdmin({
                   </div>
                   <div className="flex-1 min-w-[220px]">
                     <label className="block text-sm font-medium text-slate-700 mb-1">
+                      {t('settings.backupInterval')}
+                    </label>
+                    <select
+                      value={backupInterval}
+                      onChange={(e) => setBackupInterval(e.target.value as BackupInterval)}
+                      className={inputClass}
+                    >
+                      <option value="every-1m">{t('settings.intervalEvery1m')}</option>
+                      <option value="every-5m">{t('settings.intervalEvery5m')}</option>
+                      <option value="every-15m">{t('settings.intervalEvery15m')}</option>
+                      <option value="every-30m">{t('settings.intervalEvery30m')}</option>
+                      <option value="hourly">{t('settings.intervalHourly')}</option>
+                      <option value="every-6h">{t('settings.intervalEvery6h')}</option>
+                      <option value="every-12h">{t('settings.intervalEvery12h')}</option>
+                      <option value="daily">{t('settings.intervalDaily')}</option>
+                    </select>
+                    <p className="text-xs text-slate-400 mt-1.5">
+                      {t('settings.backupIntervalHint')}
+                    </p>
+                  </div>
+                  <div className="min-w-[140px]">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
                       {t('settings.backupKeepDays')}
                     </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={1}
-                        value={backupKeepDays}
-                        onChange={(e) =>
-                          setBackupKeepDays(e.target.value === '' ? 1 : Number(e.target.value))
-                        }
-                        className={inputClass}
-                      />
-                      <Button
-                        variant="outline"
-                        loading={savingKeepDays}
-                        disabled={!keepDaysDirty}
-                        onClick={handleSaveKeepDays}
-                      >
-                        {t('common.save')}
-                      </Button>
-                    </div>
+                    <input
+                      type="number"
+                      min={1}
+                      value={backupKeepDays}
+                      onChange={(e) =>
+                        setBackupKeepDays(e.target.value === '' ? 1 : Number(e.target.value))
+                      }
+                      className={inputClass}
+                    />
                     <p className="text-xs text-slate-400 mt-1.5">
                       {t('settings.backupKeepDaysHint')}
                     </p>
+                  </div>
+                  <div className="min-w-[140px]">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      {t('settings.backupMaxCount')}
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={backupMaxCount}
+                      onChange={(e) =>
+                        setBackupMaxCount(e.target.value === '' ? 1 : Number(e.target.value))
+                      }
+                      className={inputClass}
+                    />
+                    <p className="text-xs text-slate-400 mt-1.5">
+                      {t('settings.backupMaxCountHint')}
+                    </p>
+                  </div>
+                  <div>
+                    <Button
+                      variant="outline"
+                      loading={savingKeepDays}
+                      disabled={!keepDaysDirty}
+                      onClick={handleSaveKeepDays}
+                    >
+                      {t('common.save')}
+                    </Button>
                   </div>
                 </div>
 

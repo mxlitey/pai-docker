@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { Student, Course, Enrollment, Grade, Transfer, TransferMode } from '@/types'
+import type { Student, Course, Enrollment, Transfer, TransferMode } from '@/types'
 import { cn } from '@/utils/cn'
 import { listEnrollments, listTransfers, addTransfer } from '@/api/admin'
 import { Button, EmptyState, inputClass, LoadingBlock, SubPageHeader } from '@/components/ui'
@@ -8,7 +8,6 @@ import { Button, EmptyState, inputClass, LoadingBlock, SubPageHeader } from '@/c
 interface TransferAdminProps {
   students: Student[]
   courses: Course[]
-  grades: Grade[]
   busy: boolean
   onBack: () => void
   showToast: (type: 'success' | 'error' | 'info', message: string) => void
@@ -41,7 +40,6 @@ function isAuthError(e: Error): boolean {
 export function TransferAdmin({
   students,
   courses,
-  grades,
   busy,
   onBack,
   showToast,

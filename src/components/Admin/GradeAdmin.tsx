@@ -73,39 +73,38 @@ export function GradeAdmin({
     return m
   }, [courses])
 
-  const handleDelete = (grade: Grade) => {
+  const handleDelete = async (grade: Grade) => {
     const studentCount = studentCountByGrade.get(grade.name) || 0
     const courseCount = courseCountByGrade.get(grade.name) || 0
     if (studentCount > 0 || courseCount > 0) {
       toast.error(t('grade.deleteInUse', { student: studentCount, course: courseCount }))
       return
     }
-    confirmDialog({
+    const ok = await confirmDialog({
       title: t('grade.deleteTitle'),
       message: t('grade.deleteMessage', { name: grade.name }),
       danger: true,
-      onConfirm: async () => {
-        setLocalBusy(true)
-        try {
-          const result = await deleteGrade(grade.id)
-          if (result.code === 0) {
-            toast.success(result.message)
-            onGradesChange()
-          } else if (result.code === 409 && result.data?.inUse) {
-            toast.error(t('grade.deleteInUse', {
-              student: result.data.studentCount,
-              course: result.data.courseCount,
-            }))
-          } else {
-            toast.error(result.message || '删除失败')
-          }
-        } catch (e) {
-          showToast('error', '删除失败：' + (e as Error).message)
-        } finally {
-          setLocalBusy(false)
-        }
-      },
     })
+    if (!ok) return
+    setLocalBusy(true)
+    try {
+      const result = await deleteGrade(grade.id)
+      if (result.code === 0) {
+        toast.success(result.message)
+        onGradesChange()
+      } else if (result.code === 409 && result.data?.inUse) {
+        toast.error(t('grade.deleteInUse', {
+          student: result.data.studentCount,
+          course: result.data.courseCount,
+        }))
+      } else {
+        toast.error(result.message || '删除失败')
+      }
+    } catch (e) {
+      showToast('error', '删除失败：' + (e as Error).message)
+    } finally {
+      setLocalBusy(false)
+    }
   }
 
   return (

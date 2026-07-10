@@ -5,6 +5,8 @@
 //   tokenSecret     - token 签名密钥（首次启动自动生成 32 字节随机值）
 //   renewalThreshold- 续费预警阈值（剩余课时 ≤ 此值标红，默认 4）
 //   backupKeepDays  - 自动备份保留天数（默认 30）
+//   backupInterval  - 自动备份频率（默认 'daily'）：支持分钟/小时/天级别
+//   backupMaxCount  - 自动备份最大保留份数（默认 500，防止分钟级备份撑爆磁盘）
 //   moduleEnabled   - 模块启用开关（id -> boolean，留作模块化扩展）
 //
 // 文件位置：DATA_DIR/config.json（与 SQLite 同目录，跟随数据卷持久化）
@@ -38,6 +40,30 @@ function generateTokenSecret() {
 const DEFAULT_RENEWAL_THRESHOLD = 4
 // 默认自动备份保留天数
 const DEFAULT_BACKUP_KEEP_DAYS = 30
+// 默认自动备份频率：每天凌晨 3:00 一次
+const DEFAULT_BACKUP_INTERVAL = 'daily'
+// 默认自动备份最大保留份数：分钟级备份时防止磁盘撑爆
+const DEFAULT_BACKUP_MAX_COUNT = 500
+
+// 合法的自动备份频率枚举及其毫秒间隔
+// daily 特殊处理：锚定凌晨 3:00 执行；其余按固定间隔从启动起循环
+export const BACKUP_INTERVALS = {
+  'every-1m': 60 * 1000,
+  'every-5m': 5 * 60 * 1000,
+  'every-15m': 15 * 60 * 1000,
+  'every-30m': 30 * 60 * 1000,
+  'hourly': 60 * 60 * 1000,
+  'every-6h': 6 * 60 * 60 * 1000,
+  'every-12h': 12 * 60 * 60 * 1000,
+  'daily': 24 * 60 * 60 * 1000,
+}
+
+// 校验备份频率合法性，非法值回退为默认
+function normalizeBackupInterval(val) {
+  return typeof val === 'string' && Object.prototype.hasOwnProperty.call(BACKUP_INTERVALS, val)
+    ? val
+    : DEFAULT_BACKUP_INTERVAL
+}
 
 // 构造默认配置（首次启动用）
 function createDefaultConfig() {
@@ -46,6 +72,8 @@ function createDefaultConfig() {
     tokenSecret: generateTokenSecret(),
     renewalThreshold: DEFAULT_RENEWAL_THRESHOLD,
     backupKeepDays: DEFAULT_BACKUP_KEEP_DAYS,
+    backupInterval: DEFAULT_BACKUP_INTERVAL,
+    backupMaxCount: DEFAULT_BACKUP_MAX_COUNT,
     moduleEnabled: {},
   }
 }
@@ -71,6 +99,10 @@ export function loadConfig() {
         backupKeepDays: Number.isFinite(parsed.backupKeepDays)
           ? Math.max(1, Math.floor(parsed.backupKeepDays))
           : DEFAULT_BACKUP_KEEP_DAYS,
+        backupInterval: normalizeBackupInterval(parsed.backupInterval),
+        backupMaxCount: Number.isFinite(parsed.backupMaxCount)
+          ? Math.max(1, Math.floor(parsed.backupMaxCount))
+          : DEFAULT_BACKUP_MAX_COUNT,
         moduleEnabled: parsed.moduleEnabled && typeof parsed.moduleEnabled === 'object'
           ? parsed.moduleEnabled
           : {},
@@ -140,6 +172,8 @@ export function getAllConfig() {
     appName: cfg.appName,
     renewalThreshold: cfg.renewalThreshold,
     backupKeepDays: cfg.backupKeepDays,
+    backupInterval: cfg.backupInterval,
+    backupMaxCount: cfg.backupMaxCount,
     moduleEnabled: { ...cfg.moduleEnabled },
   }
 }
@@ -172,6 +206,35 @@ export function setBackupKeepDays(val) {
   cfg.backupKeepDays = Number.isFinite(n) ? Math.max(1, Math.floor(n)) : DEFAULT_BACKUP_KEEP_DAYS
   persist()
   return cfg.backupKeepDays
+}
+
+// 读取备份频率
+export function getBackupInterval() {
+  const cfg = loadConfig()
+  return cfg.backupInterval
+}
+
+// 修改备份频率
+export function setBackupInterval(val) {
+  const cfg = loadConfig()
+  cfg.backupInterval = normalizeBackupInterval(val)
+  persist()
+  return cfg.backupInterval
+}
+
+// 读取备份最大保留份数
+export function getBackupMaxCount() {
+  const cfg = loadConfig()
+  return cfg.backupMaxCount
+}
+
+// 修改备份最大保留份数
+export function setBackupMaxCount(val) {
+  const cfg = loadConfig()
+  const n = Number(val)
+  cfg.backupMaxCount = Number.isFinite(n) ? Math.max(1, Math.floor(n)) : DEFAULT_BACKUP_MAX_COUNT
+  persist()
+  return cfg.backupMaxCount
 }
 
 // 读取模块开关
