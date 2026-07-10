@@ -1,21 +1,23 @@
 import { getDb, validateStorageId } from './core.js'
-import { genTransferId, genEnrollmentId } from '../id.js'
+import { genTransferId } from '../id.js'
 import { now } from '../time.js'
+import { adjustBalanceTx } from './accounts.js'
 
-// ========== 行 <-> 对象 映射 ==========
+// ========== 退课/结转流水 ==========
+// 新模型：退课 = 源报名剩余课时折算成金额 → 存入学员账户余额。
+// transfers 表记录每次退课动作（from_enrollment_id + refund_amount + gift_mode）。
+// to_enrollment_id 可选：若退课后立即新报名可关联，拆分模式下通常为空。
+// gift_mode: 'discard'（赠课作废不退钱）/ 'refund'（赠课也按单价折算）
+
 function rowToTransfer(r) {
   if (!r) return null
   return {
     id: r.id,
     studentId: r.student_id,
-    fromEnrollmentId: r.from_enrollment_id,
-    toEnrollmentId: r.to_enrollment_id,
-    mode: r.mode,
-    transferredHours: r.transferred_hours ?? 0,
-    transferredAmount: typeof r.transferred_amount === 'number' ? r.transferred_amount : Number(r.transferred_amount || 0),
-    leftoverAmount: typeof r.leftover_amount === 'number' ? r.leftover_amount : Number(r.leftover_amount || 0),
-    fromUnitPrice: typeof r.from_unit_price === 'number' ? r.from_unit_price : Number(r.from_unit_price || 0),
-    toUnitPrice: typeof r.to_unit_price === 'number' ? r.to_unit_price : Number(r.to_unit_price || 0),
+    fromEnrollmentId: r.from_enrollment_id || '',
+    toEnrollmentId: r.to_enrollment_id || '',
+    refundAmount: typeof r.refund_amount === 'number' ? r.refund_amount : Number(r.refund_amount || 0),
+    giftMode: r.gift_mode || 'discard',
     operatorId: r.operator_id || '',
     reason: r.reason || '',
     note: r.note || '',
@@ -23,151 +25,75 @@ function rowToTransfer(r) {
   }
 }
 
-// ========== 结转 ==========
-// mode: 'amount'（默认，按金额折算）/ 'hours'（按课时平移）
-export async function addTransfer(transfer) {
+// 退课：源报名剩余课时折算进学员账户余额
+// giftMode: 'discard' 仅付费课时折算（赠课作废）；'refund' 付费+赠课都折算
+export async function refundEnrollment({ transfer }) {
   const db = getDb()
   const id = transfer?.id || genTransferId()
   validateStorageId(id, 'transfer.id')
   validateStorageId(transfer?.studentId, 'transfer.studentId')
   validateStorageId(transfer?.fromEnrollmentId, 'transfer.fromEnrollmentId')
-  // 目标报名：可传 toEnrollmentId（已有报名），或传 newTargetEnrollment（升班后新建目标报名）
-  const hasExistingTarget = !!transfer?.toEnrollmentId
-  const hasNewTarget = !!transfer?.newTargetEnrollment
-  if (!hasExistingTarget && !hasNewTarget) {
-    return { created: false, reason: '缺少 toEnrollmentId 或 newTargetEnrollment（目标报名记录）' }
-  }
-  if (hasExistingTarget) {
-    validateStorageId(transfer.toEnrollmentId, 'transfer.toEnrollmentId')
-    if (transfer.fromEnrollmentId === transfer.toEnrollmentId) {
-      return { created: false, reason: '源与目标报名记录不能相同' }
-    }
-  }
-  // 校验新建目标报名必要字段
-  if (hasNewTarget) {
-    const nt = transfer.newTargetEnrollment
-    validateStorageId(nt?.courseId, 'newTargetEnrollment.courseId')
-    if (!db.prepare('SELECT 1 FROM courses WHERE id=?').get(nt.courseId)) {
-      throw new Error('目标报名所关联的课程不存在')
-    }
-  }
+  const giftMode = transfer?.giftMode === 'refund' ? 'refund' : 'discard'
 
   const tx = db.transaction(() => {
     const from = db.prepare('SELECT * FROM enrollments WHERE id=?').get(transfer.fromEnrollmentId)
     if (!from) throw new Error('源报名记录不存在')
-    if (from.status !== 'active') throw new Error('源报名记录非进行中，不可结转')
+    if (from.status !== 'active') throw new Error('源报名记录非进行中，不可退课')
+    if (from.student_id !== transfer.studentId) throw new Error('报名记录不属于该学员')
 
-    // 解析目标报名记录：已有则取，新建则在事务内创建（初始 0 课时，由结转注入）
-    let to
-    let toEnrollmentId
-    let createdTargetId = null
-    if (hasExistingTarget) {
-      to = db.prepare('SELECT * FROM enrollments WHERE id=?').get(transfer.toEnrollmentId)
-      if (!to) throw new Error('目标报名记录不存在')
-      if (from.student_id !== to.student_id) throw new Error('结转仅支持同一学员的报名记录')
-      if (to.status !== 'active') throw new Error('目标报名记录非进行中，不可结转')
-      toEnrollmentId = to.id
-    } else {
-      const nt = transfer.newTargetEnrollment
-      // 升班场景：学员在新年级还没报名，结转时即时创建一条 0 课时目标报名
-      toEnrollmentId = genEnrollmentId()
-      createdTargetId = toEnrollmentId
-      const course = db.prepare('SELECT * FROM courses WHERE id=?').get(nt.courseId)
-      const unitPrice = Number(nt.unitPrice ?? course?.unit_price ?? 0)
-      db.prepare(`INSERT INTO enrollments
-        (id, student_id, course_id, status, purchased_hours, gift_hours, remaining_paid_hours, remaining_gift_hours,
-         unit_price, total_amount, paid_amount, discount_amount, channel, sales_id, payment_method, payment_status,
-         contract_no, expired_at, operator_id, enrolled_at, note)
-        VALUES (?, ?, ?, 'active', 0, 0, 0, 0, ?, 0, 0, 0, '', '', '', 'paid', '', ?, ?, ?, ?)`).run(
-        toEnrollmentId,
-        from.student_id,
-        nt.courseId,
-        unitPrice,
-        nt.expiredAt || '',
-        nt.operatorId || transfer.operatorId || '',
-        nt.enrolledAt || now(),
-        nt.note || '升班结转自动创建',
-      )
-      to = db.prepare('SELECT * FROM enrollments WHERE id=?').get(toEnrollmentId)
-    }
+    const remainingPaid = Number(from.remaining_paid_hours || 0)
+    const remainingGift = Number(from.remaining_gift_hours || 0)
+    if (remainingPaid + remainingGift <= 0) throw new Error('源报名记录无剩余课时，不可退课')
 
-    const fromRemainingPaid = from.remaining_paid_hours
-    const fromRemainingGift = from.remaining_gift_hours
-    const fromTotalRemaining = fromRemainingPaid + fromRemainingGift
-    if (fromTotalRemaining <= 0) throw new Error('源报名记录无剩余课时，不可结转')
+    const unitPrice = Number(from.unit_price || 0)
+    // 付费课时始终折算；赠课按 giftMode 决定
+    const refundHours = giftMode === 'refund'
+      ? remainingPaid + remainingGift
+      : remainingPaid
+    const refundAmount = Math.round(refundHours * unitPrice * 100) / 100
 
-    const mode = transfer.mode === 'hours' ? 'hours' : 'amount'
-    const fromUnitPrice = Number(from.unit_price || 0)
-    const toUnitPrice = Number(to.unit_price || 0)
-
-    let transferredHours = 0
-    let transferredAmount = 0
-    let leftoverAmount = 0
-    let toPurchasedAdd = 0
-    let toGiftAdd = 0
-
-    if (mode === 'hours') {
-      transferredHours = fromTotalRemaining
-      transferredAmount = fromTotalRemaining * fromUnitPrice
-      toPurchasedAdd = fromRemainingPaid
-      toGiftAdd = fromRemainingGift
-    } else {
-      transferredHours = fromTotalRemaining
-      transferredAmount = fromTotalRemaining * fromUnitPrice
-      if (toUnitPrice > 0) {
-        toPurchasedAdd = Math.floor(transferredAmount / toUnitPrice)
-        leftoverAmount = Math.round((transferredAmount - toPurchasedAdd * toUnitPrice) * 100) / 100
-      } else {
-        toPurchasedAdd = 0
-        leftoverAmount = transferredAmount
-      }
-    }
-
+    // 源报名清零并标记 settled
     db.prepare(`UPDATE enrollments SET remaining_paid_hours=0, remaining_gift_hours=0, status='settled' WHERE id=?`)
       .run(from.id)
-    db.prepare(`UPDATE enrollments SET
-      purchased_hours = purchased_hours + ?,
-      remaining_paid_hours = remaining_paid_hours + ?,
-      gift_hours = gift_hours + ?,
-      remaining_gift_hours = remaining_gift_hours + ?,
-      total_amount = total_amount + ?,
-      paid_amount = paid_amount + ?
-      WHERE id=?`).run(
-      toPurchasedAdd, toPurchasedAdd,
-      toGiftAdd, toGiftAdd,
-      transferredAmount, transferredAmount,
-      toEnrollmentId,
-    )
+
+    // 金额进学员账户余额（仅当金额 > 0）
+    let balanceAfter = Number(db.prepare('SELECT balance FROM students WHERE id=?').get(transfer.studentId)?.balance || 0)
+    if (refundAmount > 0) {
+      const r = adjustBalanceTx(db, {
+        studentId: transfer.studentId,
+        type: 'refund',
+        amount: refundAmount,
+        direction: 'in',
+        refType: 'enrollment',
+        refId: from.id,
+        operatorId: transfer.operatorId || '',
+        note: transfer.note || `退课转入：${refundHours} 课时 × ¥${unitPrice}`,
+      })
+      balanceAfter = r.balanceAfter
+    }
 
     db.prepare(`INSERT INTO transfers
-      (id, student_id, from_enrollment_id, to_enrollment_id, mode, transferred_hours, transferred_amount,
-       leftover_amount, from_unit_price, to_unit_price, operator_id, reason, note)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      (id, student_id, from_enrollment_id, to_enrollment_id, refund_amount, gift_mode, operator_id, reason, note, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       id,
       transfer.studentId,
       transfer.fromEnrollmentId,
-      toEnrollmentId,
-      mode,
-      transferredHours,
-      transferredAmount,
-      leftoverAmount,
-      fromUnitPrice,
-      toUnitPrice,
+      transfer.toEnrollmentId || '',
+      refundAmount,
+      giftMode,
       transfer.operatorId || '',
       transfer.reason || '',
       transfer.note || '',
+      now(),
     )
 
     return {
       id,
-      mode,
-      transferredHours,
-      transferredAmount,
-      leftoverAmount,
-      toPurchasedAdd,
-      toGiftAdd,
-      toEnrollmentId,
-      createdTargetEnrollmentId: createdTargetId,
+      refundAmount,
+      refundHours,
+      giftMode,
+      settledEnrollmentId: from.id,
+      balanceAfter,
     }
   })
 

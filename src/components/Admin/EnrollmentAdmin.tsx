@@ -33,6 +33,7 @@ interface EnrollmentAdminProps {
   onBack: () => void
   showToast: (type: 'success' | 'error' | 'info', message: string) => void
   onAuthError: (e: Error) => void // 401 等错误处理
+  onStudentsChanged: () => void // 报名抵扣余额后刷新学员列表（更新余额展示）
 }
 
 const PAGE_SIZE = 15
@@ -147,6 +148,7 @@ export function EnrollmentAdmin({
   onBack,
   showToast,
   onAuthError,
+  onStudentsChanged,
 }: EnrollmentAdminProps) {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([])
   const [loading, setLoading] = useState(true)
@@ -439,6 +441,7 @@ export function EnrollmentAdmin({
           onClose={() => setAdding(false)}
           onSaved={async () => {
             await loadEnrollments()
+            onStudentsChanged()
           }}
           showToast={showToast}
           onAuthError={onAuthError}
@@ -454,6 +457,7 @@ export function EnrollmentAdmin({
           onClose={() => setEditing(null)}
           onSaved={async () => {
             await loadEnrollments()
+            onStudentsChanged()
           }}
           showToast={showToast}
           onAuthError={onAuthError}
@@ -542,6 +546,8 @@ interface EnrollmentForm {
   // 有效期 yyyy-MM-dd；空串表示无有效期（永不过期）
   expiredAt: string
   note: string
+  // 新增模式：是否使用账户余额抵扣实付金额
+  useBalance: boolean
 }
 
 function EnrollmentEditModal({
@@ -554,7 +560,6 @@ function EnrollmentEditModal({
   onAuthError,
 }: EnrollmentEditModalProps) {
   const isEdit = !!enrollment
-  const courseMap = useMemo(() => new Map(courses.map((c) => [c.id, c])), [courses])
   const studentMap = useMemo(() => new Map(students.map((s) => [s.id, s])), [students])
 
   const [form, setForm] = useState<EnrollmentForm>(() => {
@@ -569,6 +574,7 @@ function EnrollmentEditModal({
         status: enrollment.status,
         expiredAt: enrollment.expiredAt ? enrollment.expiredAt.slice(0, 10) : '',
         note: enrollment.note || '',
+        useBalance: false,
       }
     }
     return {
@@ -581,6 +587,7 @@ function EnrollmentEditModal({
       status: 'active',
       expiredAt: '',
       note: '',
+      useBalance: false,
     }
   })
   // 新增模式下通过 SearchBar 搜索选中的学员对象（用于按年级过滤可选课程）
@@ -634,25 +641,22 @@ function EnrollmentEditModal({
   const previewTotal =
     (parseInt(form.purchasedHours, 10) || 0) * (Number(form.unitPrice) || 0)
 
+  // 余额抵扣预览：勾选使用余额时，抵扣 = min(学员余额, 实付)，现金补差 = 实付 - 抵扣
+  const studentBalance = !isEdit ? Number(selectedStudent?.balance || 0) : 0
+  const paidPreview = Number(form.paidAmount) || 0
+  const balanceDeductPreview = form.useBalance
+    ? Math.round(Math.min(studentBalance, paidPreview) * 100) / 100
+    : 0
+  const cashPaidPreview = Math.round((paidPreview - balanceDeductPreview) * 100) / 100
+
   const setField = <K extends keyof EnrollmentForm>(field: K, value: EnrollmentForm[K]) => {
     setForm((f) => ({ ...f, [field]: value }))
     setError('')
   }
 
-  // 选课程：自动带入该课程单价；若实付未被手动改，同步默认实付
+  // 选课程：课程已无单价（单价改为报名时手填必填），仅记录 courseId
   const handleCourseChange = (courseId: string) => {
-    const c = courseMap.get(courseId)
-    const up = c?.unitPrice ?? 0
-    setForm((f) => {
-      const next: EnrollmentForm = { ...f, courseId, unitPrice: String(up) }
-      if (!paidTouched) {
-        const ph = parseInt(f.purchasedHours, 10)
-        if (Number.isFinite(ph) && ph >= 0) {
-          next.paidAmount = String(ph * up)
-        }
-      }
-      return next
-    })
+    setForm((f) => ({ ...f, courseId }))
     setError('')
   }
 
@@ -784,13 +788,18 @@ function EnrollmentEditModal({
           unitPrice: upNum,
           expiredAt: form.expiredAt,
           note: form.note.trim(),
+          useBalance: form.useBalance,
         }
         const defaultPaid = round2(phNum * upNum)
         if (round2(paidNum) !== defaultPaid) {
           addPayload.paidAmount = round2(paidNum)
         }
         const r = await addEnrollment(addPayload)
-        ok = applyResult(r, '报名已新增')
+        // 余额抵扣成功时，后端返回 balanceDeduct/cashPaid，拼接到成功提示
+        const deductInfo = r.data?.balanceDeduct && r.data.balanceDeduct > 0
+          ? `（余额抵扣 ${formatMoney(r.data.balanceDeduct)}，现金补差 ${formatMoney(r.data.cashPaid || 0)}）`
+          : ''
+        ok = applyResult(r, '报名已新增' + deductInfo)
       }
 
       if (ok) {
@@ -892,9 +901,6 @@ function EnrollmentEditModal({
                 <option key={c.id} value={c.id}>
                   {c.name}
                   {c.grade ? `（${c.grade}）` : ''}
-                  {typeof c.unitPrice === 'number' && c.unitPrice > 0
-                    ? `（¥${c.unitPrice}/课时）`
-                    : ''}
                 </option>
               ))}
             </select>
@@ -1026,6 +1032,38 @@ function EnrollmentEditModal({
             <span className="ml-2 text-xs text-slate-400 font-normal">= 购课课时 × 单价</span>
           </div>
         </div>
+
+        {/* 余额抵扣（仅新增模式 + 学员有余额时展示） */}
+        {!isEdit && studentBalance > 0 && (
+          <div className="flex items-start gap-4">
+            <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'余额抵扣'}</span>
+            <div className="flex-1 space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.useBalance}
+                  onChange={(e) => setField('useBalance', e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm text-slate-700">
+                  {'使用账户余额抵扣'}
+                  <span className="ml-2 text-xs text-slate-400">
+                    {`当前余额 ${formatMoney(studentBalance)}`}
+                  </span>
+                </span>
+              </label>
+              {form.useBalance && (
+                <div className="bg-brand-50 border border-brand-100 rounded-md px-3 py-2 text-xs text-slate-700 space-y-0.5">
+                  <div>{`余额抵扣：${formatMoney(balanceDeductPreview)}`}</div>
+                  <div>{`现金补差：${formatMoney(cashPaidPreview)}`}</div>
+                  {cashPaidPreview <= 0 && (
+                    <div className="text-brand-700">余额足以覆盖实付，无需现金补差</div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* 有效期 */}
         <Field label={'有效期'} hint={'到期后该报名自动失效；留空表示无有效期'}>
@@ -1218,9 +1256,6 @@ function BatchEnrollModal({ courses, students, onClose, onSuccess }: BatchEnroll
               <option key={c.id} value={c.id}>
                 {c.name}
                 {c.grade ? `（${c.grade}）` : ''}
-                {typeof c.unitPrice === 'number' && c.unitPrice > 0
-                  ? `（¥${c.unitPrice}/课时）`
-                  : ''}
               </option>
             ))}
           </select>

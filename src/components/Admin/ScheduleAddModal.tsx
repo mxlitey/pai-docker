@@ -67,14 +67,8 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
     return classes.filter((c) => !c.courseId || c.courseId === courseId)
   }, [classes, courseId])
 
-  // 选课程时自动填充默认值，并清空已选学员与班级（避免误操作）
+  // 选课程时清空已选学员与班级（避免误操作）
   useEffect(() => {
-    if (selectedCourse) {
-      setTeacher(selectedCourse.teacher || '')
-      setLocation(selectedCourse.location || '')
-      setStartTime(selectedCourse.defaultStartTime || '')
-      setEndTime(selectedCourse.defaultEndTime || '')
-    }
     // 若当前班级不属于该课程，清空班级
     if (classId) {
       const cls = classes.find((c) => c.id === classId)
@@ -288,7 +282,7 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
                 <option value="">请选择课程…</option>
                 {courses.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}{c.teacher ? ` · ${c.teacher}` : ''}
+                    {c.name}{c.grade ? ` · ${c.grade}` : ''}
                   </option>
                 ))}
               </select>

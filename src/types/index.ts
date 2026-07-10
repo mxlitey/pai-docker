@@ -4,9 +4,6 @@ export type BillingType = 'per_lesson' | 'per_term' | 'per_month'
 // 报名记录状态
 export type EnrollmentStatus = 'active' | 'settled' | 'finished'
 
-// 结转方式
-export type TransferMode = 'amount' | 'hours'
-
 // 管理员角色
 export type AdminRole = 'superadmin' | 'admin' | 'teacher'
 
@@ -35,6 +32,7 @@ export interface Student {
   tags?: string
   remark?: string
   source?: string
+  balance?: number
   createdAt?: string
 }
 
@@ -42,14 +40,8 @@ export interface Student {
 export interface Course {
   id: string
   name: string
-  teacher?: string
-  location?: string
   color?: string
-  defaultStartTime?: string
-  defaultEndTime?: string
-  unitPrice?: number
   billingType?: BillingType
-  capacity?: number
   term?: string
   status?: CourseStatus
   category?: string
@@ -167,20 +159,33 @@ export interface Enrollment {
   createdAt?: string
 }
 
-// 结转流水
+// 结转流水（退课→账户→报名抵扣）
 export interface Transfer {
   id: string
   studentId: string
   fromEnrollmentId: string
   toEnrollmentId: string
-  mode: TransferMode
-  transferredHours: number
-  transferredAmount: number
-  leftoverAmount: number
-  fromUnitPrice: number
-  toUnitPrice: number
+  refundAmount: number
+  giftMode: 'discard' | 'refund'
   operatorId?: string
   reason?: string
+  note?: string
+  createdAt?: string
+}
+
+// 账户流水类型
+export type AccountTxType = 'recharge' | 'refund' | 'enroll_deduct' | 'withdraw'
+
+// 账户流水
+export interface AccountTransaction {
+  id: string
+  studentId: string
+  type: AccountTxType
+  amount: number
+  balanceAfter: number
+  refType?: string
+  refId?: string
+  operatorId?: string
   note?: string
   createdAt?: string
 }

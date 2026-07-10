@@ -1,93 +1,128 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Student, Course, Enrollment, Transfer, TransferMode } from '@/types'
+import type { Student, Course, Enrollment, Transfer, AccountTransaction } from '@/types'
 import { cn } from '@/utils/cn'
 import { fmtDateTime } from '@/utils/tz'
-import { listEnrollments, listTransfers, addTransfer } from '@/api/admin'
+import {
+  listEnrollments,
+  listCourses,
+  listTransfers,
+  listAccountTransactions,
+  addTransfer,
+  rechargeAccount,
+  withdrawAccount,
+} from '@/api/admin'
 import { Button, EmptyState, inputClass, LoadingBlock, SubPageHeader } from '@/components/ui'
 
 interface TransferAdminProps {
   students: Student[]
-  courses: Course[]
   busy: boolean
   onBack: () => void
   showToast: (type: 'success' | 'error' | 'info', message: string) => void
   onAuthError: (e: Error) => void
+  onStudentsChanged: () => void
 }
 
 // 金额格式化：整数显示 ¥200，非整数显示 ¥200.50
-// 先规整浮点误差（四舍五入到 2 位），避免 2000.0000001 被判为非整数
 function formatMoney(n: number): string {
   if (!Number.isFinite(n)) return '¥0'
   const rounded = Math.round(n * 100) / 100
   return '¥' + (Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2))
 }
 
-// 转班时间按浏览器本地时区显示（后端存储 UTC）
-function formatTime(iso?: string): string {
-  return fmtDateTime(iso)
-}
-
-// 判断是否为鉴权错误（401）：request 在 401 时抛出含「未登录/登录已过期」的 Error
 function isAuthError(e: Error): boolean {
   const msg = e.message || ''
   return msg.includes('未登录') || msg.includes('登录已过期') || msg.includes('401')
 }
 
+const TX_TYPE_LABEL: Record<string, string> = {
+  recharge: '充值',
+  refund: '退课转入',
+  enroll_deduct: '报名抵扣',
+  withdraw: '提现/退款',
+}
+
 export function TransferAdmin({
   students,
-  courses,
   busy,
   onBack,
   showToast,
   onAuthError,
+  onStudentsChanged,
 }: TransferAdminProps) {
   const [transfers, setTransfers] = useState<Transfer[]>([])
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([])
+  const [transactions, setTransactions] = useState<AccountTransaction[]>([])
+  const [studentEnrollments, setStudentEnrollments] = useState<Enrollment[]>([])
+  const [courses, setCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
 
-  // 表单状态
+  // 选中学员
   const [studentId, setStudentId] = useState('')
-  const [fromEnrollmentId, setFromEnrollmentId] = useState('')
-  const [toEnrollmentId, setToEnrollmentId] = useState('')
-  // 目标报名模式：existing = 选择已有报名；new = 新建目标报名（升班结转）
-  const [targetMode, setTargetMode] = useState<'existing' | 'new'>('existing')
-  // 新建目标报名所选的课程 ID
-  const [newTargetCourseId, setNewTargetCourseId] = useState('')
-  const [mode, setMode] = useState<TransferMode>('amount')
-  const [note, setNote] = useState('')
-  const [submitting, setSubmitting] = useState(false)
 
-  // 映射表：enrollment / course / student
-  const enrollmentMap = useMemo(
-    () => new Map(enrollments.map((e) => [e.id, e])),
-    [enrollments],
+  // 充值表单
+  const [rechargeAmount, setRechargeAmount] = useState('')
+  const [rechargeNote, setRechargeNote] = useState('')
+  const [recharging, setRecharging] = useState(false)
+
+  // 提现表单
+  const [withdrawAmount, setWithdrawAmount] = useState('')
+  const [withdrawNote, setWithdrawNote] = useState('')
+  const [withdrawing, setWithdrawing] = useState(false)
+
+  // 退课表单
+  const [refundEnrollmentId, setRefundEnrollmentId] = useState('')
+  const [giftMode, setGiftMode] = useState<'discard' | 'refund'>('discard')
+  const [refundNote, setRefundNote] = useState('')
+  const [refunding, setRefunding] = useState(false)
+
+  const studentMap = useMemo(
+    () => new Map(students.map((s) => [s.id, s])),
+    [students],
   )
   const courseMap = useMemo(
     () => new Map(courses.map((c) => [c.id, c])),
     [courses],
   )
-  const studentMap = useMemo(
-    () => new Map(students.map((s) => [s.id, s])),
-    [students],
+  const enrollmentMap = useMemo(
+    () => new Map(studentEnrollments.map((e) => [e.id, e])),
+    [studentEnrollments],
   )
 
-  // 加载全部结转流水 + 全部报名记录（报名用于映射课程名 + 前端过滤学员 active 报名）
+  const selectedStudent = studentId ? studentMap.get(studentId) : undefined
+
+  // 课程列表只需加载一次（用于把 courseId 解析为课程名）
+  useEffect(() => {
+    let cancelled = false
+    listCourses()
+      .then((r) => {
+        if (!cancelled && r.code === 0) setCourses(r.data.courses)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
   const reload = useCallback(async () => {
+    if (!studentId) {
+      setTransfers([])
+      setTransactions([])
+      setStudentEnrollments([])
+      return
+    }
     try {
-      const [tr, er] = await Promise.all([listTransfers(), listEnrollments()])
+      const [tr, tx, er] = await Promise.all([
+        listTransfers({ studentId }),
+        listAccountTransactions({ studentId }),
+        listEnrollments({ studentId }),
+      ])
       if (tr.code === 0) setTransfers(tr.data.transfers)
-      if (er.code === 0) setEnrollments(er.data.enrollments)
+      if (tx.code === 0) setTransactions(tx.data.transactions)
+      if (er.code === 0) setStudentEnrollments(er.data.enrollments)
     } catch (e) {
       const err = e as Error
-      if (isAuthError(err)) {
-        onAuthError(err)
-      } else {
-        showToast('error', '加载数据失败：' + err.message)
-      }
+      if (isAuthError(err)) onAuthError(err)
+      else showToast('error', '加载数据失败：' + err.message)
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [studentId, onAuthError, showToast])
 
-  // mount 时加载全部 transfers 和 enrollments
   useEffect(() => {
     let cancelled = false
     const init = async () => {
@@ -96,231 +131,141 @@ export function TransferAdmin({
       if (!cancelled) setLoading(false)
     }
     init()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [reload])
 
-  // 选定学员的 active 报名记录（复用已加载的全部 enrollment 在前端过滤）
-  const studentActiveEnrollments = useMemo(() => {
-    if (!studentId) return []
-    return enrollments.filter(
-      (e) => e.studentId === studentId && e.status === 'active',
-    )
-  }, [enrollments, studentId])
-
-  // 源报名下拉：仅显示 remaining > 0 的
-  const sourceOptions = useMemo(
-    () =>
-      studentActiveEnrollments.filter(
-        (e) => e.remainingPaidHours + e.remainingGiftHours > 0,
-      ),
-    [studentActiveEnrollments],
+  // 退课下拉：该学员剩余课时 > 0 的 active 报名
+  const refundableEnrollments = useMemo(
+    () => studentEnrollments.filter(
+      (e) => e.status === 'active' && e.remainingPaidHours + e.remainingGiftHours > 0,
+    ),
+    [studentEnrollments],
   )
-
-  // 目标报名下拉：排除源
-  const targetOptions = useMemo(
-    () => studentActiveEnrollments.filter((e) => e.id !== fromEnrollmentId),
-    [studentActiveEnrollments, fromEnrollmentId],
-  )
-
-  const sourceEnrollment = fromEnrollmentId
-    ? enrollmentMap.get(fromEnrollmentId)
-    : undefined
-  const targetEnrollment = toEnrollmentId
-    ? enrollmentMap.get(toEnrollmentId)
-    : undefined
-  // 新建目标报名所选课程（升班结转时目标报名尚不存在，用课程单价预览）
-  const newTargetCourse = newTargetCourseId
-    ? courseMap.get(newTargetCourseId)
-    : undefined
-
-  // 新建目标报名（升班结转）：按学员当前年级过滤可选课程
-  // 升班后学员处于新年级，结转目标应选新年级的课程；同时保留未分级课程供选择
-  const studentGrade = students.find((s) => s.id === studentId)?.grade
-  const filteredCourses = courses.filter(
-    (c) => !studentGrade || !c.grade || c.grade === studentGrade,
-  )
-
-  // 实时预览：选定源 + 目标 + 方式后计算
-  // 目标单价来源：existing 模式取 targetEnrollment.unitPrice；new 模式取 newTargetCourse.unitPrice
-  const preview = useMemo(() => {
-    if (!sourceEnrollment) return null
-    const fromPrice = sourceEnrollment.unitPrice
-    const toPrice =
-      targetMode === 'new'
-        ? newTargetCourse?.unitPrice ?? 0
-        : targetEnrollment?.unitPrice ?? 0
-    const hasTarget = targetMode === 'new' ? !!newTargetCourse : !!targetEnrollment
-    if (!hasTarget) return null
-    if (mode === 'amount') {
-      if (toPrice <= 0) {
-        return { kind: 'amount-error' as const, reason: '目标课程单价为 0，无法按金额折算' }
-      }
-      const totalHours = sourceEnrollment.remainingPaidHours + sourceEnrollment.remainingGiftHours
-      const amount = totalHours * fromPrice
-      const targetHours = Math.floor(amount / toPrice)
-      const leftover = amount - targetHours * toPrice
-      return {
-        kind: 'amount' as const,
-        totalHours,
-        fromPrice,
-        amount,
-        toPrice,
-        targetHours,
-        leftover,
-      }
-    }
-    return {
-      kind: 'hours' as const,
-      paid: sourceEnrollment.remainingPaidHours,
-      gift: sourceEnrollment.remainingGiftHours,
-    }
-  }, [sourceEnrollment, targetEnrollment, newTargetCourse, targetMode, mode])
-
-  // 结转流水按时间倒序
-  const sortedTransfers = useMemo(() => {
-    return [...transfers].sort((a, b) => {
-      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0
-      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0
-      return tb - ta
-    })
-  }, [transfers])
 
   const handleStudentChange = (id: string) => {
     setStudentId(id)
-    setFromEnrollmentId('')
-    setToEnrollmentId('')
-    setNewTargetCourseId('')
-    setTargetMode('existing')
+    setRefundEnrollmentId('')
+    setRechargeAmount('')
+    setWithdrawAmount('')
+    setRechargeNote('')
+    setWithdrawNote('')
+    setRefundNote('')
   }
 
-  const handleFromChange = (id: string) => {
-    setFromEnrollmentId(id)
-    // 若目标与新选源相同，清空目标
-    if (toEnrollmentId === id) {
-      setToEnrollmentId('')
-    }
-  }
+  // 退课预览
+  const refundPreview = useMemo(() => {
+    const e = refundEnrollmentId ? enrollmentMap.get(refundEnrollmentId) : undefined
+    if (!e) return null
+    const paid = e.remainingPaidHours
+    const gift = e.remainingGiftHours
+    const refundHours = giftMode === 'refund' ? paid + gift : paid
+    const amount = Math.round(refundHours * e.unitPrice * 100) / 100
+    return { paid, gift, refundHours, amount, unitPrice: e.unitPrice }
+  }, [refundEnrollmentId, enrollmentMap, giftMode])
 
-  const resetForm = () => {
-    setStudentId('')
-    setFromEnrollmentId('')
-    setToEnrollmentId('')
-    setNewTargetCourseId('')
-    setTargetMode('existing')
-    setMode('amount')
-    setNote('')
-  }
-
-  const handleSubmit = async () => {
-    if (!studentId) {
-      showToast('error', '请选择学员')
+  const handleRecharge = async () => {
+    const amt = Number(rechargeAmount)
+    if (!Number.isFinite(amt) || amt <= 0) {
+      showToast('error', '充值金额需为正数')
       return
     }
-    if (!fromEnrollmentId) {
-      showToast('error', '请选择源报名记录')
-      return
-    }
-    if (targetMode === 'existing') {
-      if (!toEnrollmentId) {
-        showToast('error', '请选择目标报名记录')
-        return
-      }
-      if (fromEnrollmentId === toEnrollmentId) {
-        showToast('error', '源报名与目标报名不能相同')
-        return
-      }
-    } else {
-      // new 模式：必须选择目标课程
-      if (!newTargetCourseId) {
-        showToast('error', '选择目标课程')
-        return
-      }
-    }
-    setSubmitting(true)
+    setRecharging(true)
     try {
-      const result =
-        targetMode === 'existing'
-          ? await addTransfer({
-              studentId,
-              fromEnrollmentId,
-              toEnrollmentId,
-              mode,
-              note: note.trim() || undefined,
-            })
-          : await addTransfer({
-              studentId,
-              fromEnrollmentId,
-              newTargetEnrollment: {
-                courseId: newTargetCourseId,
-                unitPrice: newTargetCourse?.unitPrice,
-              },
-              mode,
-              note: note.trim() || undefined,
-            })
-      if (result.code === 0) {
-        showToast('success', targetMode === 'new' ? '已新建目标报名并完成结转' : '结转成功')
-        resetForm()
-        // 刷新流水与报名（源/目标剩余已变）
+      const r = await rechargeAccount({ studentId, amount: amt, note: rechargeNote.trim() || undefined })
+      if (r.code === 0) {
+        showToast('success', `已充值 ${formatMoney(amt)}，余额 ${formatMoney(r.data.balanceAfter)}`)
+        setRechargeAmount('')
+        setRechargeNote('')
         await reload()
+        onStudentsChanged()
       } else {
-        // 业务失败（如源无剩余、非同学员）
-        showToast('error', result.message)
+        showToast('error', r.message)
       }
     } catch (e) {
       const err = e as Error
-      if (isAuthError(err)) {
-        onAuthError(err)
-      } else {
-        showToast('error', err.message)
-      }
+      if (isAuthError(err)) onAuthError(err)
+      else showToast('error', err.message)
     } finally {
-      setSubmitting(false)
+      setRecharging(false)
     }
   }
 
-  // 报名下拉标签：课程名（剩余 X 课时，单价 ¥Y）
-  const enrollmentLabel = (e: Enrollment): string => {
-    const courseName = courseMap.get(e.courseId)?.name || '未知课程'
-    const remaining = e.remainingPaidHours + e.remainingGiftHours
-    return `${courseName}（剩余 ${remaining} 课时，单价 ${formatMoney(e.unitPrice)}）`
+  const handleWithdraw = async () => {
+    const amt = Number(withdrawAmount)
+    if (!Number.isFinite(amt) || amt <= 0) {
+      showToast('error', '提现金额需为正数')
+      return
+    }
+    setWithdrawing(true)
+    try {
+      const r = await withdrawAccount({ studentId, amount: amt, note: withdrawNote.trim() || undefined })
+      if (r.code === 0) {
+        showToast('success', `已提现 ${formatMoney(amt)}，余额 ${formatMoney(r.data.balanceAfter)}`)
+        setWithdrawAmount('')
+        setWithdrawNote('')
+        await reload()
+        onStudentsChanged()
+      } else {
+        showToast('error', r.message)
+      }
+    } catch (e) {
+      const err = e as Error
+      if (isAuthError(err)) onAuthError(err)
+      else showToast('error', err.message)
+    } finally {
+      setWithdrawing(false)
+    }
+  }
+
+  const handleRefund = async () => {
+    if (!refundEnrollmentId) {
+      showToast('error', '请选择要退课的报名记录')
+      return
+    }
+    setRefunding(true)
+    try {
+      const r = await addTransfer({
+        studentId,
+        fromEnrollmentId: refundEnrollmentId,
+        giftMode,
+        note: refundNote.trim() || undefined,
+      })
+      if (r.code === 0) {
+        showToast('success', `已退课，折算 ${formatMoney(r.data.refundAmount)} 入账户，余额 ${formatMoney(r.data.balanceAfter)}`)
+        setRefundEnrollmentId('')
+        setRefundNote('')
+        await reload()
+        onStudentsChanged()
+      } else {
+        showToast('error', r.message)
+      }
+    } catch (e) {
+      const err = e as Error
+      if (isAuthError(err)) onAuthError(err)
+      else showToast('error', err.message)
+    } finally {
+      setRefunding(false)
+    }
   }
 
   const courseNameByEnrollment = (enrollmentId: string): string => {
     const e = enrollmentMap.get(enrollmentId)
     if (!e) return '—'
-    return courseMap.get(e.courseId)?.name || '—'
+    return courseMap.get(e.courseId)?.name || e.courseId
   }
-
-  const studentName = (id: string): string =>
-    studentMap.get(id)?.name || '—'
-
-  const modeText = (m: TransferMode): string =>
-    m === 'amount' ? '按金额' : '按课时'
-
-  const canSubmit =
-    !!studentId &&
-    !!fromEnrollmentId &&
-    (targetMode === 'existing'
-      ? !!toEnrollmentId && fromEnrollmentId !== toEnrollmentId
-      : !!newTargetCourseId)
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* 顶部栏 */}
-      <SubPageHeader title={'结转管理'} onBack={onBack} count={transfers.length} />
+      <SubPageHeader title={'账户与退课管理'} onBack={onBack} />
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-        {/* 新增结转区 */}
+        {/* 学员选择 + 余额展示 */}
         <section className="card p-5">
           <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
             <span className="w-1 h-4 bg-brand-500 rounded"></span>
-            新增结转
+            选择学员
           </h2>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* 学员 */}
             <div>
               <label className="block text-sm text-slate-500 mb-1.5">
                 <span className="text-rose-500 mr-0.5">*</span>{'学员'}
@@ -332,238 +277,269 @@ export function TransferAdmin({
               >
                 <option value="">请选择学员</option>
                 {students.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
+                  <option key={s.id} value={s.id}>
+                    {s.name}{s.grade ? `（${s.grade}）` : ''}{s.balance ? ` · 余额 ${formatMoney(s.balance)}` : ''}
+                  </option>
                 ))}
               </select>
             </div>
-
-            {/* 结转方式 */}
-            <div>
-              <label className="block text-sm text-slate-500 mb-1.5">
-                <span className="text-rose-500 mr-0.5">*</span>{'结转方式'}
-              </label>
-              <select
-                value={mode}
-                onChange={(e) => setMode(e.target.value as TransferMode)}
-                className={cn(inputClass, 'bg-white')}
-              >
-                <option value="amount">按金额折算</option>
-                <option value="hours">按课时平移</option>
-              </select>
-            </div>
-
-            {/* 源报名记录 */}
-            <div>
-              <label className="block text-sm text-slate-500 mb-1.5">
-                <span className="text-rose-500 mr-0.5">*</span>{'源报名'}
-              </label>
-              {!studentId ? (
-                <select disabled className={cn(inputClass, 'bg-white text-slate-400')}>
-                  <option value="">请先选择学员</option>
-                </select>
-              ) : sourceOptions.length === 0 ? (
-                <select disabled className={cn(inputClass, 'bg-white text-slate-400')}>
-                  <option value="">该学员无可用源报名记录</option>
-                </select>
-              ) : (
-                <select
-                  value={fromEnrollmentId}
-                  onChange={(e) => handleFromChange(e.target.value)}
-                  className={cn(inputClass, 'bg-white')}
-                >
-                  <option value="">请选择源报名</option>
-                  {sourceOptions.map((e) => (
-                    <option key={e.id} value={e.id}>{enrollmentLabel(e)}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            {/* 目标报名记录 */}
-            <div>
-              <label className="block text-sm text-slate-500 mb-1.5">
-                <span className="text-rose-500 mr-0.5">*</span>{'目标报名'}
-              </label>
-              {!studentId ? (
-                <select disabled className={cn(inputClass, 'bg-white text-slate-400')}>
-                  <option value="">请先选择学员</option>
-                </select>
-              ) : (
-                <div className="space-y-2">
-                  {/* 目标模式切换：选择已有报名 / 新建目标报名（升班结转） */}
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setTargetMode('existing')}
-                      className={cn(
-                        'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
-                        targetMode === 'existing'
-                          ? 'border-brand-400 bg-brand-50 text-brand-700'
-                          : 'border-slate-200 text-slate-500 hover:border-slate-300',
-                      )}
-                    >
-                      {'选择已有报名'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTargetMode('new')}
-                      className={cn(
-                        'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
-                        targetMode === 'new'
-                          ? 'border-brand-400 bg-brand-50 text-brand-700'
-                          : 'border-slate-200 text-slate-500 hover:border-slate-300',
-                      )}
-                    >
-                      {'新建目标报名（升班结转）'}
-                    </button>
-                  </div>
-
-                  {targetMode === 'existing' ? (
-                    targetOptions.length === 0 ? (
-                      <p className="text-xs text-slate-400 py-2 px-3 border border-dashed border-slate-200 rounded-md">
-                        该学员无其他可转入的课程报名记录，可点击「{'新建目标报名（升班结转）'}」直接新建
-                      </p>
-                    ) : (
-                      <select
-                        value={toEnrollmentId}
-                        onChange={(e) => setToEnrollmentId(e.target.value)}
-                        className={cn(inputClass, 'bg-white')}
-                      >
-                        <option value="">请选择目标报名</option>
-                        {targetOptions.map((e) => (
-                          <option key={e.id} value={e.id}>{enrollmentLabel(e)}</option>
-                        ))}
-                      </select>
-                    )
-                  ) : (
-                    <>
-                      <p className="text-xs text-slate-400">{'学员升班后若尚未报名新年级课程，可在此直接选择课程并创建目标报名'}</p>
-                      {studentGrade && (
-                        <p className="text-xs text-brand-600">{`仅显示「${studentGrade}」年级及未分级的课程`}</p>
-                      )}
-                      <select
-                        value={newTargetCourseId}
-                        onChange={(e) => setNewTargetCourseId(e.target.value)}
-                        className={cn(inputClass, 'bg-white')}
-                      >
-                        <option value="">{'选择目标课程'}</option>
-                        {filteredCourses.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                            {c.grade ? `（${c.grade}）` : ''}
-                            {typeof c.unitPrice === 'number' && c.unitPrice > 0
-                              ? `（¥${c.unitPrice}/课时）`
-                              : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </>
-                  )}
+            {selectedStudent && (
+              <div className="flex items-end">
+                <div className="bg-brand-50 border border-brand-100 rounded-md px-4 py-3 w-full">
+                  <div className="text-xs text-brand-700 font-medium mb-1">账户余额</div>
+                  <div className="text-2xl font-bold text-brand-700">{formatMoney(selectedStudent.balance || 0)}</div>
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* 方式说明 */}
-          <div className="mt-3 text-xs text-slate-400">
-            {mode === 'amount'
-              ? '按金额：源剩余价值折算为金额，再除以目标单价得到目标课时'
-              : '按课时：付费课时→付费，赠课→赠课'}
-          </div>
-
-          {/* 备注 */}
-          <div className="mt-4">
-            <label className="block text-sm text-slate-500 mb-1.5">备注（可选）</label>
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
-              className={inputClass}
-              placeholder="可填写结转原因、备注等"
-            />
-          </div>
-
-          {/* 实时预览 */}
-          {preview && (
-            <div className="mt-4 bg-brand-50 border border-brand-100 rounded-md px-4 py-3">
-              <div className="text-xs text-brand-700 font-medium mb-1">结转预览</div>
-              {preview.kind === 'amount-error' && (
-                <div className="text-sm text-rose-600">{preview.reason}</div>
-              )}
-              {preview.kind === 'amount' && (
-                <div className="text-sm text-slate-700">
-                  源剩余 {preview.totalHours} 课时 × {formatMoney(preview.fromPrice)} = {formatMoney(preview.amount)} → 目标新增 {preview.targetHours} 课时（零头 {formatMoney(preview.leftover)}）
-                </div>
-              )}
-              {preview.kind === 'hours' && (
-                <div className="text-sm text-slate-700">
-                  源剩余 付费 {preview.paid} + 赠课 {preview.gift} → 目标新增 付费 {preview.paid} + 赠课 {preview.gift}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 提交 */}
-          <div className="mt-4 flex justify-end">
-            <Button variant="primary" loading={submitting} disabled={!canSubmit || busy} onClick={handleSubmit}>
-              {'确认结转'}
-            </Button>
+              </div>
+            )}
           </div>
         </section>
 
-        {/* 结转流水列表 */}
-        {loading ? (
+        {!studentId ? (
+          <EmptyState title={'请先选择学员'} description="选择学员后可进行充值、提现、退课操作，并查看账户流水" />
+        ) : loading ? (
           <LoadingBlock />
-        ) : sortedTransfers.length === 0 ? (
-          <EmptyState title={'暂无结转记录'} />
         ) : (
-          <section className="card p-5">
-            <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              <span className="w-1 h-4 bg-brand-500 rounded"></span>
-              结转流水
-            </h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-slate-500 text-xs">
-                    <th className="text-left py-2 px-2 font-medium">{'时间'}</th>
-                    <th className="text-left py-2 px-2 font-medium">{'学员'}</th>
-                    <th className="text-left py-2 px-2 font-medium">源课程→目标课程</th>
-                    <th className="text-left py-2 px-2 font-medium">方式</th>
-                    <th className="text-left py-2 px-2 font-medium">{'结转课时'}</th>
-                    <th className="text-left py-2 px-2 font-medium">{'结转金额'}</th>
-                    <th className="text-left py-2 px-2 font-medium">零头</th>
-                    <th className="text-left py-2 px-2 font-medium">{'备注'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedTransfers.map((t) => (
-                    <tr
-                      key={t.id}
-                      className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
+          <>
+            {/* 充值 / 提现 */}
+            <section className="card p-5">
+              <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <span className="w-1 h-4 bg-emerald-500 rounded"></span>
+                账户充值 / 提现
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* 充值 */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm text-slate-500 mb-1.5">充值金额</label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 text-sm">¥</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={rechargeAmount}
+                        onChange={(e) => setRechargeAmount(e.target.value)}
+                        className={inputClass}
+                        placeholder="如 2000"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-500 mb-1.5">备注（可选）</label>
+                    <input
+                      type="text"
+                      value={rechargeNote}
+                      onChange={(e) => setRechargeNote(e.target.value)}
+                      className={inputClass}
+                      placeholder="如：微信充值"
+                    />
+                  </div>
+                  <Button variant="primary" loading={recharging} disabled={busy} onClick={handleRecharge}>
+                    {'确认充值'}
+                  </Button>
+                </div>
+
+                {/* 提现 */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm text-slate-500 mb-1.5">提现/退款金额</label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 text-sm">¥</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={withdrawAmount}
+                        onChange={(e) => setWithdrawAmount(e.target.value)}
+                        className={inputClass}
+                        placeholder="如 500"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-500 mb-1.5">备注（可选）</label>
+                    <input
+                      type="text"
+                      value={withdrawNote}
+                      onChange={(e) => setWithdrawNote(e.target.value)}
+                      className={inputClass}
+                      placeholder="如：退回微信"
+                    />
+                  </div>
+                  <Button variant="outline" loading={withdrawing} disabled={busy} onClick={handleWithdraw}>
+                    {'确认提现'}
+                  </Button>
+                </div>
+              </div>
+            </section>
+
+            {/* 退课（结转第一步） */}
+            <section className="card p-5">
+              <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <span className="w-1 h-4 bg-amber-500 rounded"></span>
+                退课（剩余课时折算入账户）
+              </h2>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm text-slate-500 mb-1.5">
+                    <span className="text-rose-500 mr-0.5">*</span>{'选择报名记录'}
+                  </label>
+                  {refundableEnrollments.length === 0 ? (
+                    <p className="text-xs text-slate-400 py-2 px-3 border border-dashed border-slate-200 rounded-md">
+                      该学员无可退课的报名记录（需有剩余课时的进行中报名）
+                    </p>
+                  ) : (
+                    <select
+                      value={refundEnrollmentId}
+                      onChange={(e) => setRefundEnrollmentId(e.target.value)}
+                      className={cn(inputClass, 'bg-white')}
                     >
-                      <td className="py-2.5 px-2 text-slate-600 whitespace-nowrap text-xs">
-                        {formatTime(t.createdAt)}
-                      </td>
-                      <td className="py-2.5 px-2 text-slate-700 font-medium">
-                        {studentName(t.studentId)}
-                      </td>
-                      <td className="py-2.5 px-2 text-slate-600 whitespace-nowrap">
-                        {courseNameByEnrollment(t.fromEnrollmentId)} → {courseNameByEnrollment(t.toEnrollmentId)}
-                      </td>
-                      <td className="py-2.5 px-2 text-slate-600">{modeText(t.mode)}</td>
-                      <td className="py-2.5 px-2 text-slate-600">{t.transferredHours}</td>
-                      <td className="py-2.5 px-2 text-slate-600">{formatMoney(t.transferredAmount)}</td>
-                      <td className="py-2.5 px-2 text-slate-600">{formatMoney(t.leftoverAmount)}</td>
-                      <td className="py-2.5 px-2 text-slate-500">
-                        {t.note || <span className="text-slate-300">—</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                      <option value="">请选择报名记录</option>
+                      {refundableEnrollments.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {courseNameByEnrollment(e.id)}（剩余 付费{e.remainingPaidHours}+赠课{e.remainingGiftHours}，单价 {formatMoney(e.unitPrice)}）
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm text-slate-500 mb-1.5">赠课处理方式</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setGiftMode('discard')}
+                      className={cn(
+                        'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
+                        giftMode === 'discard'
+                          ? 'border-brand-400 bg-brand-50 text-brand-700'
+                          : 'border-slate-200 text-slate-500 hover:border-slate-300',
+                      )}
+                    >
+                      {'赠课作废（仅退付费课时）'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGiftMode('refund')}
+                      className={cn(
+                        'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
+                        giftMode === 'refund'
+                          ? 'border-brand-400 bg-brand-50 text-brand-700'
+                          : 'border-slate-200 text-slate-500 hover:border-slate-300',
+                      )}
+                    >
+                      {'赠课也折算'}
+                    </button>
+                  </div>
+                </div>
+
+                {refundPreview && (
+                  <div className="bg-amber-50 border border-amber-100 rounded-md px-4 py-3">
+                    <div className="text-xs text-amber-700 font-medium mb-1">退课预览</div>
+                    <div className="text-sm text-slate-700">
+                      剩余 付费 {refundPreview.paid} + 赠课 {refundPreview.gift}（单价 {formatMoney(refundPreview.unitPrice)}）→
+                      折算 {refundPreview.refundHours} 课时 = <span className="font-semibold">{formatMoney(refundPreview.amount)}</span> 入账户
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm text-slate-500 mb-1.5">备注（可选）</label>
+                  <input
+                    type="text"
+                    value={refundNote}
+                    onChange={(e) => setRefundNote(e.target.value)}
+                    className={inputClass}
+                    placeholder="如：升班退课"
+                  />
+                </div>
+
+                <div className="text-xs text-slate-400">
+                  退课后源报名标记为已结算，剩余课时清零；折算金额进入账户余额，可在新报名时用「余额抵扣」消耗。
+                </div>
+
+                <Button variant="primary" loading={refunding} disabled={busy || !refundEnrollmentId} onClick={handleRefund}>
+                  {'确认退课'}
+                </Button>
+              </div>
+            </section>
+
+            {/* 账户流水 */}
+            <section className="card p-5">
+              <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <span className="w-1 h-4 bg-slate-400 rounded"></span>
+                账户流水
+              </h2>
+              {transactions.length === 0 ? (
+                <EmptyState title={'暂无账户流水'} />
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-500 text-xs">
+                        <th className="text-left py-2 px-2 font-medium">{'时间'}</th>
+                        <th className="text-left py-2 px-2 font-medium">{'类型'}</th>
+                        <th className="text-right py-2 px-2 font-medium">{'金额'}</th>
+                        <th className="text-right py-2 px-2 font-medium">{'余额'}</th>
+                        <th className="text-left py-2 px-2 font-medium">{'备注'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transactions.map((t) => {
+                        const isIn = t.type === 'recharge' || t.type === 'refund'
+                        return (
+                          <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                            <td className="py-2.5 px-2 text-slate-600 whitespace-nowrap text-xs">{fmtDateTime(t.createdAt)}</td>
+                            <td className="py-2.5 px-2 text-slate-700">{TX_TYPE_LABEL[t.type] || t.type}</td>
+                            <td className={cn('py-2.5 px-2 text-right font-medium', isIn ? 'text-emerald-600' : 'text-rose-600')}>
+                              {isIn ? '+' : '-'}{formatMoney(t.amount)}
+                            </td>
+                            <td className="py-2.5 px-2 text-right text-slate-600">{formatMoney(t.balanceAfter)}</td>
+                            <td className="py-2.5 px-2 text-slate-500">{t.note || <span className="text-slate-300">—</span>}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            {/* 退课记录 */}
+            {transfers.length > 0 && (
+              <section className="card p-5">
+                <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <span className="w-1 h-4 bg-rose-400 rounded"></span>
+                  退课记录
+                </h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-500 text-xs">
+                        <th className="text-left py-2 px-2 font-medium">{'时间'}</th>
+                        <th className="text-left py-2 px-2 font-medium">{'源报名'}</th>
+                        <th className="text-left py-2 px-2 font-medium">{'赠课处理'}</th>
+                        <th className="text-right py-2 px-2 font-medium">{'退课金额'}</th>
+                        <th className="text-left py-2 px-2 font-medium">{'备注'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transfers.map((t) => (
+                        <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                          <td className="py-2.5 px-2 text-slate-600 whitespace-nowrap text-xs">{fmtDateTime(t.createdAt)}</td>
+                          <td className="py-2.5 px-2 text-slate-600">{courseNameByEnrollment(t.fromEnrollmentId)}</td>
+                          <td className="py-2.5 px-2 text-slate-600">{t.giftMode === 'refund' ? '赠课折算' : '赠课作废'}</td>
+                          <td className="py-2.5 px-2 text-right text-slate-700 font-medium">{formatMoney(t.refundAmount)}</td>
+                          <td className="py-2.5 px-2 text-slate-500">{t.note || <span className="text-slate-300">—</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+          </>
         )}
       </main>
     </div>

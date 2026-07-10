@@ -618,6 +618,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
           onBack={() => goSubPage(null)}
           showToast={showToast}
           onAuthError={handleApiError}
+          onStudentsChanged={loadStudents}
         />
       </>
     )
@@ -629,11 +630,11 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
       <>
         <TransferAdmin
           students={students}
-          courses={courses}
           busy={busy}
           onBack={() => goSubPage(null)}
           showToast={showToast}
           onAuthError={handleApiError}
+          onStudentsChanged={loadStudents}
         />
       </>
     )

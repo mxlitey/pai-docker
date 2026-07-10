@@ -27,8 +27,9 @@ export async function getReportRevenue({ startDate, endDate, groupBy } = {}) {
     selectKey = "COALESCE(courses.name, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   } else if (groupBy === 'teacher') {
-    join = 'LEFT JOIN courses ON enrollments.course_id = courses.id'
-    selectKey = "COALESCE(courses.teacher, '') AS key"
+    // 报名关联课程，课程已无 teacher 字段；通过 schedules 取教师（取该课程下排课的教师）
+    join = 'LEFT JOIN (SELECT DISTINCT course_id, teacher FROM schedules WHERE teacher != "") sc ON sc.course_id = enrollments.course_id'
+    selectKey = "COALESCE(sc.teacher, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   }
 
@@ -109,8 +110,8 @@ export async function getReportHoursBalance({ startDate, endDate, groupBy } = {}
     selectKey = "COALESCE(courses.name, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   } else if (groupBy === 'teacher') {
-    join = 'LEFT JOIN courses ON enrollments.course_id = courses.id'
-    selectKey = "COALESCE(courses.teacher, '') AS key"
+    join = 'LEFT JOIN (SELECT DISTINCT course_id, teacher FROM schedules WHERE teacher != "") sc ON sc.course_id = enrollments.course_id'
+    selectKey = "COALESCE(sc.teacher, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
   }
 
@@ -207,8 +208,7 @@ export async function getReportTransfers({ startDate, endDate, groupBy } = {}) {
   }
 
   const sql = `SELECT ${selectKey},
-      COALESCE(SUM(transferred_amount), 0) AS amount,
-      COALESCE(SUM(transferred_hours), 0) AS hours,
+      COALESCE(SUM(refund_amount), 0) AS amount,
       COUNT(*) AS count
     FROM transfers
     WHERE ${where.join(' AND ')}
@@ -217,15 +217,13 @@ export async function getReportTransfers({ startDate, endDate, groupBy } = {}) {
   const rows = rawRows.map(r => ({
     key: r.key == null ? '全部' : String(r.key),
     amount: Number(r.amount) || 0,
-    hours: Number(r.hours) || 0,
     count: Number(r.count) || 0,
   }))
   const summary = rows.reduce((acc, r) => {
     acc.amount += r.amount
-    acc.hours += r.hours
     acc.count += r.count
     return acc
-  }, { amount: 0, hours: 0, count: 0 })
+  }, { amount: 0, count: 0 })
   return { rows, summary }
 }
 

@@ -6,7 +6,7 @@ import type {
   BackupInfo, SystemConfigFull, BatchEnrollmentItem,
   Feedback, TeacherPerformance, Coupon, Membership, StudentMembership,
   Lead, LeadFollowup, PermissionModule, Grade, ClassInfo, ClassMember,
-  ScheduleChange,
+  ScheduleChange, AccountTransaction,
 } from '@/types'
 
 const API_BASE = '/api'
@@ -636,10 +636,11 @@ export async function addEnrollment(
     id?: string
     totalAmount?: number
     paidAmount?: number
+    useBalance?: boolean
     enrolledAt?: string
     note?: string
   },
-): Promise<ApiResult<{ created: boolean; exists: boolean; enrollment: Enrollment }>> {
+): Promise<ApiResult<{ created: boolean; exists: boolean; balanceDeduct?: number; balanceAfter?: number; cashPaid?: number; enrollment: Enrollment }>> {
   return request(`${API_BASE}/enrollment-add`, {
     method: 'POST',
     body: JSON.stringify({ enrollment }),
@@ -670,7 +671,7 @@ export async function deleteEnrollment(
   })
 }
 
-// ========== 结转管理 ==========
+// ========== 退课/结转管理 ==========
 
 export async function listTransfers(params: {
   studentId?: string
@@ -681,34 +682,56 @@ export async function listTransfers(params: {
   return request(`${API_BASE}/transfers${query ? '?' + query : ''}`, { method: 'GET' })
 }
 
+// 退课：源报名剩余课时折算成金额，存入学员账户余额
 export async function addTransfer(transfer: {
   studentId: string
   fromEnrollmentId: string
-  // 目标报名二选一：toEnrollmentId 选已有报名；newTargetEnrollment 升班时即时新建
-  toEnrollmentId?: string
-  newTargetEnrollment?: {
-    courseId: string
-    unitPrice?: number
-    expiredAt?: string
-    note?: string
-  }
-  mode: 'amount' | 'hours'
+  giftMode?: 'discard' | 'refund'
   note?: string
   reason?: string
 }): Promise<ApiResult<{
   created: boolean
-  mode: string
-  transferredHours: number
-  transferredAmount: number
-  leftoverAmount: number
-  toPurchasedAdd: number
-  toGiftAdd: number
-  toEnrollmentId: string
-  createdTargetEnrollmentId: string | null
+  refundAmount: number
+  refundHours: number
+  giftMode: string
+  balanceAfter: number
 }>> {
   return request(`${API_BASE}/transfer-add`, {
     method: 'POST',
     body: JSON.stringify({ transfer }),
+  })
+}
+
+// ========== 账户管理 ==========
+
+export async function listAccountTransactions(params: {
+  studentId?: string
+} = {}): Promise<ApiResult<{ transactions: AccountTransaction[] }>> {
+  const qs = new URLSearchParams()
+  if (params.studentId) qs.set('studentId', params.studentId)
+  const query = qs.toString()
+  return request(`${API_BASE}/account-transactions${query ? '?' + query : ''}`, { method: 'GET' })
+}
+
+export async function rechargeAccount(params: {
+  studentId: string
+  amount: number
+  note?: string
+}): Promise<ApiResult<{ id: string; type: string; amount: number; balanceAfter: number }>> {
+  return request(`${API_BASE}/account-recharge`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function withdrawAccount(params: {
+  studentId: string
+  amount: number
+  note?: string
+}): Promise<ApiResult<{ id: string; type: string; amount: number; balanceAfter: number }>> {
+  return request(`${API_BASE}/account-withdraw`, {
+    method: 'POST',
+    body: JSON.stringify(params),
   })
 }
 

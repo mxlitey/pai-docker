@@ -58,20 +58,15 @@ export function getDb() {
       tags         TEXT DEFAULT '',
       remark       TEXT DEFAULT '',
       source       TEXT DEFAULT '',
+      balance      REAL NOT NULL DEFAULT 0,
       created_at   TEXT DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS courses (
       id                 TEXT PRIMARY KEY,
       name               TEXT NOT NULL,
-      teacher            TEXT DEFAULT '',
-      location           TEXT DEFAULT '',
       color              TEXT DEFAULT '',
-      default_start_time TEXT DEFAULT '',
-      default_end_time   TEXT DEFAULT '',
-      unit_price         REAL DEFAULT 0,
       billing_type       TEXT DEFAULT 'per_lesson',
-      capacity           INTEGER DEFAULT 0,
       term               TEXT DEFAULT '',
       status             TEXT DEFAULT 'active',
       category           TEXT DEFAULT '',
@@ -172,17 +167,28 @@ export function getDb() {
     CREATE INDEX IF NOT EXISTS idx_enrollments_student_course ON enrollments(student_id, course_id);
     CREATE INDEX IF NOT EXISTS idx_enrollments_status ON enrollments(status);
 
+    CREATE TABLE IF NOT EXISTS account_transactions (
+      id              TEXT PRIMARY KEY,
+      student_id      TEXT NOT NULL,
+      type            TEXT NOT NULL,
+      amount          REAL NOT NULL DEFAULT 0,
+      balance_after   REAL NOT NULL DEFAULT 0,
+      ref_type        TEXT DEFAULT '',
+      ref_id          TEXT DEFAULT '',
+      operator_id     TEXT DEFAULT '',
+      note            TEXT DEFAULT '',
+      created_at      TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_acc_tx_student ON account_transactions(student_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_acc_tx_type ON account_transactions(type, created_at);
+
     CREATE TABLE IF NOT EXISTS transfers (
       id                    TEXT PRIMARY KEY,
       student_id            TEXT NOT NULL,
-      from_enrollment_id    TEXT NOT NULL,
-      to_enrollment_id      TEXT NOT NULL,
-      mode                  TEXT NOT NULL,
-      transferred_hours     INTEGER NOT NULL DEFAULT 0,
-      transferred_amount    REAL NOT NULL DEFAULT 0,
-      leftover_amount       REAL NOT NULL DEFAULT 0,
-      from_unit_price       REAL NOT NULL DEFAULT 0,
-      to_unit_price         REAL NOT NULL DEFAULT 0,
+      from_enrollment_id    TEXT NOT NULL DEFAULT '',
+      to_enrollment_id      TEXT NOT NULL DEFAULT '',
+      refund_amount         REAL NOT NULL DEFAULT 0,
+      gift_mode             TEXT DEFAULT 'discard',
       operator_id           TEXT DEFAULT '',
       reason                TEXT DEFAULT '',
       note                  TEXT DEFAULT '',
@@ -363,11 +369,11 @@ export function getDb() {
   rebuildStudentsTable(db)
   // 旧 admin 表 id 为 INTEGER 自增，需迁移到 admins（TEXT id）
   migrateLegacyAdminTable(db)
+  // courses 重建：移除 teacher/location/default_start_time/default_end_time/capacity/unit_price 列
+  rebuildCoursesTable(db)
   // courses 补齐新增列
   for (const [col, def] of [
-    ['unit_price', 'REAL DEFAULT 0'],
     ['billing_type', "TEXT DEFAULT 'per_lesson'"],
-    ['capacity', 'INTEGER DEFAULT 0'],
     ['term', "TEXT DEFAULT ''"],
     ['status', "TEXT DEFAULT 'active'"],
     ['category', "TEXT DEFAULT ''"],
@@ -393,11 +399,10 @@ export function getDb() {
     ['expired_at', "TEXT DEFAULT ''"],
     ['operator_id', "TEXT DEFAULT ''"],
   ]) ensureColumn(db, 'enrollments', col, def)
-  // transfers 补齐新增列
-  for (const [col, def] of [
-    ['operator_id', "TEXT DEFAULT ''"],
-    ['reason', "TEXT DEFAULT ''"],
-  ]) ensureColumn(db, 'transfers', col, def)
+  // transfers 重建为新结构（退课→账户→报名抵扣关联）
+  rebuildTransfersTable(db)
+  // students 补 balance 列
+  ensureColumn(db, 'students', 'balance', 'REAL NOT NULL DEFAULT 0')
   // classes 补齐 grade 列（旧库兼容）
   ensureColumn(db, 'classes', 'grade', "TEXT DEFAULT ''")
   // admins 补齐 permissions 列（细粒度权限点）
@@ -445,6 +450,65 @@ function rebuildStudentsTable(db) {
     db.exec(`INSERT INTO students (${list}) SELECT ${list} FROM students_old`)
   }
   db.exec('DROP TABLE students_old')
+}
+
+// 重建 courses 表：移除 teacher/location/default_start_time/default_end_time/capacity/unit_price 列
+// 这些字段已迁移至班级管理。若旧表存在这些列则重建。
+function rebuildCoursesTable(db) {
+  const cols = db.prepare('PRAGMA table_info(courses)').all()
+  const legacyCols = ['teacher', 'location', 'default_start_time', 'default_end_time', 'capacity', 'unit_price']
+  const hasLegacy = cols.some((c) => legacyCols.includes(c.name))
+  if (!hasLegacy) return
+  const keepCols = ['id', 'name', 'color', 'billing_type', 'term', 'status', 'category', 'grade', 'description', 'created_at']
+    .filter((c) => cols.some((col) => col.name === c))
+  const list = keepCols.join(', ')
+  db.exec('ALTER TABLE courses RENAME TO courses_old')
+  db.exec(`
+    CREATE TABLE courses (
+      id                 TEXT PRIMARY KEY,
+      name               TEXT NOT NULL,
+      color              TEXT DEFAULT '',
+      billing_type       TEXT DEFAULT 'per_lesson',
+      term               TEXT DEFAULT '',
+      status             TEXT DEFAULT 'active',
+      category           TEXT DEFAULT '',
+      grade              TEXT DEFAULT '',
+      description        TEXT DEFAULT '',
+      created_at         TEXT DEFAULT (datetime('now'))
+    );
+  `)
+  if (list) {
+    db.exec(`INSERT INTO courses (${list}) SELECT ${list} FROM courses_old`)
+  }
+  db.exec('DROP TABLE courses_old')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_courses_grade ON courses(grade)')
+}
+
+// 重建 transfers 表为新结构（退课→账户→报名抵扣关联）。
+// 旧表含 mode/transferred_hours/transferred_amount/leftover_amount/from_unit_price/to_unit_price 列时重建。
+function rebuildTransfersTable(db) {
+  const cols = db.prepare('PRAGMA table_info(transfers)').all()
+  const hasLegacy = cols.some((c) => c.name === 'mode' || c.name === 'transferred_hours' || c.name === 'transferred_amount')
+  if (!hasLegacy) return
+  // 旧结构数据语义已变，直接丢弃重建（开发阶段）
+  db.exec('DROP TABLE transfers')
+  db.exec(`
+    CREATE TABLE transfers (
+      id                    TEXT PRIMARY KEY,
+      student_id            TEXT NOT NULL,
+      from_enrollment_id    TEXT NOT NULL DEFAULT '',
+      to_enrollment_id      TEXT NOT NULL DEFAULT '',
+      refund_amount         REAL NOT NULL DEFAULT 0,
+      gift_mode             TEXT DEFAULT 'discard',
+      operator_id           TEXT DEFAULT '',
+      reason                TEXT DEFAULT '',
+      note                  TEXT DEFAULT '',
+      created_at            TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_transfers_student ON transfers(student_id);
+    CREATE INDEX IF NOT EXISTS idx_transfers_from ON transfers(from_enrollment_id);
+    CREATE INDEX IF NOT EXISTS idx_transfers_to ON transfers(to_enrollment_id);
+  `)
 }
 
 // 迁移旧 admin 表（INTEGER id）到新 admins 表（TEXT id，前缀 adm_）

@@ -34,6 +34,7 @@ export const ROLE_PERMISSIONS = {
     'classes:view', 'classes:create', 'classes:update', 'classes:delete',
     'enrollments:view', 'enrollments:create', 'enrollments:update', 'enrollments:delete',
     'transfers:view', 'transfers:create',
+    'accounts:view', 'accounts:recharge', 'accounts:withdraw',
     'schedules:view', 'schedules:create', 'schedules:update', 'schedules:delete',
     'attendance:view', 'attendance:update',
     'announcement:view', 'announcement:update',
@@ -49,6 +50,7 @@ export const ROLE_PERMISSIONS = {
   teacher: [
     'schedules:view', 'attendance:view', 'attendance:update',
     'enrollments:view', 'students:view', 'courses:view', 'grades:view', 'classes:view', 'reports:view',
+    'accounts:view',
     'feedback:view', 'feedback:create', 'feedback:update',
   ],
 }
@@ -89,6 +91,11 @@ export const PERMISSION_DEFINITIONS = [
   { module: 'transfers', label: '结转管理', actions: [
     { key: 'transfers:view', label: '查看' },
     { key: 'transfers:create', label: '新增' },
+  ]},
+  { module: 'accounts', label: '账户管理', actions: [
+    { key: 'accounts:view', label: '查看' },
+    { key: 'accounts:recharge', label: '充值' },
+    { key: 'accounts:withdraw', label: '提现/退款' },
   ]},
   { module: 'schedules', label: '排课管理', actions: [
     { key: 'schedules:view', label: '查看' },

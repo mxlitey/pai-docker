@@ -310,14 +310,12 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
     })
   }
 
-  // 选择课程后自动带入年级/教师/地点（仅当对应字段为空时，用户可改）
+  // 选择课程后自动带入年级（仅当对应字段为空时，用户可改）
   const handleCourseChange = (courseId: string) => {
     const patch: Partial<ClassFormState> = { courseId }
     const c = courses.find((x) => x.id === courseId)
     if (c) {
       if (!form.grade && c.grade) patch.grade = c.grade
-      if (!form.teacher.trim() && c.teacher) patch.teacher = c.teacher
-      if (!form.location.trim() && c.location) patch.location = c.location
     }
     update(patch)
   }

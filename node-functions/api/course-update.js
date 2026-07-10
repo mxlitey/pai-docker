@@ -26,10 +26,6 @@ function validateCourse(c) {
   if (c.color !== undefined && c.color !== null && typeof c.color !== 'string') {
     throw new Error('color 需为字符串')
   }
-  if (c.unitPrice !== undefined && c.unitPrice !== null && c.unitPrice !== '') {
-    const n = Number(c.unitPrice)
-    if (!Number.isFinite(n) || n < 0) throw new Error('unitPrice 需为非负数')
-  }
   if (c.billingType && !['per_lesson', 'per_term', 'per_month'].includes(c.billingType)) {
     throw new Error('billingType 仅允许 per_lesson / per_term / per_month')
   }
@@ -60,25 +56,16 @@ export default async function onRequestPut(context) {
 
   try {
     // 注意：必须包含全部字段，否则 store 层会用默认值覆盖，导致数据丢失
-    // teacher/location/defaultStartTime/defaultEndTime/capacity 已迁移至班级管理，课程只保留核心字段
     const finalCourse = {
       id: course.id.trim(),
       name: course.name.trim(),
       grade: course.grade ? course.grade.trim() : '',
       color: course.color || '',
-      unitPrice: course.unitPrice !== undefined && course.unitPrice !== null && course.unitPrice !== ''
-        ? Number(course.unitPrice) : 0,
       billingType: course.billingType || 'per_lesson',
       term: course.term || '',
       status: course.status || 'active',
       category: course.category || '',
       description: course.description || '',
-      // 以下字段保留空值以兼容旧库 schema（列仍存在），不再由课程表单维护
-      teacher: '',
-      location: '',
-      defaultStartTime: '',
-      defaultEndTime: '',
-      capacity: 0,
     }
 
     const result = await updateCourse(finalCourse)

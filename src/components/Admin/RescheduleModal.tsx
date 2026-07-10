@@ -81,22 +81,14 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
   const isMakeupMode = schedule.attended === false
   const modeLabel = isMakeupMode ? '补课' : '调课'
 
-  // 选课程：自动带入课程的默认老师/地点/时间（仅在该字段为空或与原排课一致时覆盖，避免抹掉用户手输）
+  // 选课程：课程已不带 teacher/location/默认时间（已迁移至班级），仅维护课程与班级的联动
   const handleCourseChange = (nextCourseId: string) => {
     setNewCourseId(nextCourseId)
-    const course = courses.find((c) => c.id === nextCourseId)
-    if (course) {
-      // 课程变更时同步老师/地点/时间/颜色（与新增排课一致的行为）
-      if (course.teacher) setNewTeacher(course.teacher)
-      if (course.location) setNewLocation(course.location)
-      if (course.defaultStartTime) setNewStartTime(course.defaultStartTime)
-      if (course.defaultEndTime) setNewEndTime(course.defaultEndTime)
-      // 切课程后若当前班级不属于该课程，清空班级
-      if (newClassId) {
-        const cls = classes.find((c) => c.id === newClassId)
-        if (cls && cls.courseId && cls.courseId !== nextCourseId) {
-          setNewClassId('')
-        }
+    // 切课程后若当前班级不属于该课程，清空班级（保留教师/地点/时间供用户手填）
+    if (newClassId) {
+      const cls = classes.find((c) => c.id === newClassId)
+      if (cls && cls.courseId && cls.courseId !== nextCourseId) {
+        setNewClassId('')
       }
     }
   }
@@ -315,7 +307,7 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
                 <option value="">不指定课程</option>
                 {courses.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}{c.teacher ? ` · ${c.teacher}` : ''}
+                    {c.name}{c.grade ? ` · ${c.grade}` : ''}
                   </option>
                 ))}
               </select>

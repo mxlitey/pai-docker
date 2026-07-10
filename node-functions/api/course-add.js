@@ -24,10 +24,6 @@ function validateCourse(c) {
     throw new Error('缺少 grade（年级为必填项）')
   }
   if (c.color && typeof c.color !== 'string') throw new Error('color 需为字符串')
-  if (c.unitPrice !== undefined && c.unitPrice !== null && c.unitPrice !== '') {
-    const n = Number(c.unitPrice)
-    if (!Number.isFinite(n) || n < 0) throw new Error('unitPrice 需为非负数')
-  }
   if (c.billingType && !['per_lesson', 'per_term', 'per_month'].includes(c.billingType)) {
     throw new Error('billingType 仅允许 per_lesson / per_term / per_month')
   }
@@ -59,8 +55,6 @@ export default async function onRequestPost(context) {
       name: course.name.trim(),
       grade: course.grade ? course.grade.trim() : '',
       color: course.color || '',
-      unitPrice: course.unitPrice !== undefined && course.unitPrice !== null && course.unitPrice !== ''
-        ? Number(course.unitPrice) : 0,
       billingType: course.billingType || 'per_lesson',
       term: course.term || '',
       status: course.status || 'active',
