@@ -103,7 +103,7 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-full bg-background">
       <SubPageHeader title={'班级管理'} onBack={onBack} count={classes.length}>
         <Button variant="primary" onClick={() => setAdding(true)} disabled={actionDisabled}>
           + {'新增班级'}

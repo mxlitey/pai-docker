@@ -186,7 +186,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
   const showStudentColumn = mode === 'filter'
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-full bg-background">
       <SubPageHeader
         title={'排课管理'}
         onBack={onBack}

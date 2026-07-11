@@ -38,7 +38,7 @@ export function CourseAdmin({ courses, grades, busy, onBack, onDelete, onAdd, on
   }, [courses, safePage])
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-full bg-background">
       <SubPageHeader title={'课程管理'} onBack={onBack} count={courses.length}>
         <Button variant="primary" onClick={() => setAdding(true)} disabled={busy}>
           + {'新增课程'}

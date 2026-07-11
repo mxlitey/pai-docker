@@ -393,7 +393,7 @@ export function AuditLogAdmin({ onBack }: AuditLogAdminProps) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-full bg-background">
       <SubPageHeader title={'审计日志'} onBack={onBack} />
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-4">

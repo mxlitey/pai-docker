@@ -91,7 +91,7 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-full bg-background">
       <SubPageHeader title={'分享链接'} onBack={onBack} count={students.length} countLabel="人" />
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-4">

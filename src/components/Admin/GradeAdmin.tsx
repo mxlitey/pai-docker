@@ -103,7 +103,7 @@ export function GradeAdmin({
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-full bg-background">
       <SubPageHeader title={'年级管理'} onBack={onBack} count={grades.length}>
         <Button variant="outline" onClick={() => setPromoting(true)} disabled={actionDisabled || grades.length < 2}>
           {'批量升班'}

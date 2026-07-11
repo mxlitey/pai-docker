@@ -232,7 +232,7 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-full bg-background">
       {/* 顶部栏 */}
       <SubPageHeader title={'点名管理'} onBack={onBack} count={loadedDate ? schedules.length : undefined} />
 

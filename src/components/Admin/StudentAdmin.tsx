@@ -66,7 +66,7 @@ export function StudentAdmin({ students, grades, summaries, busy, onBack, onDele
   useEffect(() => { setPage(1) }, [search])
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-full bg-background">
       {/* 顶部栏 */}
       <SubPageHeader title={'学员管理'} onBack={onBack} count={students.length}>
         <Button variant="primary" onClick={() => setAdding(true)} disabled={busy}>

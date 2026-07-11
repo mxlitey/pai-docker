@@ -319,7 +319,7 @@ export function SystemSettingsAdmin({
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-full flex flex-col bg-background">
       <SubPageHeader title={'系统设置'} onBack={onBack}>
         {dirty && !busy && (
           <Button variant="ghost" onClick={handleReset}>{'撤销'}</Button>

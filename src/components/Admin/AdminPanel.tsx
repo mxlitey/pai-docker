@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { Student, Course, EnrollmentSummary, Grade } from '@/types'
+import type { Student, Course, EnrollmentSummary, Grade, CurrentAdmin } from '@/types'
 import { searchStudents, getAnnouncement } from '@/api'
 import {
   verifyAuth,
@@ -40,10 +40,22 @@ import { AdminLogin } from './AdminLogin'
 import { Bootstrap } from './Bootstrap'
 import { toast, confirmDialog } from '@/components/ui'
 import {
+  SidebarProvider, Sidebar, SidebarTrigger, SidebarRail, SidebarInset,
+  SidebarHeader, SidebarContent, SidebarFooter,
+  SidebarGroup, SidebarGroupLabel, SidebarGroupContent,
+  SidebarMenu, SidebarMenuItem, SidebarMenuButton,
+  SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton,
+  useSidebar,
+} from '@/components/ui/shadcn/sidebar'
+import {
+  Breadcrumb, BreadcrumbList, BreadcrumbItem,
+  BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage,
+} from '@/components/ui/shadcn/breadcrumb'
+import { Separator } from '@/components/ui/shadcn/separator'
+import {
   Loader2,
   LogOut,
   ArrowLeft,
-  ChevronRight,
   Users,
   GraduationCap,
   LayoutGrid,
@@ -59,6 +71,7 @@ import {
   Settings,
   ShieldCheck,
   FileText,
+  GalleryVerticalEnd,
 } from 'lucide-react'
 
 interface AdminPanelProps {
@@ -126,6 +139,146 @@ function writeSubPageToHash(sub: SubPage) {
   }
 }
 
+// 模块入口定义：按日常使用顺序排列（基础建档 → 教学运营 → 报表 → 系统）
+// 每个入口含权限点、标题、描述、图标、跳转目标，按当前用户权限过滤后再渲染
+const moduleEntries = [
+  // ===== 基础教务（建档类：学员 → 年级 → 课程 → 班级 → 教师）=====
+  { tab: 'basic', perm: 'students:view', sub: 'students', title: '学员管理', desc: '学员档案、报名汇总、续费预警', icon: 'students' },
+  { tab: 'basic', perm: 'grades:view', sub: 'grades', title: '年级管理', desc: '年级维护、批量升班、课程关联', icon: 'grades' },
+  { tab: 'basic', perm: 'courses:view', sub: 'courses', title: '课程管理', desc: '课程信息、单价、计费方式、关联年级', icon: 'courses' },
+  { tab: 'basic', perm: 'classes:view', sub: 'classes', title: '班级管理', desc: '班级建档、关联课程、固定学员名单', icon: 'classes' },
+  { tab: 'basic', perm: 'teachers:view', sub: 'teachers', title: '教师管理', desc: '课后反馈、教师绩效、评分', icon: 'teachers' },
+  // ===== 教学运营（业务流转：报名 → 结转退课 → 排课 → 点名）=====
+  { tab: 'operation', perm: 'enrollments:view', sub: 'enrollments', title: '报名管理', desc: '报名、购课赠课、课时余额', icon: 'enrollments' },
+  { tab: 'operation', perm: 'transfers:view', sub: 'transfers', title: '结转退课', desc: '退课折算入账户余额', icon: 'transfers' },
+  { tab: 'operation', perm: 'schedules:view', sub: 'schedules', title: '排课管理', desc: '排课、批量排课、点名扣减', icon: 'schedules' },
+  { tab: 'operation', perm: 'attendance:view', sub: 'attendance', title: '点名管理', desc: '按日期点名、批量点名、到课统计', icon: 'attendance' },
+  // ===== 报表中心（概览 + 明细报表，合并原数据看板）=====
+  { tab: 'data', perm: 'reports:view', sub: 'reports', title: '报表中心', desc: '经营概览、营收、课时、出勤、结转统计', icon: 'reports' },
+  // ===== 系统管理（配置 → 公告 → 账号 → 家长端链接 → 日志）=====
+  { tab: 'system', perm: 'settings:manage', sub: 'settings', title: '系统设置', desc: '项目名称、备份恢复、有效期', icon: 'settings' },
+  { tab: 'system', perm: 'announcement:view', sub: 'announcement', title: '公告管理', desc: '首页/家长端公告内容', icon: 'announcement' },
+  { tab: 'system', perm: 'admins:view', sub: 'admins', title: '管理员账号', desc: '账号增删、权限分配、启停', icon: 'admins' },
+  { tab: 'system', perm: 'students:view', sub: 'shareLinks', title: '分享链接', desc: '生成家长端专属访问链接', icon: 'shareLinks' },
+  { tab: 'system', perm: 'audit:view', sub: 'auditLogs', title: '审计日志', desc: '写操作留痕，按模块/人筛选', icon: 'auditLogs' },
+] as const
+
+// 图标映射：使用 lucide-react 图标，避免每个入口重复写 svg
+const iconMap: Record<string, React.ReactNode> = {
+  students: <Users className="w-5 h-5" />,
+  grades: <GraduationCap className="w-5 h-5" />,
+  classes: <LayoutGrid className="w-5 h-5" />,
+  courses: <BookOpen className="w-5 h-5" />,
+  enrollments: <ClipboardCheck className="w-5 h-5" />,
+  transfers: <ArrowLeftRight className="w-5 h-5" />,
+  schedules: <Calendar className="w-5 h-5" />,
+  attendance: <CheckCircle2 className="w-5 h-5" />,
+  teachers: <Presentation className="w-5 h-5" />,
+  announcement: <Megaphone className="w-5 h-5" />,
+  reports: <BarChart3 className="w-5 h-5" />,
+  shareLinks: <Link2 className="w-5 h-5" />,
+  settings: <Settings className="w-5 h-5" />,
+  admins: <ShieldCheck className="w-5 h-5" />,
+  auditLogs: <FileText className="w-5 h-5" />,
+}
+
+const tabs = [
+  { key: 'basic', label: '基础教务' },
+  { key: 'operation', label: '教学运营' },
+  { key: 'data', label: '报表中心' },
+  { key: 'system', label: '系统管理' },
+] as const
+
+// AppSidebar：后台侧边栏，按分组渲染模块入口，按权限过滤
+interface AppSidebarProps {
+  activeSubPage: SubPage
+  currentAdmin: CurrentAdmin | null
+  onSelect: (sub: SubPage) => void
+  onLogout: () => void
+  onExit: () => void
+}
+
+function AppSidebar({ activeSubPage, currentAdmin, onSelect, onLogout, onExit }: AppSidebarProps) {
+  const { setOpenMobile } = useSidebar()
+
+  const handleSelect = (sub: SubPage) => {
+    onSelect(sub)
+    setOpenMobile(false)
+  }
+
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" onClick={() => handleSelect(null)}>
+              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                <GalleryVerticalEnd className="size-4" />
+              </div>
+              <div className="flex flex-col gap-0.5 leading-none">
+                <span className="font-semibold">后台管理</span>
+                <span className="text-xs text-muted-foreground">管理系统</span>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+      <SidebarContent>
+        {tabs.map((tab) => {
+          const entries = moduleEntries.filter(
+            (e) => e.tab === tab.key && canSeeModule(currentAdmin, e.perm),
+          )
+          if (entries.length === 0) return null
+          return (
+            <SidebarGroup key={tab.key}>
+              <SidebarGroupLabel>{tab.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {entries.map((entry) => (
+                    <SidebarMenuItem key={entry.sub}>
+                      <SidebarMenuButton
+                        isActive={activeSubPage === entry.sub}
+                        onClick={() => handleSelect(entry.sub as SubPage)}
+                      >
+                        {iconMap[entry.icon]}
+                        <span>{entry.title}</span>
+                      </SidebarMenuButton>
+                      <SidebarMenuSub>
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton asChild>
+                            <span>{entry.desc}</span>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      </SidebarMenuSub>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )
+        })}
+      </SidebarContent>
+      <SidebarRail />
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={onExit}>
+              <ArrowLeft />
+              <span>返回首页</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={onLogout}>
+              <LogOut />
+              <span>退出登录</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+    </Sidebar>
+  )
+}
+
 export function AdminPanel({ onExit }: AdminPanelProps) {
   // 启动流程：先检查 bootstrap 状态，再校验 token
   // bootstrap=true → 渲染引导页；bootstrap=false → 检查 token 决定登录/已登录
@@ -149,8 +302,6 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
   const [activeSubPage, setActiveSubPage] = useState<SubPage>(() =>
     readSubPageFromHash(),
   )
-  // 主页分类选项卡：基础教务 / 教学运营 / 报表中心 / 系统管理
-  const [activeTab, setActiveTab] = useState<'basic' | 'operation' | 'data' | 'system'>('basic')
   // 当前登录用户（用于按权限隐藏模块入口）
   const currentAdmin = getCurrentAdmin()
 
@@ -472,6 +623,12 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     }
   }
 
+  // 侧边栏菜单选择：进入公告页时需预加载公告内容
+  const handleSelect = (sub: SubPage) => {
+    if (sub === 'announcement') handleLoadAnnouncement()
+    goSubPage(sub)
+  }
+
   // 校验中：显示加载状态
   if (checking) {
     return (
@@ -501,352 +658,280 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     )
   }
 
-  // 公告管理二级页面
-  if (activeSubPage === 'announcement') {
-    return (
-      <>
-        <AnnouncementAdmin
-          onBack={() => goSubPage(null)}
-          busy={busy}
-          announcementText={announcementText}
-          setAnnouncementText={setAnnouncementText}
-          announcementUpdatedAt={announcementUpdatedAt}
-          onSaveAnnouncement={handleSaveAnnouncement}
-        />
-      </>
-    )
+  // 当前激活模块（用于面包屑标题）
+  const currentModule = activeSubPage
+    ? moduleEntries.find((e) => e.sub === activeSubPage)
+    : null
+
+  // 渲染当前子页面内容（保留原有所有分支）
+  const renderSubPage = () => {
+    // 公告管理二级页面
+    if (activeSubPage === 'announcement') {
+      return (
+        <>
+          <AnnouncementAdmin
+            onBack={() => goSubPage(null)}
+            busy={busy}
+            announcementText={announcementText}
+            setAnnouncementText={setAnnouncementText}
+            announcementUpdatedAt={announcementUpdatedAt}
+            onSaveAnnouncement={handleSaveAnnouncement}
+          />
+        </>
+      )
+    }
+
+    // 分享链接二级页面
+    if (activeSubPage === 'shareLinks') {
+      return (
+        <>
+          <ShareLinksAdmin
+            students={students}
+            onBack={() => goSubPage(null)}
+          />
+        </>
+      )
+    }
+
+    // 系统设置二级页面
+    if (activeSubPage === 'settings') {
+      return (
+        <>
+          <SystemSettingsAdmin
+            onBack={() => goSubPage(null)}
+            busy={busy}
+            setBusy={setBusy}
+            showToast={showToast}
+          />
+        </>
+      )
+    }
+
+    // 学员管理二级页面
+    if (activeSubPage === 'students') {
+      return (
+        <>
+          <StudentAdmin
+            students={students}
+            grades={grades}
+            summaries={enrollmentSummaries}
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            onDelete={handleDeleteStudent}
+            onAdd={handleAddStudent}
+            onUpdate={handleUpdateStudent}
+            onGradesChange={loadGrades}
+          />
+        </>
+      )
+    }
+
+    // 年级管理二级页面
+    if (activeSubPage === 'grades') {
+      return (
+        <>
+          <GradeAdmin
+            grades={grades}
+            students={students}
+            courses={courses}
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            onGradesChange={loadGrades}
+            onStudentsChange={loadStudents}
+            showToast={showToast}
+          />
+        </>
+      )
+    }
+
+    // 班级管理二级页面
+    if (activeSubPage === 'classes') {
+      return (
+        <>
+          <ClassesAdmin
+            courses={courses}
+            grades={grades}
+            students={students}
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            showToast={showToast}
+          />
+        </>
+      )
+    }
+
+    // 课程管理二级页面
+    if (activeSubPage === 'courses') {
+      return (
+        <>
+          <CourseAdmin
+            courses={courses}
+            grades={grades}
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            onDelete={handleDeleteCourse}
+            onAdd={handleAddCourse}
+            onUpdate={handleUpdateCourse}
+          />
+        </>
+      )
+    }
+
+    // 报名管理二级页面
+    if (activeSubPage === 'enrollments') {
+      return (
+        <>
+          <EnrollmentAdmin
+            students={students}
+            courses={courses}
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            showToast={showToast}
+            onAuthError={handleApiError}
+            onStudentsChanged={loadStudents}
+          />
+        </>
+      )
+    }
+
+    // 结转退课二级页面
+    if (activeSubPage === 'transfers') {
+      return (
+        <>
+          <TransferAdmin
+            students={students}
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            showToast={showToast}
+            onAuthError={handleApiError}
+            onStudentsChanged={loadStudents}
+          />
+        </>
+      )
+    }
+
+    // 排课管理二级页面
+    if (activeSubPage === 'schedules') {
+      return (
+        <>
+          <ScheduleAdmin
+            students={students}
+            courses={courses}
+            grades={grades}
+            onBack={() => goSubPage(null)}
+            onToast={showToast}
+            currentAdmin={currentAdmin}
+          />
+        </>
+      )
+    }
+
+    // 点名管理二级页面
+    if (activeSubPage === 'attendance') {
+      return (
+        <>
+          <AttendanceAdmin
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            onLoad={async (d) => {
+              const r = await getAttendanceList(d)
+              if (r.code !== 0) throw new Error(r.message)
+              return r.data
+            }}
+            onSave={async (d, items) => {
+              const r = await setAttendance(d, items)
+              if (r.code !== 0) throw new Error(r.message)
+              // 保存后刷新报名汇总（剩余课时已按报名记录扣减）
+              await loadEnrollmentSummaries()
+              return r.data
+            }}
+          />
+        </>
+      )
+    }
+
+    // 管理员账号管理二级页面（仅超管）
+    if (activeSubPage === 'admins') {
+      return <AdminUserAdmin onBack={() => goSubPage(null)} />
+    }
+
+    // 审计日志二级页面（仅超管）
+    if (activeSubPage === 'auditLogs') {
+      return <AuditLogAdmin onBack={() => goSubPage(null)} />
+    }
+
+    // 报表中心二级页面
+    if (activeSubPage === 'reports') {
+      return <ReportsAdmin onBack={() => goSubPage(null)} />
+    }
+
+    if (activeSubPage === 'teachers') {
+      return <TeacherAdmin onBack={() => goSubPage(null)} />
+    }
+
+    return null
   }
-
-  // 分享链接二级页面
-  if (activeSubPage === 'shareLinks') {
-    return (
-      <>
-        <ShareLinksAdmin
-          students={students}
-          onBack={() => goSubPage(null)}
-        />
-      </>
-    )
-  }
-
-  // 系统设置二级页面
-  if (activeSubPage === 'settings') {
-    return (
-      <>
-        <SystemSettingsAdmin
-          onBack={() => goSubPage(null)}
-          busy={busy}
-          setBusy={setBusy}
-          showToast={showToast}
-        />
-      </>
-    )
-  }
-
-  // 学员管理二级页面
-  if (activeSubPage === 'students') {
-    return (
-      <>
-        <StudentAdmin
-          students={students}
-          grades={grades}
-          summaries={enrollmentSummaries}
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          onDelete={handleDeleteStudent}
-          onAdd={handleAddStudent}
-          onUpdate={handleUpdateStudent}
-          onGradesChange={loadGrades}
-        />
-      </>
-    )
-  }
-
-  // 年级管理二级页面
-  if (activeSubPage === 'grades') {
-    return (
-      <>
-        <GradeAdmin
-          grades={grades}
-          students={students}
-          courses={courses}
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          onGradesChange={loadGrades}
-          onStudentsChange={loadStudents}
-          showToast={showToast}
-        />
-      </>
-    )
-  }
-
-  // 班级管理二级页面
-  if (activeSubPage === 'classes') {
-    return (
-      <>
-        <ClassesAdmin
-          courses={courses}
-          grades={grades}
-          students={students}
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          showToast={showToast}
-        />
-      </>
-    )
-  }
-
-  // 课程管理二级页面
-  if (activeSubPage === 'courses') {
-    return (
-      <>
-        <CourseAdmin
-          courses={courses}
-          grades={grades}
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          onDelete={handleDeleteCourse}
-          onAdd={handleAddCourse}
-          onUpdate={handleUpdateCourse}
-        />
-      </>
-    )
-  }
-
-  // 报名管理二级页面
-  if (activeSubPage === 'enrollments') {
-    return (
-      <>
-        <EnrollmentAdmin
-          students={students}
-          courses={courses}
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          showToast={showToast}
-          onAuthError={handleApiError}
-          onStudentsChanged={loadStudents}
-        />
-      </>
-    )
-  }
-
-  // 结转退课二级页面
-  if (activeSubPage === 'transfers') {
-    return (
-      <>
-        <TransferAdmin
-          students={students}
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          showToast={showToast}
-          onAuthError={handleApiError}
-          onStudentsChanged={loadStudents}
-        />
-      </>
-    )
-  }
-
-  // 排课管理二级页面
-  if (activeSubPage === 'schedules') {
-    return (
-      <>
-        <ScheduleAdmin
-          students={students}
-          courses={courses}
-          grades={grades}
-          onBack={() => goSubPage(null)}
-          onToast={showToast}
-          currentAdmin={currentAdmin}
-        />
-      </>
-    )
-  }
-
-  // 点名管理二级页面
-  if (activeSubPage === 'attendance') {
-    return (
-      <>
-        <AttendanceAdmin
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          onLoad={async (d) => {
-            const r = await getAttendanceList(d)
-            if (r.code !== 0) throw new Error(r.message)
-            return r.data
-          }}
-          onSave={async (d, items) => {
-            const r = await setAttendance(d, items)
-            if (r.code !== 0) throw new Error(r.message)
-            // 保存后刷新报名汇总（剩余课时已按报名记录扣减）
-            await loadEnrollmentSummaries()
-            return r.data
-          }}
-        />
-      </>
-    )
-  }
-
-  // 管理员账号管理二级页面（仅超管）
-  if (activeSubPage === 'admins') {
-    return <AdminUserAdmin onBack={() => goSubPage(null)} />
-  }
-
-  // 审计日志二级页面（仅超管）
-  if (activeSubPage === 'auditLogs') {
-    return <AuditLogAdmin onBack={() => goSubPage(null)} />
-  }
-
-  // 报表中心二级页面
-  if (activeSubPage === 'reports') {
-    return <ReportsAdmin onBack={() => goSubPage(null)} />
-  }
-
-  if (activeSubPage === 'teachers') {
-    return <TeacherAdmin onBack={() => goSubPage(null)} />
-  }
-
-  // 模块入口定义：按日常使用顺序排列（基础建档 → 教学运营 → 报表 → 系统）
-  // 每个入口含权限点、标题、描述、图标、跳转目标，按当前用户权限过滤后再渲染
-  const moduleEntries = [
-    // ===== 基础教务（建档类：学员 → 年级 → 课程 → 班级 → 教师）=====
-    { tab: 'basic', perm: 'students:view', sub: 'students', title: '学员管理', desc: '学员档案、报名汇总、续费预警', icon: 'students' },
-    { tab: 'basic', perm: 'grades:view', sub: 'grades', title: '年级管理', desc: '年级维护、批量升班、课程关联', icon: 'grades' },
-    { tab: 'basic', perm: 'courses:view', sub: 'courses', title: '课程管理', desc: '课程信息、单价、计费方式、关联年级', icon: 'courses' },
-    { tab: 'basic', perm: 'classes:view', sub: 'classes', title: '班级管理', desc: '班级建档、关联课程、固定学员名单', icon: 'classes' },
-    { tab: 'basic', perm: 'teachers:view', sub: 'teachers', title: '教师管理', desc: '课后反馈、教师绩效、评分', icon: 'teachers' },
-    // ===== 教学运营（业务流转：报名 → 结转退课 → 排课 → 点名）=====
-    { tab: 'operation', perm: 'enrollments:view', sub: 'enrollments', title: '报名管理', desc: '报名、购课赠课、课时余额', icon: 'enrollments' },
-    { tab: 'operation', perm: 'transfers:view', sub: 'transfers', title: '结转退课', desc: '退课折算入账户余额', icon: 'transfers' },
-    { tab: 'operation', perm: 'schedules:view', sub: 'schedules', title: '排课管理', desc: '排课、批量排课、点名扣减', icon: 'schedules' },
-    { tab: 'operation', perm: 'attendance:view', sub: 'attendance', title: '点名管理', desc: '按日期点名、批量点名、到课统计', icon: 'attendance' },
-    // ===== 报表中心（概览 + 明细报表，合并原数据看板）=====
-    { tab: 'data', perm: 'reports:view', sub: 'reports', title: '报表中心', desc: '经营概览、营收、课时、出勤、结转统计', icon: 'reports' },
-    // ===== 系统管理（配置 → 公告 → 账号 → 家长端链接 → 日志）=====
-    { tab: 'system', perm: 'settings:manage', sub: 'settings', title: '系统设置', desc: '项目名称、备份恢复、有效期', icon: 'settings' },
-    { tab: 'system', perm: 'announcement:view', sub: 'announcement', title: '公告管理', desc: '首页/家长端公告内容', icon: 'announcement' },
-    { tab: 'system', perm: 'admins:view', sub: 'admins', title: '管理员账号', desc: '账号增删、权限分配、启停', icon: 'admins' },
-    { tab: 'system', perm: 'students:view', sub: 'shareLinks', title: '分享链接', desc: '生成家长端专属访问链接', icon: 'shareLinks' },
-    { tab: 'system', perm: 'audit:view', sub: 'auditLogs', title: '审计日志', desc: '写操作留痕，按模块/人筛选', icon: 'auditLogs' },
-  ] as const
-
-  // 图标映射：使用 lucide-react 图标，避免每个入口重复写 svg
-  const iconMap: Record<string, React.ReactNode> = {
-    students: <Users className="w-5 h-5" />,
-    grades: <GraduationCap className="w-5 h-5" />,
-    classes: <LayoutGrid className="w-5 h-5" />,
-    courses: <BookOpen className="w-5 h-5" />,
-    enrollments: <ClipboardCheck className="w-5 h-5" />,
-    transfers: <ArrowLeftRight className="w-5 h-5" />,
-    schedules: <Calendar className="w-5 h-5" />,
-    attendance: <CheckCircle2 className="w-5 h-5" />,
-    teachers: <Presentation className="w-5 h-5" />,
-    announcement: <Megaphone className="w-5 h-5" />,
-    reports: <BarChart3 className="w-5 h-5" />,
-    shareLinks: <Link2 className="w-5 h-5" />,
-    settings: <Settings className="w-5 h-5" />,
-    admins: <ShieldCheck className="w-5 h-5" />,
-    auditLogs: <FileText className="w-5 h-5" />,
-  }
-
-  const tabs = [
-    { key: 'basic', label: '基础教务' },
-    { key: 'operation', label: '教学运营' },
-    { key: 'data', label: '报表中心' },
-    { key: 'system', label: '系统管理' },
-  ] as const
-
-  // 当前 tab 下可见的入口（按权限过滤）
-  const visibleEntries = moduleEntries.filter(
-    (e) => e.tab === activeTab && canSeeModule(currentAdmin, e.perm),
-  )
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* 顶部栏 */}
-      <header className="bg-background border-b border-border sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div>
-              <h1 className="text-lg font-semibold text-foreground">{'后台管理'}</h1>
+    <SidebarProvider>
+      <AppSidebar
+        activeSubPage={activeSubPage}
+        currentAdmin={currentAdmin}
+        onSelect={handleSelect}
+        onLogout={() => {
+          clearToken()
+          setAuthed(false)
+        }}
+        onExit={onExit}
+      />
+      <SidebarInset>
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 h-4" />
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                {activeSubPage ? (
+                  <BreadcrumbLink asChild>
+                    <button
+                      onClick={() => handleSelect(null)}
+                      className="cursor-pointer"
+                    >
+                      后台管理
+                    </button>
+                  </BreadcrumbLink>
+                ) : (
+                  <BreadcrumbPage>后台管理</BreadcrumbPage>
+                )}
+              </BreadcrumbItem>
+              {currentModule && (
+                <>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>{currentModule.title}</BreadcrumbPage>
+                  </BreadcrumbItem>
+                </>
+              )}
+            </BreadcrumbList>
+          </Breadcrumb>
+        </header>
+        <main className="flex-1 overflow-auto">
+          {activeSubPage === null ? (
+            <div className="flex min-h-full items-center justify-center p-8">
+              <div className="text-center max-w-md">
+                <h2 className="text-2xl font-semibold text-foreground mb-2">
+                  欢迎使用后台管理
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  请从左侧菜单选择要管理的模块
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                clearToken()
-                setAuthed(false)
-              }}
-              className="btn-ghost"
-              title={'退出登录'}
-            >
-              <LogOut className="w-4 h-4 mr-1" />
-              <span className="hidden sm:inline">{'退出登录'}</span>
-            </button>
-            <button onClick={onExit} className="btn-ghost">
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              <span className="hidden sm:inline">返回首页</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
-        {/* 分类选项卡：仅允许横向滑动，禁止纵向滑动（移动端修复）；隐藏滚动条保持可滑动 */}
-        <div className="flex items-center gap-1 mb-5 border-b border-border overflow-x-auto overflow-y-hidden touch-pan-x overscroll-x-contain no-scrollbar">
-          {tabs.map((tab) => {
-            const count = moduleEntries.filter(
-              (e) => e.tab === tab.key && canSeeModule(currentAdmin, e.perm),
-            ).length
-            if (count === 0) return null
-            return (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-                  activeTab === tab.key
-                    ? 'border-brand-500 text-primary'
-                    : 'border-transparent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {tab.label}
-                <span className="ml-1.5 text-xs text-muted-foreground/70">{count}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* 模块入口网格 */}
-        {visibleEntries.length === 0 ? (
-          <div className="card p-12 text-center text-muted-foreground/70 text-sm">
-            当前分类暂无可用模块
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {visibleEntries.map((entry) => (
-              <button
-                key={entry.sub}
-                onClick={() => {
-                  if (entry.sub === 'announcement') handleLoadAnnouncement()
-                  goSubPage(entry.sub as SubPage)
-                }}
-                className="card p-5 text-left hover:shadow-md hover:border-brand-200 transition-all group"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0 group-hover:bg-brand-100 transition-colors">
-                    {iconMap[entry.icon]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold text-foreground mb-1">{entry.title}</h3>
-                    <p className="text-xs text-muted-foreground leading-relaxed">{entry.desc}</p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-primary flex-shrink-0 mt-0.5" />
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </main>
-    </div>
+          ) : (
+            renderSubPage()
+          )}
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }
-

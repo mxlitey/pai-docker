@@ -107,7 +107,7 @@ export function AdminUserAdmin({ onBack }: AdminUserAdminProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-full bg-background">
       <SubPageHeader title={'管理员账号'} onBack={onBack} count={admins.length} countLabel="个">
         <Button variant="primary" onClick={() => setAdding(true)}>
           {'+ '}{'新增管理员'}
