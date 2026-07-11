@@ -17,6 +17,8 @@ export default async function onRequestGet(context) {
   const endDate = url.searchParams.get('endDate') || ''
   const courseId = url.searchParams.get('courseId') || ''
   const grade = url.searchParams.get('grade') || ''
+  const teacher = url.searchParams.get('teacher') || ''
+  const classId = url.searchParams.get('classId') || ''
 
   // 日期格式校验：传了就必须合法，避免脏输入触发异常分支
   if (startDate && !DATE_RE.test(startDate)) {
@@ -44,6 +46,8 @@ export default async function onRequestGet(context) {
       endDate,
       courseId,
       grade,
+      teacher,
+      classId,
     })
     return json({ code: 0, message: 'ok', data: { schedules, total: schedules.length } })
   } catch (e) {

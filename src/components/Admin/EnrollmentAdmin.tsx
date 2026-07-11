@@ -437,6 +437,7 @@ interface EnrollmentForm {
   giftHours: string
   unitPrice: string
   paidAmount: string
+  totalAmount: string // 应付总价（购课课时 × 单价，可手动修改）
   status: EnrollmentStatus
   // 有效期 yyyy-MM-dd；空串表示无有效期（永不过期）
   expiredAt: string
@@ -466,6 +467,7 @@ function EnrollmentEditModal({
         giftHours: String(enrollment.giftHours ?? 0),
         unitPrice: String(enrollment.unitPrice ?? 0),
         paidAmount: String(enrollment.paidAmount ?? 0),
+        totalAmount: String(enrollment.totalAmount ?? 0),
         status: enrollment.status,
         expiredAt: enrollment.expiredAt ? enrollment.expiredAt.slice(0, 10) : '',
         note: enrollment.note || '',
@@ -479,6 +481,7 @@ function EnrollmentEditModal({
       giftHours: '0',
       unitPrice: '',
       paidAmount: '',
+      totalAmount: '',
       status: 'active',
       expiredAt: '',
       note: '',
@@ -497,6 +500,9 @@ function EnrollmentEditModal({
   // 新增模式默认未触碰 → 随购课/实付自动反算（=实付/购课）；
   // 编辑模式默认已触碰 → 保留已存储的单价，不自动覆盖
   const [unitPriceTouched, setUnitPriceTouched] = useState(isEdit)
+  // 应付总价是否被用户手动改过：新增模式默认未触碰 → 随购课/单价实时同步；
+  // 编辑模式默认已触碰 → 保留已存储的应付总价，不自动覆盖
+  const [totalAmountTouched, setTotalAmountTouched] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -536,10 +542,6 @@ function EnrollmentEditModal({
     }
   }
 
-  // 应付金额预览 = 购课课时 × 单价（实时计算）
-  const previewTotal =
-    (parseInt(form.purchasedHours, 10) || 0) * (Number(form.unitPrice) || 0)
-
   // 余额抵扣预览：勾选使用余额时，抵扣 = min(学员余额, 实付)，现金补差 = 实付 - 抵扣
   const studentBalance = !isEdit ? Number(selectedStudent?.balance || 0) : 0
   const paidPreview = Number(form.paidAmount) || 0
@@ -559,23 +561,26 @@ function EnrollmentEditModal({
     setError('')
   }
 
-  // 改购课课时：
-  // - 实付未被手动改 → 同步默认实付 = 购课×单价（兜底）
-  // - 实付已手动改且单价未被手动改 → 反算单价 = 实付 / 购课
+  // 改购课课时：三方联动（purchased / unitPrice / totalAmount）
+  // 优先用 unitPrice 计算 totalAmount（单价更稳定）；unitPrice 缺失时用 totalAmount 反算单价
   const handlePurchasedChange = (val: string) => {
     setForm((f) => {
       const next: EnrollmentForm = { ...f, purchasedHours: val }
       const ph = parseInt(val, 10)
+      const up = Number(f.unitPrice)
+      const ta = Number(f.totalAmount)
+      if (Number.isFinite(ph) && up > 0) {
+        // 优先用 unitPrice 计算 totalAmount
+        next.totalAmount = String(Math.round(ph * up * 100) / 100)
+      } else if (Number.isFinite(ph) && ph > 0 && ta > 0) {
+        // totalAmount 已填，反算单价 = totalAmount / purchased，保留两位小数
+        next.unitPrice = String(Math.round((ta / ph) * 100) / 100)
+      }
+      // 实付金额未被手动改时，默认跟随应付总价
       if (!paidTouched) {
-        const up = Number(f.unitPrice)
-        if (Number.isFinite(ph) && Number.isFinite(up)) {
-          next.paidAmount = String(ph * up)
-        }
-      } else if (!unitPriceTouched && ph > 0) {
-        const paid = Number(f.paidAmount)
-        if (Number.isFinite(paid)) {
-          // 单价 = 实付 / 购课，保留两位小数
-          next.unitPrice = String(Math.round((paid / ph) * 100) / 100)
+        const newTa = Number(next.totalAmount)
+        if (Number.isFinite(newTa) && newTa > 0) {
+          next.paidAmount = String(newTa)
         }
       }
       return next
@@ -583,17 +588,55 @@ function EnrollmentEditModal({
     setError('')
   }
 
-  // 改单价：标记单价已触碰，停止后续自动反算；
-  // 若实付未被手动改 → 同步默认实付 = 购课×单价（兜底）
+  // 改单价：三方联动，标记单价已触碰（停止后续来自实付的反算）
+  // 优先用 purchased 计算 totalAmount；purchased 缺失时用 totalAmount 反算购课（整数）
   const handleUnitPriceChange = (val: string) => {
     setUnitPriceTouched(true)
     setForm((f) => {
       const next: EnrollmentForm = { ...f, unitPrice: val }
+      const ph = parseInt(f.purchasedHours, 10)
+      const up = Number(val)
+      const ta = Number(f.totalAmount)
+      if (Number.isFinite(ph) && ph > 0 && Number.isFinite(up)) {
+        // 优先用 purchased 计算 totalAmount
+        next.totalAmount = String(Math.round(ph * up * 100) / 100)
+      } else if (Number.isFinite(up) && up > 0 && ta > 0) {
+        // totalAmount 已填，反算购课课时 = totalAmount / unitPrice（整数，四舍五入）
+        next.purchasedHours = String(Math.round(ta / up))
+      }
+      // 实付金额未被手动改时，默认跟随应付总价
       if (!paidTouched) {
-        const ph = parseInt(f.purchasedHours, 10)
-        const up = Number(val)
-        if (Number.isFinite(ph) && Number.isFinite(up)) {
-          next.paidAmount = String(ph * up)
+        const newTa = Number(next.totalAmount)
+        if (Number.isFinite(newTa) && newTa > 0) {
+          next.paidAmount = String(newTa)
+        }
+      }
+      return next
+    })
+    setError('')
+  }
+
+  // 改应付总价：三方联动，标记应付总价已触碰
+  // purchased 已填 → 反算单价；否则 unitPrice 已填 → 反算购课（整数）
+  const handleTotalAmountChange = (val: string) => {
+    setTotalAmountTouched(true)
+    setForm((f) => {
+      const next: EnrollmentForm = { ...f, totalAmount: val }
+      const ph = parseInt(f.purchasedHours, 10)
+      const up = Number(f.unitPrice)
+      const ta = Number(val)
+      if (Number.isFinite(ph) && ph > 0 && Number.isFinite(ta)) {
+        // purchased 已填，反算单价 = totalAmount / purchased，保留两位小数
+        next.unitPrice = String(Math.round((ta / ph) * 100) / 100)
+      } else if (Number.isFinite(up) && up > 0 && Number.isFinite(ta) && ta > 0) {
+        // unitPrice 已填，反算购课课时 = totalAmount / unitPrice（整数，四舍五入）
+        next.purchasedHours = String(Math.round(ta / up))
+      }
+      // 实付金额未被手动改时，默认跟随应付总价
+      if (!paidTouched) {
+        const newTa = Number(val)
+        if (Number.isFinite(newTa) && newTa > 0) {
+          next.paidAmount = String(newTa)
         }
       }
       return next
@@ -657,10 +700,17 @@ function EnrollmentEditModal({
 
     // 注意：允许购课=0 且 赠课=0，用于创建结转目标报名记录
 
-    // 单价：非负数（空视为 0）
-    const upNum = form.unitPrice.trim() === '' ? 0 : Number(form.unitPrice)
-    if (!Number.isFinite(upNum) || upNum < 0) {
-      setError('单价需为非负数')
+    // 单价：必填，必须大于 0
+    const upNum = Number(form.unitPrice)
+    if (!(upNum > 0)) {
+      setError('单价必须大于 0')
+      return
+    }
+
+    // 应付总价：必填，必须大于 0
+    const taNum = Number(form.totalAmount)
+    if (!(taNum > 0)) {
+      setError('应付总价必须大于 0')
       return
     }
 
@@ -692,6 +742,7 @@ function EnrollmentEditModal({
           purchasedHours: phNum,
           giftHours: ghNum,
           unitPrice: upNum,
+          totalAmount: taNum,
           paidAmount: paidNum,
           status: form.status,
           expiredAt: form.expiredAt,
@@ -709,6 +760,7 @@ function EnrollmentEditModal({
           purchasedHours: phNum,
           giftHours: ghNum,
           unitPrice: upNum,
+          totalAmount: taNum,
           expiredAt: form.expiredAt,
           note: form.note.trim(),
           useBalance: form.useBalance,
@@ -953,14 +1005,20 @@ function EnrollmentEditModal({
           </div>
         </div>
 
-        {/* 应付金额（只读预览） */}
-        <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'应付金额'}</span>
-          <div className="flex-1 pt-2 text-sm text-slate-700 font-medium">
-            {formatMoney(previewTotal)}
-            <span className="ml-2 text-xs text-slate-400 font-normal">= 购课课时 × 单价</span>
-          </div>
-        </div>
+        {/* 应付总价（三方联动：购课课时 × 单价） */}
+        <Field
+          label={'应付总价'}
+          required
+          hint={totalAmountTouched ? '已手动设定，修改购课/单价会重新计算' : '默认 = 购课课时 × 单价'}
+        >
+          <input
+            type="number"
+            value={form.totalAmount}
+            onChange={(e) => handleTotalAmountChange(e.target.value)}
+            className={inputClass}
+            placeholder="购课课时 × 单价"
+          />
+        </Field>
 
         {/* 余额抵扣（仅新增模式 + 学员有余额时展示） */}
         {!isEdit && studentBalance > 0 && (

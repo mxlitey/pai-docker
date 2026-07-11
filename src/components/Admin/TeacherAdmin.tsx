@@ -1,6 +1,6 @@
 // 教师端管理页 —— 课后反馈 + 教师绩效 两个 Tab
 import { useEffect, useState } from 'react'
-import type { Feedback, TeacherPerformance, Schedule } from '@/types'
+import type { ClassInfo, Feedback, TeacherPerformance, Schedule } from '@/types'
 import {
   getFeedback,
   updateFeedback,
@@ -8,6 +8,8 @@ import {
   addFeedback,
   searchSchedules,
   getTeacherPerformance,
+  listClasses,
+  getCurrentAdmin,
 } from '@/api/admin'
 import { todayLocal } from '@/utils/date'
 import {
@@ -308,7 +310,7 @@ function FeedbackPanel() {
 }
 
 // ============ 新增反馈弹窗 ============
-// 流程：选日期 → 加载当天排课 → 选排课 → 填内容+评分 → 提交
+// 流程：选日期 → （可选）选班级 → 加载当天/该班级排课 → 选排课 → 填内容+评分 → 提交
 // 教师/学员/课程/日期 等字段从选中排课自动填充
 function AddFeedbackModal({
   onClose,
@@ -319,6 +321,8 @@ function AddFeedbackModal({
 }) {
   const today = todayLocal()
   const [date, setDate] = useState(today)
+  const [classes, setClasses] = useState<ClassInfo[]>([])
+  const [classId, setClassId] = useState('')
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [loadingSchedules, setLoadingSchedules] = useState(false)
   const [selectedId, setSelectedId] = useState('')
@@ -327,7 +331,27 @@ function AddFeedbackModal({
   const [saving, setSaving] = useState(false)
   const [loaded, setLoaded] = useState(false)
 
-  const loadSchedules = async (d: string) => {
+  // 加载班级列表（用于按班级过滤排课）
+  useEffect(() => {
+    let cancelled = false
+    async function loadClasses() {
+      try {
+        const result = await listClasses()
+        if (cancelled) return
+        if (result.code === 0) {
+          setClasses(result.data.classes || [])
+        }
+      } catch {
+        // 班级加载失败不阻塞流程，按日期加载全部排课仍可用
+      }
+    }
+    loadClasses()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const loadSchedules = async (d: string, cid: string) => {
     if (!d) {
       setSchedules([])
       setLoaded(false)
@@ -336,7 +360,11 @@ function AddFeedbackModal({
     setLoadingSchedules(true)
     setSelectedId('')
     try {
-      const result = await searchSchedules({ startDate: d, endDate: d })
+      const result = await searchSchedules({
+        startDate: d,
+        endDate: d,
+        classId: cid || undefined,
+      })
       if (result.code === 0) {
         setSchedules(result.data.schedules || [])
       } else {
@@ -353,9 +381,9 @@ function AddFeedbackModal({
   }
 
   useEffect(() => {
-    loadSchedules(date)
+    loadSchedules(date, classId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date])
+  }, [date, classId])
 
   const selected = schedules.find((s) => s.id === selectedId) || null
 
@@ -410,7 +438,7 @@ function AddFeedbackModal({
       <div className="space-y-4">
         {/* 步骤提示 */}
         <div className="text-xs text-slate-500 bg-slate-50 rounded p-2 leading-relaxed">
-          ① 选择上课日期 → ② 从当天排课中选择一条 → ③ 填写反馈内容与评分 → ④ 提交
+          ① 选择上课日期 → ② （可选）选择班级过滤 → ③ 从排课中选择一条 → ④ 填写反馈内容与评分 → ⑤ 提交
         </div>
 
         <Field label="上课日期">
@@ -423,12 +451,28 @@ function AddFeedbackModal({
           />
         </Field>
 
+        <Field label="班级" hint="不选则显示该日期全部排课">
+          <select
+            value={classId}
+            onChange={(e) => setClassId(e.target.value)}
+            className={inputClass}
+          >
+            <option value="">全部班级</option>
+            {classes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.courseName ? `（${c.courseName}）` : ''}
+              </option>
+            ))}
+          </select>
+        </Field>
+
         <Field label="选择排课">
           {loadingSchedules ? (
             <div className="text-sm text-slate-400 py-2">加载排课中…</div>
           ) : schedules.length === 0 ? (
             <div className="text-sm text-slate-400 py-2">
-              {loaded ? '该日期暂无排课记录' : '请先选择日期'}
+              {loaded ? '该条件下暂无排课记录' : '请先选择日期'}
             </div>
           ) : (
             <div className="border border-slate-200 rounded max-h-56 overflow-y-auto divide-y divide-slate-100">
@@ -512,6 +556,14 @@ function PerformancePanel() {
   // 查询触发器：点「查询」按钮自增；改日期不自动查
   const [queryTick, setQueryTick] = useState(0)
 
+  // 当前登录用户：教师角色只显示自己的绩效，超管/管理员显示全部
+  const currentAdmin = getCurrentAdmin()
+  const isTeacher = currentAdmin?.role === 'teacher'
+  // 教师姓名优先用 realName，回退到 username
+  const teacherName = isTeacher
+    ? currentAdmin?.realName || currentAdmin?.username || ''
+    : ''
+
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -520,6 +572,7 @@ function PerformancePanel() {
         const data = await getTeacherPerformance({
           startDate: startDate || undefined,
           endDate: endDate || undefined,
+          teacher: isTeacher ? teacherName || undefined : undefined,
         })
         if (cancelled) return
         setRows(data)
@@ -568,6 +621,12 @@ function PerformancePanel() {
             {'查询'}
           </Button>
         </div>
+        {/* 教师角色仅显示本人绩效提示 */}
+        {isTeacher && (
+          <div className="mt-3 text-xs text-slate-500">
+            {'当前为教师视角，仅显示您本人（' + teacherName + '）的绩效数据'}
+          </div>
+        )}
       </section>
 
       {/* 结果区 */}

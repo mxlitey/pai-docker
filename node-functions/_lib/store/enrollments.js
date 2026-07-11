@@ -85,8 +85,8 @@ export async function addEnrollment(enrollment) {
     const totalAmount = Number(enrollment.totalAmount ?? (purchased * unitPrice))
     let paidAmount = Number(enrollment.paidAmount ?? totalAmount)
 
-    if (purchased <= 0 && gift <= 0) {
-      return { created: false, invalid: '购买课时与赠课课时不能同时为 0' }
+    if (purchased <= 0) {
+      return { created: false, invalid: '购课课时必须大于 0' }
     }
 
     // 余额抵扣：从学员账户余额扣除 min(余额, paidAmount)，剩余为现金补差

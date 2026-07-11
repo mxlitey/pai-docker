@@ -109,9 +109,10 @@ export async function deleteStudentWithSchedules(studentId) {
     db.prepare('DELETE FROM enrollments WHERE student_id=?').run(studentId)
     db.prepare('DELETE FROM transfers WHERE student_id=?').run(studentId)
     db.prepare('DELETE FROM account_transactions WHERE student_id=?').run(studentId)
-    // 补齐级联：避免删除学员后产生孤儿反馈/班级成员数据
+    // 补齐级联：避免删除学员后产生孤儿反馈/班级成员/调课记录数据
     db.prepare('DELETE FROM feedback WHERE student_id=?').run(studentId)
     db.prepare('DELETE FROM class_members WHERE student_id=?').run(studentId)
+    db.prepare('DELETE FROM schedule_changes WHERE student_id=?').run(studentId)
     const stu = db.prepare('DELETE FROM students WHERE id=?').run(studentId)
     return { deletedScheduleFiles: del.changes > 0 ? 1 : 0, studentRemoved: stu.changes > 0, before }
   })

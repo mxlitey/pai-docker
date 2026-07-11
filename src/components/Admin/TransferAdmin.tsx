@@ -175,7 +175,7 @@ export function TransferAdmin({
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <SubPageHeader title={'退课管理'} onBack={onBack} />
+      <SubPageHeader title={'结转退课'} onBack={onBack} />
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
         {/* 学员搜索 + 余额展示 */}

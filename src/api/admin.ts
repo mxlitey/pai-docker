@@ -572,18 +572,20 @@ export async function batchAddSchedules(body: {
   })
 }
 
-// 跨学员搜索排课：按日期范围 + 可选课程 ID 过滤
+// 跨学员搜索排课：按日期范围 + 可选课程 ID / 班级 ID 过滤
 export async function searchSchedules(params: {
   startDate?: string
   endDate?: string
   courseId?: string
   grade?: string
+  classId?: string
 }): Promise<ApiResult<{ schedules: Schedule[]; total: number }>> {
   const qs = new URLSearchParams()
   if (params.startDate) qs.set('startDate', params.startDate)
   if (params.endDate) qs.set('endDate', params.endDate)
   if (params.courseId) qs.set('courseId', params.courseId)
   if (params.grade) qs.set('grade', params.grade)
+  if (params.classId) qs.set('classId', params.classId)
   const query = qs.toString()
   return request(`${API_BASE}/schedules-search${query ? '?' + query : ''}`, { method: 'GET' })
 }
@@ -923,13 +925,14 @@ export async function deleteFeedback(id: string): Promise<ApiResult<{ ok: boolea
   return resp.json()
 }
 
-// 教师绩效
+// 教师绩效（支持按 teacher 教师姓名过滤，仅显示该教师本人绩效）
 export async function getTeacherPerformance(params?: {
-  startDate?: string; endDate?: string
+  startDate?: string; endDate?: string; teacher?: string
 }): Promise<TeacherPerformance[]> {
   const qs = new URLSearchParams()
   if (params?.startDate) qs.set('startDate', params.startDate)
   if (params?.endDate) qs.set('endDate', params.endDate)
+  if (params?.teacher) qs.set('teacher', params.teacher)
   const result = await request<TeacherPerformance[]>(`${API_BASE}/teacher-performance?${qs.toString()}`)
   return result.data || []
 }

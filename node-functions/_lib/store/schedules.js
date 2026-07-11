@@ -69,7 +69,7 @@ export async function getSchedulesByDateRange(studentId, startDate, endDate) {
   return rows.map(rowToSchedule)
 }
 
-export async function searchSchedules({ startDate, endDate, courseId, grade } = {}) {
+export async function searchSchedules({ startDate, endDate, courseId, grade, teacher, classId } = {}) {
   const db = getDb()
   let sql = 'SELECT * FROM schedules WHERE 1=1'
   const params = []
@@ -77,6 +77,8 @@ export async function searchSchedules({ startDate, endDate, courseId, grade } = 
   if (endDate) { sql += ' AND date<=?'; params.push(endDate) }
   if (courseId) { sql += ' AND course_id=?'; params.push(courseId) }
   if (grade) { sql += ' AND student_id IN (SELECT id FROM students WHERE grade=?)'; params.push(grade) }
+  if (teacher) { sql += ' AND teacher=?'; params.push(teacher) }
+  if (classId) { sql += ' AND class_id=?'; params.push(classId) }
   sql += ' ORDER BY date, start_time'
   const rows = db.prepare(sql).all(...params)
   return rows.map(rowToSchedule)

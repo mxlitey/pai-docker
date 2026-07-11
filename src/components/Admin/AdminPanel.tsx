@@ -615,7 +615,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     )
   }
 
-  // 结转管理二级页面
+  // 结转退课二级页面
   if (activeSubPage === 'transfers') {
     return (
       <>
@@ -702,7 +702,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     { tab: 'teaching', perm: 'classes:view', sub: 'classes', title: '班级管理', desc: '班级建档、关联课程、固定学员名单', icon: 'classes' },
     { tab: 'teaching', perm: 'teachers:view', sub: 'teachers', title: '教师管理', desc: '课后反馈、教师绩效、评分', icon: 'teachers' },
     { tab: 'teaching', perm: 'enrollments:view', sub: 'enrollments', title: '报名管理', desc: '报名、购课赠课、课时余额', icon: 'enrollments' },
-    { tab: 'teaching', perm: 'transfers:view', sub: 'transfers', title: '结转管理', desc: '升班转课结转，按金额或课时', icon: 'transfers' },
+    { tab: 'teaching', perm: 'transfers:view', sub: 'transfers', title: '结转退课', desc: '结转退课，按金额或课时', icon: 'transfers' },
     { tab: 'teaching', perm: 'schedules:view', sub: 'schedules', title: '排课管理', desc: '排课、批量排课、点名扣减', icon: 'schedules' },
     { tab: 'teaching', perm: 'attendance:view', sub: 'attendance', title: '点名管理', desc: '按日期点名、批量点名、到课统计', icon: 'attendance' },
     // ===== 数据分析（先看大盘 → 再看明细）=====

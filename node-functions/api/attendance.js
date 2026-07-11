@@ -2,7 +2,7 @@
 // GET  /api/attendance?date=2026-07-15 -> 获取指定日期的所有排课（含 attended 状态），需鉴权
 // POST /api/attendance                  -> 批量设置点名，需鉴权
 import { searchSchedules, batchSetAttendance, json } from '../_lib/store.js'
-import { requirePermission } from '../_lib/auth.js'
+import { requireAuth, requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -14,6 +14,10 @@ function corsOk() {
 
 // 获取指定日期所有排课（按时间升序），供点名页加载
 async function handleGet(context) {
+  // requirePermission 已在 onRequest 中调用，此处复用其注入的 admin 主体
+  const authFail = await requireAuth(context)
+  if (authFail) return authFail
+  const admin = context.admin
   const { request } = context
   const url = new URL(request.url)
   const date = url.searchParams.get('date') || ''
@@ -21,7 +25,11 @@ async function handleGet(context) {
     return json({ code: 1, message: 'date 参数必填，格式 yyyy-MM-dd', data: null }, 400)
   }
   try {
-    const schedules = (await searchSchedules({ startDate: date, endDate: date }))
+    const searchParams = { startDate: date, endDate: date }
+    if (admin.role === 'teacher') {
+      searchParams.teacher = admin.realName || admin.username
+    }
+    const schedules = (await searchSchedules(searchParams))
       .filter((s) => s.status !== 'cancelled')
     return json({ code: 0, message: 'ok', data: { schedules, total: schedules.length } })
   } catch (e) {

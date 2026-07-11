@@ -85,7 +85,7 @@ export const PERMISSION_DEFINITIONS = [
     { key: 'enrollments:update', label: '编辑' },
     { key: 'enrollments:delete', label: '删除' },
   ]},
-  { module: 'transfers', label: '结转管理', actions: [
+  { module: 'transfers', label: '结转退课', actions: [
     { key: 'transfers:view', label: '查看' },
     { key: 'transfers:create', label: '新增' },
   ]},
