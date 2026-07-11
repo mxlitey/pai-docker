@@ -98,8 +98,8 @@ export function CalendarToolbar({
         {info.title}
       </div>
 
-      {/* 导航按钮组 */}
-      <div className="flex items-center gap-1.5 sm:ml-auto">
+      {/* 导航按钮 + 视图切换：始终同一行（手机端也保持在一行，空间不足时换行到标题下方） */}
+      <div className="flex items-center gap-1.5 flex-wrap sm:ml-auto">
         <button
           onClick={() => onNavigate('prev')}
           className={navBtnClass}
@@ -132,24 +132,24 @@ export function CalendarToolbar({
           {info.next}
           <ChevronRight className="w-3.5 h-3.5" />
         </button>
-      </div>
 
-      {/* 视图切换 */}
-      <div className="inline-flex rounded-lg border border-border bg-background p-0.5 sm:ml-2">
-        {VIEW_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => onViewChange(opt.value)}
-            className={cn(
-              'px-4 py-1.5 text-sm font-medium rounded-md transition-all',
-              view === opt.value
-                ? 'bg-brand-500 text-white shadow-sm'
-                : 'text-muted-foreground hover:bg-muted',
-            )}
-          >
-            {opt.labelKey}
-          </button>
-        ))}
+        {/* 视图切换：月/周/日 */}
+        <div className="inline-flex rounded-lg border border-border bg-background p-0.5">
+          {VIEW_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onViewChange(opt.value)}
+              className={cn(
+                'px-3 sm:px-4 py-1.5 text-sm font-medium rounded-md transition-all',
+                view === opt.value
+                  ? 'bg-brand-500 text-white shadow-sm'
+                  : 'text-muted-foreground hover:bg-muted',
+              )}
+            >
+              {opt.labelKey}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )
