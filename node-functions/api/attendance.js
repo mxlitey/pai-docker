@@ -1,7 +1,7 @@
 // 点名管理 API
 // GET  /api/attendance?date=2026-07-15 -> 获取指定日期的所有排课（含 attended 状态），需鉴权
 // POST /api/attendance                  -> 批量设置点名，需鉴权
-import { searchSchedules, batchSetAttendance, json } from '../_lib/store.js'
+import { searchSchedules, batchSetAttendance, getDb, json } from '../_lib/store.js'
 import { requireAuth, requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -63,6 +63,18 @@ async function handlePost(context, request) {
   }
   // 统一补 date 字段，供 store 分组用
   const fullItems = items.map((it) => ({ ...it, date }))
+  // 教师角色校验排课归属：只能对自己的排课点名
+  const admin = context.admin
+  if (admin && admin.role === 'teacher') {
+    const teacherName = admin.realName || admin.username
+    const placeholders = fullItems.map(() => '?').join(',')
+    const db = getDb()
+    const rows = db.prepare(`SELECT id, teacher FROM schedules WHERE id IN (${placeholders})`).all(...fullItems.map(i => i.scheduleId))
+    const notOwned = rows.filter(r => r.teacher !== teacherName)
+    if (notOwned.length > 0) {
+      return json({ code: 1, message: '无权操作其他教师的排课', data: null }, 403)
+    }
+  }
   try {
     const result = await batchSetAttendance(fullItems)
     await writeAudit(context, {

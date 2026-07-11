@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Course, Schedule, Student, ClassInfo, Grade } from '@/types'
+import type { Course, Schedule, Student, ClassInfo, Grade, CurrentAdmin } from '@/types'
 import { getSchedules } from '@/api'
 import { deleteSchedule, searchSchedules, listClasses } from '@/api/admin'
 import { SearchBar } from '@/components/SearchBar'
 import { cn } from '@/utils/cn'
+import { hasPermission } from '@/utils/permission'
 import {
   Button,
   EmptyState,
@@ -22,11 +23,17 @@ interface ScheduleAdminProps {
   grades: Grade[]
   onBack: () => void
   onToast: (type: 'success' | 'error' | 'info', message: string) => void
+  currentAdmin?: CurrentAdmin | null
 }
 
 type SearchMode = 'student' | 'filter'
 
-export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: ScheduleAdminProps) {
+export function ScheduleAdmin({ students, courses, grades, onBack, onToast, currentAdmin }: ScheduleAdminProps) {
+  // 按权限控制按钮显隐
+  const canCreate = hasPermission(currentAdmin ?? null, 'schedules:create')
+  const canUpdate = hasPermission(currentAdmin ?? null, 'schedules:update')
+  const canDelete = hasPermission(currentAdmin ?? null, 'schedules:delete')
+
   const [mode, setMode] = useState<SearchMode>('filter')
 
   // 按学员模式
@@ -180,20 +187,22 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
         onBack={onBack}
         count={schedules.length > 0 ? schedules.length : undefined}
       >
-        <Button
-          variant="primary"
-          onClick={() => setAddingSchedule(true)}
-          disabled={busy || students.length === 0 || courses.length === 0}
-          title={
-            students.length === 0
-              ? '请先添加学员数据'
-              : courses.length === 0
-                ? '请先在课程管理中添加课程'
-                : '按课程为多个学员批量排课'
-          }
-        >
-          + {'新增排课'}
-        </Button>
+        {canCreate && (
+          <Button
+            variant="primary"
+            onClick={() => setAddingSchedule(true)}
+            disabled={busy || students.length === 0 || courses.length === 0}
+            title={
+              students.length === 0
+                ? '请先添加学员数据'
+                : courses.length === 0
+                  ? '请先在课程管理中添加课程'
+                  : '按课程为多个学员批量排课'
+            }
+          >
+            + {'新增排课'}
+          </Button>
+        )}
       </SubPageHeader>
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-4">
@@ -413,7 +422,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
                       <td className="py-2.5 px-2 text-slate-600">{s.teacher}</td>
                       <td className="py-2.5 px-2 text-slate-600">{s.location}</td>
                       <td className="py-2.5 px-2 text-right whitespace-nowrap">
-                        {canModify && (
+                        {canModify && canUpdate && (
                           <button
                             onClick={() => setEditingSchedule(s)}
                             disabled={busy}
@@ -422,7 +431,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
                             {'编辑'}
                           </button>
                         )}
-                        {s.status !== 'cancelled' && s.attended === false && (
+                        {s.status !== 'cancelled' && s.attended === false && canUpdate && (
                           <button
                             onClick={() => setReschedulingSchedule(s)}
                             disabled={busy}
@@ -431,7 +440,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
                             {'补课'}
                           </button>
                         )}
-                        {s.status !== 'cancelled' && s.attended !== true && s.attended !== false && !s.makeupFor && !s.rescheduledFrom && (
+                        {s.status !== 'cancelled' && s.attended !== true && s.attended !== false && !s.makeupFor && !s.rescheduledFrom && canUpdate && (
                           <button
                             onClick={() => setReschedulingSchedule(s)}
                             disabled={busy}
@@ -440,7 +449,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
                             {'调课'}
                           </button>
                         )}
-                        {canModify && (
+                        {canModify && canDelete && (
                           <button
                             onClick={() => handleDeleteSchedule(s)}
                             disabled={busy}

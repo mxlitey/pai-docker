@@ -4,20 +4,22 @@
 // 全部参数缺省时返回全量排课（按日期+时间升序）
 // 该接口为后台管理端使用，需登录鉴权
 import { searchSchedules, json } from '../_lib/store.js'
-import { requirePermission } from '../_lib/auth.js'
+import { requireAuth, requirePermission } from '../_lib/auth.js'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 export default async function onRequestGet(context) {
   const authFail = await requirePermission(context, 'schedules:view')
   if (authFail) return authFail
+  const admin = context.admin
   const { request } = context
   const url = new URL(request.url)
   const startDate = url.searchParams.get('startDate') || ''
   const endDate = url.searchParams.get('endDate') || ''
   const courseId = url.searchParams.get('courseId') || ''
   const grade = url.searchParams.get('grade') || ''
-  const teacher = url.searchParams.get('teacher') || ''
+  // 教师角色只能查看自己的排课
+  const teacher = admin.role === 'teacher' ? (admin.realName || admin.username) : (url.searchParams.get('teacher') || '')
   const classId = url.searchParams.get('classId') || ''
 
   // 日期格式校验：传了就必须合法，避免脏输入触发异常分支

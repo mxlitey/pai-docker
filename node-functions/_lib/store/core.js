@@ -4,7 +4,7 @@
 //   courses      表 -> 课程（含单价 unit_price、计费方式 billing_type、容量等）
 //   schedules    表 -> 排课（按 student_id + date 索引查询）
 //   enrollments  表 -> 报名记录（学员×课程，按课程独立计费；赠课后扣）
-//   transfers    表 -> 结转流水（按金额 / 按课时）
+//   transfers    表 -> 退课流水（剩余课时折算入账户余额）
 //   admins       表 -> 管理员账号（超管/管理员/教师，RBAC）
 //   audit_logs   表 -> 审计日志（所有写操作留痕）
 //   announcement 表 -> 公告（单行）
@@ -14,7 +14,7 @@
 // - 课时挂在「报名记录 enrollment」上，按课程独立核算（不再挂在学员身上）
 // - 一个学员可报名多个课程；同一课程可多次续费报名
 // - 点名扣减规则：赠课后扣 —— 到课先扣付费剩余，扣完再扣赠课；改缺勤先回退赠课
-// - 结转：把源 enrollment 剩余价值转移到目标 enrollment，支持按金额(default)/按课时
+// - 退课：把源 enrollment 剩余课时折算金额转入学员账户余额，并取消未来排课
 import Database from 'better-sqlite3'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'

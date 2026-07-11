@@ -110,12 +110,10 @@ const REPORT_TYPES: ReportTypeConfig[] = [
     columns: [
       { key: 'key', label: '分组' },
       { key: 'amount', label: '结转金额(¥)', format: v => '¥' + (Number(v) || 0).toFixed(2) },
-      { key: 'hours', label: '结转课时' },
       { key: 'count', label: '笔数' },
     ],
     summaryKeys: [
       { key: 'amount', label: '总金额', format: v => '¥' + (v || 0).toFixed(2) },
-      { key: 'hours', label: '总课时' },
       { key: 'count', label: '总笔数' },
     ],
   },

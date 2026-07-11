@@ -717,7 +717,7 @@ function EnrollmentEditModal({
       return
     }
 
-    // 注意：允许购课=0 且 赠课=0，用于创建结转目标报名记录
+    // 购课课时必须大于 0（后端校验）
 
     // 单价：必填，必须大于 0
     const upNum = Number(form.unitPrice)

@@ -154,7 +154,7 @@ const FIELD_LABELS: Record<string, Record<string, string>> = {
     name: '年级名', sortOrder: '排序', status: '状态', description: '描述',
   },
   transfers: {
-    studentId: '学员', fromEnrollmentId: '源报名', toEnrollmentId: '目标报名',
+    studentId: '学员', fromEnrollmentId: '源报名',
     refundAmount: '退课金额', giftMode: '赠课处理', note: '备注', reason: '原因',
   },
   accounts: {

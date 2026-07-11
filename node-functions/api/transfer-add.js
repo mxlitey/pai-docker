@@ -48,6 +48,7 @@ export default async function onRequestPost(context) {
       giftMode: transfer.giftMode || 'discard',
       note: transfer.note ? String(transfer.note).slice(0, 500) : '',
       reason: transfer.reason || '',
+      operatorId: context.admin?.id || '',
     }
     const result = await refundEnrollment({ transfer: finalTransfer })
     let studentName = finalTransfer.studentId
