@@ -92,46 +92,48 @@ export function CalendarToolbar({
     'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border bg-background text-muted-foreground hover:bg-muted transition-colors whitespace-nowrap'
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-2 px-1">
+    <div className="space-y-2 px-1">
       {/* 当前视图标题（年份/月份/周次） */}
       <div className="text-sm font-semibold text-foreground whitespace-nowrap">
         {info.title}
       </div>
 
-      {/* 导航按钮 + 视图切换：始终同一行（手机端也保持在一行，空间不足时换行到标题下方） */}
-      <div className="flex items-center gap-1.5 flex-wrap sm:ml-auto">
-        <button
-          onClick={() => onNavigate('prev')}
-          className={navBtnClass}
-          aria-label={view === 'month' ? '上个月' : view === 'week' ? '上一周' : '前一天'}
-        >
-          <ChevronLeft className="w-3.5 h-3.5" />
-          {info.prev}
-        </button>
+      {/* 导航按钮（左对齐） + 视图切换（右对齐），分立两侧 */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => onNavigate('prev')}
+            className={navBtnClass}
+            aria-label={view === 'month' ? '上个月' : view === 'week' ? '上一周' : '前一天'}
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            {info.prev}
+          </button>
 
-        {/* 回到本月/本周/今天：当前已在该周期时禁用 */}
-        <button
-          onClick={() => onNavigate('today')}
-          disabled={isCurrent}
-          className={cn(
-            'inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap',
-            isCurrent
-              ? 'bg-muted text-muted-foreground/50 cursor-not-allowed'
-              : 'bg-primary text-primary-foreground hover:bg-brand-600',
-          )}
-        >
-          <CalendarCheck className="w-3.5 h-3.5" />
-          {info.todayLabel}
-        </button>
+          {/* 回到本月/本周/今天：当前已在该周期时禁用 */}
+          <button
+            onClick={() => onNavigate('today')}
+            disabled={isCurrent}
+            className={cn(
+              'inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap',
+              isCurrent
+                ? 'bg-muted text-muted-foreground/50 cursor-not-allowed'
+                : 'bg-primary text-primary-foreground hover:bg-brand-600',
+            )}
+          >
+            <CalendarCheck className="w-3.5 h-3.5" />
+            {info.todayLabel}
+          </button>
 
-        <button
-          onClick={() => onNavigate('next')}
-          className={navBtnClass}
-          aria-label={view === 'month' ? '下个月' : view === 'week' ? '下一周' : '后一天'}
-        >
-          {info.next}
-          <ChevronRight className="w-3.5 h-3.5" />
-        </button>
+          <button
+            onClick={() => onNavigate('next')}
+            className={navBtnClass}
+            aria-label={view === 'month' ? '下个月' : view === 'week' ? '下一周' : '后一天'}
+          >
+            {info.next}
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
 
         {/* 视图切换：月/周/日 */}
         <div className="inline-flex rounded-lg border border-border bg-background p-0.5">
