@@ -11,6 +11,7 @@ import {
   toast,
 } from '@/components/ui'
 import { cn } from '@/utils/cn'
+import { currentMonthRangeLocal } from '@/utils/date'
 
 // 分组维度：比 ReportQuery.groupBy 更宽，enrollment-stats 支持 status
 type GroupBy = 'day' | 'month' | 'course' | 'teacher' | 'status'
@@ -153,18 +154,6 @@ function findConfig(type: ReportType): ReportTypeConfig {
   return REPORT_TYPES.find(r => r.type === type) ?? REPORT_TYPES[0]
 }
 
-// 取本月日期范围
-function currentMonthRange(): { startDate: string; endDate: string } {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = now.getMonth()
-  const start = new Date(y, m, 1)
-  const end = new Date(y, m + 1, 0)
-  const fmt = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  return { startDate: fmt(start), endDate: fmt(end) }
-}
-
 interface ReportsAdminProps {
   onBack: () => void
 }
@@ -173,7 +162,7 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
   // 概览为首个 Tab，其后为各明细报表
   const [activeTab, setActiveTab] = useState<'overview' | ReportType>('overview')
   const [groupBy, setGroupBy] = useState<GroupBy>(REPORT_TYPES[0].groupBy[0])
-  const initMonth = currentMonthRange()
+  const initMonth = currentMonthRangeLocal()
   const [startDate, setStartDate] = useState(initMonth.startDate)
   const [endDate, setEndDate] = useState(initMonth.endDate)
   const [rows, setRows] = useState<Record<string, unknown>[]>([])
