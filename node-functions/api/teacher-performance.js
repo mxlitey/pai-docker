@@ -1,7 +1,7 @@
 // 教师绩效 API
-// GET /api/teacher-performance?startDate=&endDate= -> 按日期范围聚合教师排课/到课/评分，属报表类，需 reports:view
+// GET /api/teacher-performance?startDate=&endDate= -> 按日期范围聚合教师排课/到课/评分，需 teachers:view
 import { getTeacherPerformance, json } from '../_lib/store.js'
-import { requirePermission } from '../_lib/auth.js'
+import { requireAuth, requirePermission } from '../_lib/auth.js'
 
 export default async function onRequest(context) {
   const { request } = context
@@ -9,8 +9,12 @@ export default async function onRequest(context) {
     return new Response(null, { status: 204 })
   }
 
-  const authFail = await requirePermission(context, 'reports:view')
+  const authFail = await requireAuth(context)
   if (authFail) return authFail
+  const admin = context.admin
+
+  const permFail = await requirePermission(context, 'teachers:view')
+  if (permFail) return permFail
 
   if (request.method !== 'GET') {
     return json({ code: 1, message: '仅支持 GET 请求', data: null }, 405)
@@ -21,7 +25,12 @@ export default async function onRequest(context) {
   const endDate = url.searchParams.get('endDate') || undefined
 
   try {
-    const rows = getTeacherPerformance({ startDate, endDate })
+    const params = { startDate, endDate }
+    // 教师角色仅查看自己的绩效
+    if (admin.role === 'teacher') {
+      params.teacher = admin.realName || admin.username
+    }
+    const rows = getTeacherPerformance(params)
     return json({ code: 0, data: rows })
   } catch (e) {
     console.error('[teacher-performance] 查询异常:', e?.message || String(e))

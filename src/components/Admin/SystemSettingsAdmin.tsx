@@ -67,11 +67,6 @@ export function SystemSettingsAdmin({
   // 自动备份最大保留份数
   const [backupMaxCount, setBackupMaxCount] = useState(500)
   const [originalBackupMaxCount, setOriginalBackupMaxCount] = useState(500)
-  // 显示时区
-  const [timezone, setTimezone] = useState('Asia/Shanghai')
-  const [originalTimezone, setOriginalTimezone] = useState('Asia/Shanghai')
-  const [timezoneError, setTimezoneError] = useState('')
-  const [savingTimezone, setSavingTimezone] = useState(false)
   const [loading, setLoading] = useState(true)
 
   // 备份列表
@@ -118,10 +113,6 @@ export function SystemSettingsAdmin({
         setOriginalBackupCron(cfg.backupCron || '0 3 * * *')
         setBackupMaxCount(cfg.backupMaxCount)
         setOriginalBackupMaxCount(cfg.backupMaxCount)
-        if (cfg.timezone) {
-          setTimezone(cfg.timezone)
-          setOriginalTimezone(cfg.timezone)
-        }
       } else if (fullR.status === 'rejected') {
         toast.error((fullR.reason as Error)?.message || '加载配置失败')
       }
@@ -217,44 +208,6 @@ export function SystemSettingsAdmin({
       setCronError((e as Error).message || 'cron 表达式格式错误')
     }
   }, [backupCron])
-
-  // 时区标识实时校验
-  useEffect(() => {
-    const tz = timezone.trim()
-    if (!tz) {
-      setTimezoneError('时区不能为空')
-      return
-    }
-    try {
-      Intl.DateTimeFormat('en-US', { timeZone: tz })
-      setTimezoneError('')
-    } catch {
-      setTimezoneError('无效的时区标识（如 Asia/Shanghai、America/New_York）')
-    }
-  }, [timezone])
-
-  // 保存显示时区
-  const handleSaveTimezone = async () => {
-    const tz = timezone.trim()
-    if (timezoneError) {
-      toast.error('时区标识格式错误，请修正后再保存')
-      return
-    }
-    setSavingTimezone(true)
-    try {
-      const result = await updateSystemConfig({ timezone: tz })
-      if (result.code === 0) {
-        setOriginalTimezone(tz)
-        toast.success('时区已更新')
-      } else {
-        toast.error(result.message || '保存失败')
-      }
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setSavingTimezone(false)
-    }
-  }
 
   // 单独保存自动备份策略（保留天数 + cron + 最大份数）
   const handleSaveKeepDays = async () => {
@@ -410,44 +363,6 @@ export function SystemSettingsAdmin({
                   {dirty && (
                     <span className="text-xs text-amber-600">未保存的修改</span>
                   )}
-                </div>
-              </div>
-            </section>
-
-            {/* 显示时区 */}
-            <section className="card p-5">
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2 mb-1">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
-                {'显示时区'}
-              </h2>
-              <p className="text-xs text-slate-500 mb-4 ml-3">
-                所有时间（创建时间、审计日志、备份时间等）均按此时区显示，与访问者浏览器时区无关。后端统一存储 UTC，此处仅影响前端展示。
-              </p>
-              <div className="ml-3">
-                <div className="flex items-end gap-3">
-                  <div className="flex-1">
-                    <input
-                      type="text"
-                      value={timezone}
-                      onChange={(e) => setTimezone(e.target.value)}
-                      placeholder="Asia/Shanghai"
-                      className={inputClass}
-                      spellCheck={false}
-                    />
-                    {timezoneError ? (
-                      <p className="text-xs text-red-500 mt-1.5">{timezoneError}</p>
-                    ) : (
-                      <p className="text-xs text-slate-400 mt-1.5">{'IANA 时区标识，如 Asia/Shanghai、America/New_York、Europe/London'}</p>
-                    )}
-                  </div>
-                  <Button
-                    variant="outline"
-                    loading={savingTimezone}
-                    disabled={timezone === originalTimezone || !!timezoneError}
-                    onClick={handleSaveTimezone}
-                  >
-                    {'保存'}
-                  </Button>
                 </div>
               </div>
             </section>

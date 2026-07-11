@@ -12,8 +12,8 @@ import {
 } from '@/components/ui'
 import { cn } from '@/utils/cn'
 
-// 分组维度：比 ReportQuery.groupBy 更宽，enrollment-stats 支持 channel/status
-type GroupBy = 'day' | 'month' | 'course' | 'teacher' | 'channel' | 'status'
+// 分组维度：比 ReportQuery.groupBy 更宽，enrollment-stats 支持 status
+type GroupBy = 'day' | 'month' | 'course' | 'teacher' | 'status'
 
 interface ColumnDef {
   key: string
@@ -41,7 +41,6 @@ const GROUP_BY_LABELS: Record<GroupBy, string> = {
   month: '按月',
   course: '按课程',
   teacher: '按老师',
-  channel: '按渠道',
   status: '按状态',
 }
 
@@ -123,7 +122,7 @@ const REPORT_TYPES: ReportTypeConfig[] = [
   {
     type: 'enrollment-stats',
     label: '报名统计',
-    groupBy: ['course', 'channel', 'status'],
+    groupBy: ['course', 'status'],
     columns: [
       { key: 'key', label: '分组' },
       { key: 'count', label: '报名数' },
@@ -177,7 +176,7 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
           type: activeType,
           startDate: startDate || undefined,
           endDate: endDate || undefined,
-          // 后端实际支持 channel/status，类型声明较窄，此处收窄断言
+          // 后端实际支持 status，类型声明较窄，此处收窄断言
           groupBy: groupBy as ReportQuery['groupBy'],
         })
         if (cancelled) return

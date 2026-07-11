@@ -19,8 +19,6 @@ function rowToEnrollment(r) {
     totalAmount: typeof r.total_amount === 'number' ? r.total_amount : Number(r.total_amount || 0),
     paidAmount: typeof r.paid_amount === 'number' ? r.paid_amount : Number(r.paid_amount || 0),
     discountAmount: typeof r.discount_amount === 'number' ? r.discount_amount : Number(r.discount_amount || 0),
-    channel: r.channel || '',
-    salesId: r.sales_id || '',
     paymentMethod: r.payment_method || '',
     paymentStatus: r.payment_status || 'paid',
     contractNo: r.contract_no || '',
@@ -87,6 +85,10 @@ export async function addEnrollment(enrollment) {
     const totalAmount = Number(enrollment.totalAmount ?? (purchased * unitPrice))
     let paidAmount = Number(enrollment.paidAmount ?? totalAmount)
 
+    if (purchased <= 0) {
+      return { created: false, invalid: '购课课时必须大于 0' }
+    }
+
     // 余额抵扣：从学员账户余额扣除 min(余额, paidAmount)，剩余为现金补差
     let balanceDeduct = 0
     let balanceAfter = 0
@@ -112,9 +114,9 @@ export async function addEnrollment(enrollment) {
 
     db.prepare(`INSERT INTO enrollments
       (id, student_id, course_id, status, purchased_hours, gift_hours, remaining_paid_hours, remaining_gift_hours,
-       unit_price, total_amount, paid_amount, discount_amount, channel, sales_id, payment_method, payment_status,
+       unit_price, total_amount, paid_amount, discount_amount, payment_method, payment_status,
        contract_no, expired_at, operator_id, enrolled_at, note)
-      VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       id,
       enrollment.studentId,
       enrollment.courseId,
@@ -126,8 +128,6 @@ export async function addEnrollment(enrollment) {
       totalAmount,
       paidAmount,
       Number(enrollment.discountAmount || 0),
-      enrollment.channel || '',
-      enrollment.salesId || '',
       enrollment.paymentMethod || '',
       enrollment.paymentStatus || 'paid',
       enrollment.contractNo || '',
@@ -169,13 +169,11 @@ export async function updateEnrollment(enrollment) {
     const status = enrollment.status || old.status
     db.prepare(`UPDATE enrollments SET
       purchased_hours=?, gift_hours=?, remaining_paid_hours=?, remaining_gift_hours=?,
-      unit_price=?, total_amount=?, paid_amount=?, discount_amount=?, channel=?, sales_id=?,
+      unit_price=?, total_amount=?, paid_amount=?, discount_amount=?,
       payment_method=?, payment_status=?, contract_no=?, expired_at=?, status=?, note=? WHERE id=?`).run(
       newPurchased, newGift, newRemainingPaid, newRemainingGift,
       unitPrice, totalAmount, paidAmount,
       Number(enrollment.discountAmount ?? old.discount_amount),
-      enrollment.channel ?? old.channel,
-      enrollment.salesId ?? old.sales_id,
       enrollment.paymentMethod ?? old.payment_method,
       enrollment.paymentStatus ?? old.payment_status,
       enrollment.contractNo ?? old.contract_no,
@@ -270,20 +268,4 @@ export function expireOverdueEnrollments() {
        AND expired_at < ?`,
   ).run(todayStr)
   return { affected: info.changes || 0 }
-}
-
-// 导出报名记录
-export function exportEnrollments() {
-  const db = getDb()
-  const rows = db.prepare(`
-    SELECT e.id, e.student_id, s.name AS student_name, e.course_id, c.name AS course_name,
-           e.status, e.purchased_hours, e.gift_hours, e.remaining_paid_hours,
-           e.remaining_gift_hours, e.unit_price, e.total_amount, e.paid_amount,
-           e.payment_status, e.expired_at, e.enrolled_at
-    FROM enrollments e
-    LEFT JOIN students s ON s.id=e.student_id
-    LEFT JOIN courses c ON c.id=e.course_id
-    ORDER BY e.enrolled_at DESC
-  `).all()
-  return rows
 }

@@ -174,7 +174,7 @@ export interface Transfer {
 }
 
 // 账户流水类型
-export type AccountTxType = 'recharge' | 'refund' | 'enroll_deduct' | 'withdraw'
+export type AccountTxType = 'refund' | 'enroll_deduct'
 
 // 账户流水
 export interface AccountTransaction {
@@ -326,7 +326,6 @@ export interface SystemConfigFull {
   backupKeepDays: number
   backupCron: BackupCron
   backupMaxCount: number
-  timezone: string
   moduleEnabled: Record<string, boolean>
 }
 
@@ -353,77 +352,5 @@ export interface TeacherPerformance {
   attended_count: number
   avg_rating: number | null
   feedback_count: number
-}
-
-// ========== 优惠券 ==========
-export interface Coupon {
-  id: string
-  code: string
-  name: string
-  type: 'discount' | 'amount' // discount=折扣（value=百分比），amount=满减（value=金额）
-  value: number
-  minAmount: number
-  validFrom: string
-  validTo: string
-  usageLimit: number
-  usedCount: number
-  status: 'active' | 'disabled'
-  remark: string
-  createdAt: string
-}
-
-// ========== 会员卡 ==========
-export interface Membership {
-  id: string
-  name: string
-  type: 'monthly' | 'termly' | 'yearly' | 'count'
-  durationDays: number
-  price: number
-  status: 'active' | 'disabled'
-  benefits: string
-  remark: string
-  createdAt: string
-}
-
-export interface StudentMembership {
-  id: string
-  studentId: string
-  studentName: string
-  membershipId: string
-  membershipName: string
-  membershipType: string
-  status: 'active' | 'expired'
-  startedAt: string
-  expiredAt: string
-  paidAmount: number
-  createdAt: string
-}
-
-// ========== CRM 线索 ==========
-export type LeadStage = 'new' | 'contacted' | 'trial' | 'intentioned' | 'signed' | 'lost'
-
-export interface Lead {
-  id: string
-  name: string
-  phone: string
-  grade: string
-  source: string
-  stage: LeadStage
-  intention: string
-  assignedTo: string
-  remark: string
-  converted: boolean
-  studentId: string
-  createdAt: string
-  updatedAt: string
-}
-
-export interface LeadFollowup {
-  id: string
-  leadId: string
-  content: string
-  stage: string
-  operatorId: string
-  createdAt: string
 }
 

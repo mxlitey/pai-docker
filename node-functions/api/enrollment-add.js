@@ -28,11 +28,17 @@ function validateEnrollment(e) {
   if (!Number.isFinite(gh) || gh < 0 || !Number.isInteger(gh)) {
     throw new Error('giftHours 需为非负整数')
   }
-  // 注意：允许 purchasedHours=0 && giftHours=0，用于结转目标报名记录
-  // 单价为非负数（允许 0，但建议 > 0）
+  if (ph <= 0) throw new Error('购课课时必须大于 0')
+  // 单价必须大于 0
   const up = Number(e.unitPrice || 0)
   if (!Number.isFinite(up) || up < 0) {
     throw new Error('unitPrice 需为非负数')
+  }
+  if (up <= 0) throw new Error('单价必须大于 0')
+  // 应付总价必须大于 0
+  const ta = Number(e.totalAmount || 0)
+  if (!Number.isFinite(ta) || ta <= 0) {
+    throw new Error('应付总价必须大于 0')
   }
 }
 
@@ -83,6 +89,9 @@ export default async function onRequestPost(context) {
     }
     if (result.notFound === 'course') {
       return json({ code: 1, message: '课程不存在，请先在课程管理中创建', data: null }, 404)
+    }
+    if (result.invalid) {
+      return json({ code: 1, message: result.invalid, data: null }, 400)
     }
     // 获取学员名与课程名用于审计
     let studentName = finalEnrollment.studentId

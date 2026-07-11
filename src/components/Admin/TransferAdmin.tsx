@@ -24,10 +24,8 @@ interface TransferAdminProps {
 }
 
 const TX_TYPE_LABEL: Record<string, string> = {
-  recharge: '充值',
   refund: '退课转入',
   enroll_deduct: '报名抵扣',
-  withdraw: '提现/退款',
 }
 
 export function TransferAdmin({
@@ -177,7 +175,7 @@ export function TransferAdmin({
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <SubPageHeader title={'结转管理'} onBack={onBack} />
+      <SubPageHeader title={'结转退课'} onBack={onBack} />
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
         {/* 学员搜索 + 余额展示 */}
@@ -335,7 +333,7 @@ export function TransferAdmin({
                     </thead>
                     <tbody>
                       {transactions.map((t) => {
-                        const isIn = t.type === 'recharge' || t.type === 'refund'
+                        const isIn = t.type === 'refund'
                         return (
                           <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                             <td className="py-2.5 px-2 text-slate-600 whitespace-nowrap text-xs">{fmtDateTime(t.createdAt)}</td>

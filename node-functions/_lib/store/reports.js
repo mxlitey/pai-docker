@@ -243,9 +243,6 @@ export async function getReportEnrollmentStats({ startDate, endDate, groupBy } =
     join = 'LEFT JOIN courses ON enrollments.course_id = courses.id'
     selectKey = "COALESCE(courses.name, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'
-  } else if (groupBy === 'channel') {
-    selectKey = "COALESCE(channel, '') AS key"
-    groupByClause = 'GROUP BY key ORDER BY key'
   } else if (groupBy === 'status') {
     selectKey = "COALESCE(status, '') AS key"
     groupByClause = 'GROUP BY key ORDER BY key'

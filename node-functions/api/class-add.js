@@ -1,5 +1,5 @@
 // 新增班级 API
-// POST /api/class-add  body: { class: { name, courseId?, teacher?, location?, color?, defaultStartTime?, defaultEndTime?, capacity?, status?, remark? } }
+// POST /api/class-add  body: { class: { name, courseId, grade, teacher?, location?, color?, defaultStartTime?, defaultEndTime?, capacity?, status?, remark? } }
 import { addClass, getCourseById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
@@ -16,6 +16,10 @@ function validateClass(c) {
   if (!c) throw new Error('班级数据不能为空')
   if (!c.name || typeof c.name !== 'string') throw new Error('缺少 name')
   if (c.name.trim().length > 64) throw new Error('name 需为 1-64 字符的字符串')
+  // 课程必填（班级必须关联课程）
+  if (!c.courseId || !String(c.courseId).trim()) {
+    throw new Error('缺少 courseId（课程为必填项）')
+  }
   // 年级必填
   if (!c.grade || !String(c.grade).trim()) {
     throw new Error('缺少 grade（年级为必填项）')

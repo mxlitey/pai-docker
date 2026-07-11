@@ -145,6 +145,7 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
                   <tr className="border-b border-slate-200 text-slate-500 text-xs">
                     <th className="text-left py-2 px-2 font-medium">{'班级名称'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'关联课程'}</th>
+                    <th className="text-left py-2 px-2 font-medium">{'年级'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'教师'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'成员数'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'容量'}</th>
@@ -155,7 +156,7 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-slate-400">
+                      <td colSpan={8} className="py-8 text-center text-slate-400">
                         {'无匹配的班级'}
                       </td>
                     </tr>
@@ -166,6 +167,7 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
                         <td className="py-2.5 px-2 text-slate-600">
                           {c.courseName || <span className="text-slate-300">—</span>}
                         </td>
+                        <td className="py-2.5 px-2 text-slate-600">{c.grade || '—'}</td>
                         <td className="py-2.5 px-2 text-slate-600">
                           {c.teacher || <span className="text-slate-300">—</span>}
                         </td>
@@ -323,6 +325,7 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
   const validate = (): boolean => {
     const e: Record<string, string> = {}
     if (!form.name.trim()) e.name = '班级名称不能为空'
+    if (!form.courseId) e.courseId = '请选择关联课程'
     if (!form.grade) e.grade = '请选择年级'
     if (form.defaultStartTime && !/^\d{2}:\d{2}$/.test(form.defaultStartTime)) {
       e.time = '默认开始时间需同时选择小时和分钟'
@@ -421,21 +424,7 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
           />
         </Field>
 
-        {/* 关联课程 */}
-        <Field label={'关联课程'} hint="选课程后可自动带入年级/教师/地点，可修改">
-          <select
-            className={inputClass}
-            value={form.courseId}
-            onChange={(e) => handleCourseChange(e.target.value)}
-          >
-            <option value="">{'+ 不关联课程'}</option>
-            {courses.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-        </Field>
-
-        {/* 年级 */}
+        {/* 年级：先选年级，课程下拉按年级过滤 */}
         <Field label={'年级'} required error={errors.grade}>
           <select
             className={inputClass}
@@ -450,6 +439,22 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
           {form.grade && !grades.some((g) => g.name === form.grade) && (
             <p className="text-xs text-amber-600 mt-1">当前年级「{form.grade}」不在年级列表中，可重新选择</p>
           )}
+        </Field>
+
+        {/* 关联课程：按所选年级过滤可选课程 */}
+        <Field label={'关联课程'} required error={errors.courseId} hint="选课程后可自动带入年级/教师/地点，可修改">
+          <select
+            className={inputClass}
+            value={form.courseId}
+            onChange={(e) => handleCourseChange(e.target.value)}
+          >
+            <option value="">请选择课程…</option>
+            {courses
+              .filter((c) => !form.grade || !c.grade || c.grade === form.grade)
+              .map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+          </select>
         </Field>
 
         {/* 教师 */}

@@ -21,7 +21,7 @@ export { createSuperAdmin }
 
 // ========== 角色 / 权限模型 ==========
 // 模块：students/courses/enrollments/transfers/schedules/attendance/announcement
-//       reports/admins/audit/settings/feedback/coupons/memberships/leads/dashboard/teachers
+//       reports/admins/audit/settings/feedback/dashboard/teachers
 // 操作：view/create/update/delete（settings 用 manage）
 // 权限串格式 "module:action"，superadmin 用 "*" 通配
 // 自定义权限：admins.permissions 字段存逗号分隔串，非空时覆盖角色默认权限
@@ -34,16 +34,13 @@ export const ROLE_PERMISSIONS = {
     'classes:view', 'classes:create', 'classes:update', 'classes:delete',
     'enrollments:view', 'enrollments:create', 'enrollments:update', 'enrollments:delete',
     'transfers:view', 'transfers:create',
-    'accounts:view', 'accounts:recharge', 'accounts:withdraw',
+    'accounts:view',
     'schedules:view', 'schedules:create', 'schedules:update', 'schedules:delete',
     'attendance:view', 'attendance:update',
     'announcement:view', 'announcement:update',
     'reports:view',
     'settings:manage',
     'feedback:view', 'feedback:create', 'feedback:update', 'feedback:delete',
-    'coupons:view', 'coupons:create', 'coupons:update', 'coupons:delete',
-    'memberships:view', 'memberships:create', 'memberships:update', 'memberships:delete',
-    'leads:view', 'leads:create', 'leads:update', 'leads:delete',
     'dashboard:view',
     'teachers:view',
   ],
@@ -88,14 +85,12 @@ export const PERMISSION_DEFINITIONS = [
     { key: 'enrollments:update', label: '编辑' },
     { key: 'enrollments:delete', label: '删除' },
   ]},
-  { module: 'transfers', label: '结转管理', actions: [
+  { module: 'transfers', label: '结转退课', actions: [
     { key: 'transfers:view', label: '查看' },
     { key: 'transfers:create', label: '新增' },
   ]},
   { module: 'accounts', label: '账户管理', actions: [
     { key: 'accounts:view', label: '查看' },
-    { key: 'accounts:recharge', label: '充值' },
-    { key: 'accounts:withdraw', label: '提现/退款' },
   ]},
   { module: 'schedules', label: '排课管理', actions: [
     { key: 'schedules:view', label: '查看' },
@@ -119,24 +114,6 @@ export const PERMISSION_DEFINITIONS = [
   { module: 'announcement', label: '公告管理', actions: [
     { key: 'announcement:view', label: '查看' },
     { key: 'announcement:update', label: '编辑' },
-  ]},
-  { module: 'coupons', label: '优惠券', actions: [
-    { key: 'coupons:view', label: '查看' },
-    { key: 'coupons:create', label: '新增' },
-    { key: 'coupons:update', label: '编辑' },
-    { key: 'coupons:delete', label: '删除' },
-  ]},
-  { module: 'memberships', label: '会员卡', actions: [
-    { key: 'memberships:view', label: '查看' },
-    { key: 'memberships:create', label: '新增' },
-    { key: 'memberships:update', label: '编辑' },
-    { key: 'memberships:delete', label: '删除' },
-  ]},
-  { module: 'leads', label: '线索管理', actions: [
-    { key: 'leads:view', label: '查看' },
-    { key: 'leads:create', label: '新增' },
-    { key: 'leads:update', label: '编辑' },
-    { key: 'leads:delete', label: '删除' },
   ]},
   { module: 'reports', label: '报表中心', actions: [
     { key: 'reports:view', label: '查看' },

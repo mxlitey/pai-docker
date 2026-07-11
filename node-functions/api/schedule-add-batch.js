@@ -1,10 +1,10 @@
 // 批量新增排课 API
 // POST /api/schedule-add-batch
-// body: { courseId, courseName, teacher, location, color, dates: string[], startTime, endTime, note, studentIds: [], classId? }
+// body: { courseId, courseName, teacher, location, color, dates: string[], startTime, endTime, note, studentIds: [], classId }
 // 为每个 (date, studentId) 组合生成一条排课记录，一次性写入
-// classId 可选：传则关联班级（以班级为单位排课），不传则按手选学员排课（兼容旧逻辑）
+// classId 必填：排课以班级为单位，studentIds 必须全部为该班级成员
 // dates 为多日期数组，支持一次性排多天的课
-import { batchAddSchedules, getStudents, getCourseById, getClassById, json } from '../_lib/store.js'
+import { batchAddSchedules, getStudents, getCourseById, getClassById, getClassMembers, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 import { genScheduleId } from '../_lib/id.js'
@@ -63,6 +63,10 @@ export default async function onRequestPost(context) {
   if (!Array.isArray(studentIds) || studentIds.length === 0) {
     return json({ code: 1, message: '请至少选择一名学员', data: null }, 400)
   }
+  // 班级必填：排课以班级为单位
+  if (!classId) {
+    return json({ code: 1, message: '缺少 classId（班级为必填项）', data: null }, 400)
+  }
   // 补课约束：只能为单学员、单日期生成补课排课
   if (makeupFor) {
     if (studentIds.length > 1) {
@@ -79,12 +83,20 @@ export default async function onRequestPost(context) {
     if (!course) {
       return json({ code: 1, message: `课程 id="${courseId}" 不存在`, data: null }, 404)
     }
-    // classId 可选：传则校验班级存在
-    if (classId) {
-      const cls = await getClassById(classId)
-      if (!cls) {
-        return json({ code: 1, message: `班级 id="${classId}" 不存在`, data: null }, 404)
-      }
+    // classId 必填：校验班级存在
+    const cls = await getClassById(classId)
+    if (!cls) {
+      return json({ code: 1, message: `班级 id="${classId}" 不存在`, data: null }, 404)
+    }
+    // 校验所有学员均为该班级成员
+    const members = await getClassMembers(classId)
+    const memberIdSet = new Set(members.map((m) => m.id))
+    const nonMembers = studentIds.filter((sid) => !memberIdSet.has(sid))
+    if (nonMembers.length > 0) {
+      return json(
+        { code: 1, message: `以下学员不属于班级「${cls.name}」: ${nonMembers.join(', ')}`, data: null },
+        400,
+      )
     }
     // 校验学员是否存在，并构建 id->name 映射
     const students = await getStudents()

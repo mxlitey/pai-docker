@@ -24,7 +24,7 @@ interface StudentAdminProps {
   onDelete: (student: Student) => void
   onAdd: (student: Student) => Promise<boolean>
   onUpdate: (student: Student) => Promise<boolean>
-  onGradesChange: () => void // 快捷添加年级后刷新年级列表
+  onGradesChange: () => Promise<void> | void // 快捷添加年级后刷新年级列表
 }
 
 const PAGE_SIZE = 10
@@ -45,14 +45,12 @@ export function StudentAdmin({ students, grades, summaries, busy, onBack, onDele
     }).catch(() => { /* 静默使用默认值 */ })
   }, [])
 
-  // 按姓名/年级/手机号搜索
+  // 按姓名搜索
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return students
     return students.filter((s) =>
-      (s.name || '').toLowerCase().includes(q) ||
-      (s.grade || '').toLowerCase().includes(q) ||
-      (s.phone || '').toLowerCase().includes(q),
+      (s.name || '').toLowerCase().includes(q),
     )
   }, [students, search])
 
@@ -95,7 +93,7 @@ export function StudentAdmin({ students, grades, summaries, busy, onBack, onDele
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder={'搜索姓名 / 年级 / 手机号'}
+                placeholder={'搜索学员姓名'}
                 className={cn(inputClass, 'max-w-xs')}
               />
               <span className="text-xs text-slate-400 whitespace-nowrap">
@@ -108,7 +106,6 @@ export function StudentAdmin({ students, grades, summaries, busy, onBack, onDele
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500 text-xs">
                     <th className="text-left py-2 px-2 font-medium">{'姓名'}</th>
-                    <th className="text-left py-2 px-2 font-medium">ID</th>
                     <th className="text-left py-2 px-2 font-medium">{'年级'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'报名课程'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'剩余课时'}</th>
@@ -122,7 +119,6 @@ export function StudentAdmin({ students, grades, summaries, busy, onBack, onDele
                       className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                     >
                       <td className="py-2.5 px-2 font-medium text-slate-700">{s.name}</td>
-                      <td className="py-2.5 px-2 text-slate-500 font-mono text-xs">{s.id}</td>
                       <td className="py-2.5 px-2 text-slate-600">
                         {s.grade || <span className="text-slate-300">—</span>}
                       </td>
@@ -245,7 +241,7 @@ export function StudentAdmin({ students, grades, summaries, busy, onBack, onDele
 interface StudentEditModalProps {
   student?: Student // 有值 = 编辑模式；无值 = 新增模式
   grades: Grade[]
-  onGradesChange: () => void
+  onGradesChange: () => Promise<void> | void
   onClose: () => void
   onSubmit: (student: Student) => Promise<boolean>
 }
@@ -323,7 +319,8 @@ function StudentEditModal({ student, grades, onGradesChange, onClose, onSubmit }
       const result = await addGrade({ name, sortOrder: 0, status: 'active' as GradeStatus, description: '' })
       if (result.code === 0) {
         toast.success(`年级「${name}」已添加`)
-        onGradesChange()
+        // 等待父级刷新年级列表完成后再选中，避免年级管理中看不到新数据
+        await onGradesChange()
         update({ grade: name })
         setQuickName('')
         setQuickAdding(false)

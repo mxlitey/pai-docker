@@ -1,15 +1,13 @@
-import { getDb, validateStorageId } from './core.js'
+import { getDb } from './core.js'
 import { genAccountTxId } from '../id.js'
 import { now } from '../time.js'
 
 // ========== 学员账户（balance + 流水） ==========
 // balance 挂在 students 表；account_transactions 记录所有余额变动流水。
 // type 取值：
-//   recharge      充值（增加余额）
 //   refund        退课转入（增加余额）
 //   enroll_deduct 报名抵扣（减少余额）
-//   withdraw      提现/退款出账（减少余额）
-// amount 一律为正数，方向由 type 决定（recharge/refund 为入账，enroll_deduct/withdraw 为出账）。
+// amount 一律为正数，方向由 type 决定（refund 为入账，enroll_deduct 为出账）。
 
 function rowToTx(r) {
   if (!r) return null
@@ -27,7 +25,7 @@ function rowToTx(r) {
   }
 }
 
-// 底层：在同一事务内调整学员余额并写流水（供退课/报名抵扣/充值/提现复用）
+// 底层：在同一事务内调整学员余额并写流水（供退课/报名抵扣复用）
 // direction: 'in'（入账，增加余额） / 'out'（出账，减少余额）
 // 必须在调用方的事务中执行；调用方需保证 db 事务包裹。
 export function adjustBalanceTx(db, { studentId, type, amount, direction, refType = '', refId = '', operatorId = '', note = '' }) {
@@ -52,28 +50,6 @@ export function adjustBalanceTx(db, { studentId, type, amount, direction, refTyp
     id, studentId, type, amt, rounded, refType, refId, operatorId, note, now(),
   )
   return { id, balanceAfter: rounded }
-}
-
-// 充值（独立事务）
-export async function rechargeAccount({ studentId, amount, operatorId = '', note = '' }) {
-  validateStorageId(studentId, 'studentId')
-  const db = getDb()
-  const tx = db.transaction(() => adjustBalanceTx(db, {
-    studentId, type: 'recharge', amount, direction: 'in', refType: 'recharge', operatorId, note,
-  }))
-  const r = tx()
-  return { ...r, type: 'recharge', amount: Number(amount) }
-}
-
-// 提现/退款出账（独立事务）
-export async function withdrawAccount({ studentId, amount, operatorId = '', note = '' }) {
-  validateStorageId(studentId, 'studentId')
-  const db = getDb()
-  const tx = db.transaction(() => adjustBalanceTx(db, {
-    studentId, type: 'withdraw', amount, direction: 'out', refType: 'withdraw', operatorId, note,
-  }))
-  const r = tx()
-  return { ...r, type: 'withdraw', amount: Number(amount) }
 }
 
 // 查询学员账户流水（按时间倒序）

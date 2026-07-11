@@ -475,7 +475,6 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
       {addingSchedule && (
         <ScheduleAddModal
           courses={courses}
-          students={students}
           classes={classes}
           onClose={() => setAddingSchedule(false)}
           onUpdated={handleEditorUpdated}

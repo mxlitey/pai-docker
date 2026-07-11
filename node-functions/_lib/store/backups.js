@@ -4,7 +4,7 @@ import {
   readdirSync, statSync, unlinkSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { now } from '../time.js'
+import { now, formatInShanghai } from '../time.js'
 
 // ========== 数据备份与恢复 ==========
 
@@ -17,7 +17,7 @@ function ensureBackupDir() {
 
 // 创建一份备份（VACUUM INTO 生成独立可用的 db 副本）
 // 返回 { ok, filename, path, size, createdAt }
-// 文件名与 createdAt 均使用本地时间（受 TZ 环境变量控制），
+// 文件名与 createdAt 均使用项目时区（Asia/Shanghai），
 // 便于与"凌晨 3 点备份"等本地时间计划对齐
 export function createBackup() {
   ensureBackupDir()
@@ -39,8 +39,8 @@ export function listBackups() {
   const list = files.map((f) => {
     const p = join(BACKUP_DIR, f)
     const st = statSync(p)
-    // 文件 mtime 用本地时间字符串返回，与备份计划时区一致
-    return { filename: f, path: p, size: st.size, createdAt: st.mtime.toISOString().slice(0,19).replace('T',' ') }
+    // 文件 mtime 用项目时区（Asia/Shanghai）字符串返回，与备份计划时区一致
+    return { filename: f, path: p, size: st.size, createdAt: formatInShanghai(st.mtime) }
   }).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   return list
 }

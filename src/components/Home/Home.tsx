@@ -99,13 +99,6 @@ export function Home({ appName, onEnterAdmin }: HomeProps) {
       ),
     },
     {
-      title: '营销 CRM',
-      desc: '线索跟进、优惠券、会员卡，助力招生转化',
-      icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-      ),
-    },
-    {
       title: '数据报表',
       desc: '营收、课时、出勤、教师绩效多维统计',
       icon: (
@@ -145,7 +138,7 @@ export function Home({ appName, onEnterAdmin }: HomeProps) {
               {appName}
             </h1>
             <p className="text-slate-500 leading-relaxed mb-6">
-              面向培训机构的排课与教务管理系统。覆盖排课点名、报名课时、结转、营销 CRM 与数据报表，
+              面向培训机构的排课与教务管理系统。覆盖排课点名、报名课时、结转与数据报表，
               支持细粒度权限分配与家长端专属查询。
             </p>
             <div className="grid grid-cols-2 gap-3">

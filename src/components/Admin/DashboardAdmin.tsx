@@ -1,7 +1,7 @@
-// BI 数据看板 —— 复用报表后端，汇总营收 / 课时消耗 / 报名数 / 转化率 + 营收趋势明细
+// BI 数据看板 —— 复用报表后端，汇总营收 / 课时消耗 / 报名数
 import { useEffect, useState } from 'react'
 import type { ReportQuery } from '@/types'
-import { getReport, getLeads } from '@/api/admin'
+import { getReport } from '@/api/admin'
 import {
   Button,
   EmptyState,
@@ -19,14 +19,6 @@ interface SummaryData {
   revenue: number
   hoursConsumed: number
   enrollmentCount: number
-  leadsCount: number
-  conversionRate: number | null // 报名数 / 线索数（无线索时为 null）
-}
-
-interface TrendRow {
-  key: string
-  revenue: number
-  count: number
 }
 
 // 取本月日期范围：startDate=月初，endDate=月末
@@ -45,18 +37,12 @@ function formatYuan(v: number): string {
   return '¥' + (Number.isFinite(v) ? v.toFixed(2) : '0.00')
 }
 
-function formatPercent(rate: number | null): string {
-  if (rate === null) return '—'
-  return (rate * 100).toFixed(1) + '%'
-}
-
 export function DashboardAdmin({ onBack }: DashboardAdminProps) {
   const init = currentMonthRange()
   const [startDate, setStartDate] = useState(init.startDate)
   const [endDate, setEndDate] = useState(init.endDate)
 
   const [summary, setSummary] = useState<SummaryData | null>(null)
-  const [trend, setTrend] = useState<TrendRow[]>([])
   const [loading, setLoading] = useState(true)
   // 查询触发器：点「查询」自增；改日期不自动查
   const [queryTick, setQueryTick] = useState(0)
@@ -65,39 +51,25 @@ export function DashboardAdmin({ onBack }: DashboardAdminProps) {
     setLoading(true)
     try {
       const baseQuery = { startDate, endDate }
-      // 并发拉取：营收 / 课时消耗 / 报名数 / 营收按月趋势 / 线索数
-      const [revRes, hoursRes, enrollRes, trendRes, leads] = await Promise.all([
+      // 并发拉取：营收 / 课时消耗 / 报名数
+      const [revRes, hoursRes, enrollRes] = await Promise.all([
         getReport({ type: 'revenue', ...baseQuery } as ReportQuery),
         getReport({ type: 'hours-consumption', ...baseQuery } as ReportQuery),
         getReport({ type: 'enrollment-stats', ...baseQuery } as ReportQuery),
-        getReport({ type: 'revenue', ...baseQuery, groupBy: 'month' } as ReportQuery),
-        getLeads(),
       ])
 
       if (revRes.code !== 0) throw new Error(revRes.message || '营收查询失败')
       if (hoursRes.code !== 0) throw new Error(hoursRes.message || '课时消耗查询失败')
       if (enrollRes.code !== 0) throw new Error(enrollRes.message || '报名统计查询失败')
-      if (trendRes.code !== 0) throw new Error(trendRes.message || '趋势查询失败')
 
       const revenue = Number(revRes.data.summary?.revenue ?? 0)
       const hoursConsumed = Number(hoursRes.data.summary?.consumed ?? 0)
       const enrollmentCount = Number(enrollRes.data.summary?.count ?? 0)
-      const leadsCount = Array.isArray(leads) ? leads.length : 0
-      const conversionRate =
-        leadsCount > 0 ? enrollmentCount / leadsCount : null
 
-      setSummary({ revenue, hoursConsumed, enrollmentCount, leadsCount, conversionRate })
-
-      const trendRows: TrendRow[] = (trendRes.data.rows || []).map((r) => ({
-        key: String(r.key ?? ''),
-        revenue: Number(r.revenue ?? 0),
-        count: Number(r.count ?? 0),
-      }))
-      setTrend(trendRows)
+      setSummary({ revenue, hoursConsumed, enrollmentCount })
     } catch (e) {
       toast.error((e as Error).message || '加载看板失败')
       setSummary(null)
-      setTrend([])
     } finally {
       setLoading(false)
     }
@@ -147,7 +119,7 @@ export function DashboardAdmin({ onBack }: DashboardAdminProps) {
         {loading ? (
           <LoadingBlock />
         ) : summary ? (
-          <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="card p-5">
               <div className="text-xs text-slate-500">{'总营收'}</div>
               <div className="text-2xl font-semibold text-slate-800 mt-1">
@@ -166,57 +138,9 @@ export function DashboardAdmin({ onBack }: DashboardAdminProps) {
                 {summary.enrollmentCount}
               </div>
             </div>
-            <div className="card p-5">
-              <div className="text-xs text-slate-500">{'转化率'}</div>
-              <div className="text-2xl font-semibold text-slate-800 mt-1">
-                {formatPercent(summary.conversionRate)}
-              </div>
-              <div className="text-xs text-slate-400 mt-1">
-                报名 {summary.enrollmentCount} / 线索 {summary.leadsCount}
-              </div>
-            </div>
           </section>
         ) : (
           <EmptyState title={'暂无数据'} description="尝试调整日期范围后重新查询" />
-        )}
-
-        {/* 营收趋势明细（按月） */}
-        {loading ? (
-          <LoadingBlock label="加载趋势…" />
-        ) : trend.length > 0 ? (
-          <section className="card overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-100">
-              <h3 className="text-sm font-semibold text-slate-700">{'营收趋势'}（按月）</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 text-xs">
-                    <th className="text-left font-medium px-4 py-2.5 whitespace-nowrap">月份</th>
-                    <th className="text-left font-medium px-4 py-2.5 whitespace-nowrap">营收(¥)</th>
-                    <th className="text-left font-medium px-4 py-2.5 whitespace-nowrap">笔数</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trend.map((r) => (
-                    <tr key={r.key} className="border-t border-slate-100">
-                      <td className="px-4 py-2.5 text-slate-700 whitespace-nowrap">
-                        {r.key || '—'}
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-700 whitespace-nowrap">
-                        {formatYuan(r.revenue)}
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-700 whitespace-nowrap">{r.count}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        ) : (
-          !loading && (
-            <EmptyState title="暂无趋势数据" description="所选日期范围内无营收记录" />
-          )
         )}
       </main>
     </div>

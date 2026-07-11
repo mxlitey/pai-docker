@@ -10,6 +10,8 @@
 //   backupMaxCount  - 自动备份最大保留份数（默认 500，防止高频备份撑爆磁盘）
 //   moduleEnabled   - 模块启用开关（id -> boolean，留作模块化扩展）
 //
+// 注：项目时区统一为 Asia/Shanghai（硬编码于 _lib/time.js），不再作为可配置项
+//
 // 文件位置：DATA_DIR/config.json（与 SQLite 同目录，跟随数据卷持久化）
 // 读取策略：启动时一次性加载到内存，读操作零 IO；写操作同步回写文件
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
@@ -46,19 +48,6 @@ const DEFAULT_BACKUP_KEEP_DAYS = 30
 const DEFAULT_BACKUP_CRON = '0 3 * * *'
 // 默认自动备份最大保留份数：高频备份时防止磁盘撑爆
 const DEFAULT_BACKUP_MAX_COUNT = 500
-// 默认显示时区（IANA 时区标识，用于前端按此时区显示时间）
-const DEFAULT_TIMEZONE = 'Asia/Shanghai'
-
-// 校验时区标识合法性
-function normalizeTimezone(val) {
-  if (typeof val !== 'string' || !val.trim()) return DEFAULT_TIMEZONE
-  try {
-    Intl.DateTimeFormat('en-US', { timeZone: val.trim() })
-    return val.trim()
-  } catch {
-    return DEFAULT_TIMEZONE
-  }
-}
 
 // 校验备份 cron 表达式合法性，非法值回退为默认
 function normalizeBackupCron(val) {
@@ -80,7 +69,6 @@ function createDefaultConfig() {
     backupKeepDays: DEFAULT_BACKUP_KEEP_DAYS,
     backupCron: DEFAULT_BACKUP_CRON,
     backupMaxCount: DEFAULT_BACKUP_MAX_COUNT,
-    timezone: DEFAULT_TIMEZONE,
     moduleEnabled: {},
   }
 }
@@ -110,7 +98,6 @@ export function loadConfig() {
         backupMaxCount: Number.isFinite(parsed.backupMaxCount)
           ? Math.max(1, Math.floor(parsed.backupMaxCount))
           : DEFAULT_BACKUP_MAX_COUNT,
-        timezone: normalizeTimezone(parsed.timezone),
         moduleEnabled: parsed.moduleEnabled && typeof parsed.moduleEnabled === 'object'
           ? parsed.moduleEnabled
           : {},
@@ -182,7 +169,6 @@ export function getAllConfig() {
     backupKeepDays: cfg.backupKeepDays,
     backupCron: cfg.backupCron,
     backupMaxCount: cfg.backupMaxCount,
-    timezone: cfg.timezone,
     moduleEnabled: { ...cfg.moduleEnabled },
   }
 }
@@ -244,20 +230,6 @@ export function setBackupMaxCount(val) {
   cfg.backupMaxCount = Number.isFinite(n) ? Math.max(1, Math.floor(n)) : DEFAULT_BACKUP_MAX_COUNT
   persist()
   return cfg.backupMaxCount
-}
-
-// 读取显示时区
-export function getTimezone() {
-  const cfg = loadConfig()
-  return cfg.timezone
-}
-
-// 修改显示时区（非法值回退默认）
-export function setTimezone(val) {
-  const cfg = loadConfig()
-  cfg.timezone = normalizeTimezone(val)
-  persist()
-  return cfg.timezone
 }
 
 // 读取模块开关

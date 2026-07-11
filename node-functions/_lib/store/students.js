@@ -109,31 +109,12 @@ export async function deleteStudentWithSchedules(studentId) {
     db.prepare('DELETE FROM enrollments WHERE student_id=?').run(studentId)
     db.prepare('DELETE FROM transfers WHERE student_id=?').run(studentId)
     db.prepare('DELETE FROM account_transactions WHERE student_id=?').run(studentId)
-    // 补齐级联：避免删除学员后产生孤儿反馈/班级成员/优惠券核销/会员卡/线索数据
+    // 补齐级联：避免删除学员后产生孤儿反馈/班级成员/调课记录数据
     db.prepare('DELETE FROM feedback WHERE student_id=?').run(studentId)
     db.prepare('DELETE FROM class_members WHERE student_id=?').run(studentId)
-    db.prepare('DELETE FROM coupon_redemptions WHERE student_id=?').run(studentId)
-    db.prepare('DELETE FROM student_memberships WHERE student_id=?').run(studentId)
-    db.prepare('DELETE FROM lead_followups WHERE lead_id IN (SELECT id FROM leads WHERE student_id=?)').run(studentId)
-    db.prepare('DELETE FROM leads WHERE student_id=?').run(studentId)
+    db.prepare('DELETE FROM schedule_changes WHERE student_id=?').run(studentId)
     const stu = db.prepare('DELETE FROM students WHERE id=?').run(studentId)
     return { deletedScheduleFiles: del.changes > 0 ? 1 : 0, studentRemoved: stu.changes > 0, before }
   })
   return tx()
-}
-
-// ========== 通用数据导出（CSV 用） ==========
-// 导出学员列表（含报名汇总）
-export function exportStudentsWithSummary() {
-  const db = getDb()
-  const rows = db.prepare(`
-    SELECT s.id, s.name, s.grade, s.phone, s.parent_name, s.gender,
-           s.birthday, s.status, s.tags, s.source, s.created_at,
-           (SELECT COUNT(*) FROM enrollments e WHERE e.student_id=s.id) AS enrollment_count,
-           (SELECT COALESCE(SUM(e.remaining_paid_hours + e.remaining_gift_hours),0)
-              FROM enrollments e WHERE e.student_id=s.id AND e.status='active') AS remaining_hours
-    FROM students s
-    ORDER BY s.created_at DESC
-  `).all()
-  return rows
 }

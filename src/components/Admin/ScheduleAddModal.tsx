@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import type { Course, Student, ClassInfo } from '@/types'
+import type { Course, ClassInfo, ClassMember } from '@/types'
 import { batchAddSchedules, getClassMembers } from '@/api/admin'
 import { cn } from '@/utils/cn'
 import { getCourseDotClass } from '@/utils/courseColors'
@@ -8,27 +8,17 @@ import { Modal, ModalFooter, Button, inputClass } from '@/components/ui'
 
 interface ScheduleAddModalProps {
   courses: Course[]
-  students: Student[]
   classes: ClassInfo[]
   onClose: () => void
   onUpdated: () => void
 }
 
-// 从学员列表提取所有年级（去重 + 排序，空年级不展示）
-function collectGrades(students: Student[]): string[] {
-  const set = new Set<string>()
-  for (const s of students) {
-    const g = (s.grade || '').trim()
-    if (g) set.add(g)
-  }
-  return Array.from(set).sort()
-}
-
-export function ScheduleAddModal({ courses, students, classes, onClose, onUpdated }: ScheduleAddModalProps) {
+export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: ScheduleAddModalProps) {
   const [courseId, setCourseId] = useState('')
-  // 班级：空字符串表示"手动选择学员"
+  // 班级：必填，选班级后自动带出成员名单
   const [classId, setClassId] = useState('')
   const [loadingMembers, setLoadingMembers] = useState(false)
+  const [classMembers, setClassMembers] = useState<ClassMember[]>([])
   // 多日期：用户输入日期后点"添加"加入列表
   const [dateInput, setDateInput] = useState(() => todayLocal())
   const [dates, setDates] = useState<string[]>([])
@@ -37,10 +27,6 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
   const [teacher, setTeacher] = useState('')
   const [location, setLocation] = useState('')
   const [note, setNote] = useState('')
-  // 年级过滤：空字符串表示"全部"
-  const [grade, setGrade] = useState('')
-  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set())
-  const [search, setSearch] = useState('')
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -58,25 +44,21 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
     [classes, classId],
   )
 
-  // 所有年级列表
-  const grades = useMemo(() => collectGrades(students), [students])
-
   // 当前课程下的班级列表（未选课程时展示全部）
   const classOptions = useMemo(() => {
     if (!courseId) return classes
     return classes.filter((c) => !c.courseId || c.courseId === courseId)
   }, [classes, courseId])
 
-  // 选课程时清空已选学员与班级（避免误操作）
+  // 选课程时：若当前班级不属于该课程，清空班级及成员
   useEffect(() => {
-    // 若当前班级不属于该课程，清空班级
     if (classId) {
       const cls = classes.find((c) => c.id === classId)
       if (cls && cls.courseId && cls.courseId !== courseId) {
         setClassId('')
+        setClassMembers([])
       }
     }
-    setSelectedStudentIds(new Set())
     setError('')
     setSuccess('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -88,8 +70,7 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
     setError('')
     setSuccess('')
     if (!nextClassId) {
-      // 切回"手动选择"：清空已选学员
-      setSelectedStudentIds(new Set())
+      setClassMembers([])
       return
     }
     const cls = classes.find((c) => c.id === nextClassId)
@@ -98,71 +79,30 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
     if (cls.courseId && cls.courseId !== courseId) {
       setCourseId(cls.courseId)
     }
-    // 带入班级默认值（覆盖课程默认值，班级更具体）
+    // 带入班级默认值
     if (cls.teacher) setTeacher(cls.teacher)
     if (cls.location) setLocation(cls.location)
     if (cls.defaultStartTime) setStartTime(cls.defaultStartTime)
     if (cls.defaultEndTime) setEndTime(cls.defaultEndTime)
-    // 加载班级成员并自动勾选
+    // 加载班级成员
     setLoadingMembers(true)
     try {
       const result = await getClassMembers(nextClassId)
       if (result.code === 0) {
-        const ids = new Set(result.data.members.map((m) => m.id))
-        setSelectedStudentIds(ids)
-        if (ids.size === 0) {
+        setClassMembers(result.data.members)
+        if (result.data.members.length === 0) {
           setError('该班级暂无成员，请先在「班级管理」中添加成员')
         }
       } else {
         setError(result.message || '加载班级成员失败')
-        setSelectedStudentIds(new Set())
+        setClassMembers([])
       }
     } catch (e) {
       setError('加载班级成员失败：' + (e as Error).message)
-      setSelectedStudentIds(new Set())
+      setClassMembers([])
     } finally {
       setLoadingMembers(false)
     }
-  }
-
-  // 按年级 + 搜索词过滤学员
-  const filteredStudents = useMemo(() => {
-    let list = students
-    if (grade) {
-      list = list.filter((s) => (s.grade || '').trim() === grade)
-    }
-    const q = search.trim().toLowerCase()
-    if (!q) return list
-    return list.filter((s) =>
-      s.name.toLowerCase().includes(q) ||
-      s.id.toLowerCase().includes(q),
-    )
-  }, [students, grade, search])
-
-  // 全选/取消全选（仅对当前过滤结果）
-  const allFilteredSelected =
-    filteredStudents.length > 0 && filteredStudents.every((s) => selectedStudentIds.has(s.id))
-  const toggleSelectAll = () => {
-    setSelectedStudentIds((prev) => {
-      const next = new Set(prev)
-      if (allFilteredSelected) {
-        filteredStudents.forEach((s) => next.delete(s.id))
-      } else {
-        filteredStudents.forEach((s) => next.add(s.id))
-      }
-      return next
-    })
-  }
-
-  const toggleStudent = (id: string) => {
-    setSelectedStudentIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-    setError('')
-    setSuccess('')
   }
 
   // 添加日期
@@ -189,6 +129,10 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
     setError('')
     setSuccess('')
 
+    if (!classId || !selectedClass) {
+      setError('请选择班级')
+      return
+    }
     if (!courseId || !selectedCourse) {
       setError('请选择课程')
       return
@@ -197,8 +141,8 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
       setError('请至少添加一个日期')
       return
     }
-    if (selectedStudentIds.size === 0) {
-      setError('请至少选择一名学员')
+    if (classMembers.length === 0) {
+      setError('该班级暂无成员，无法排课')
       return
     }
 
@@ -214,13 +158,13 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
         startTime,
         endTime,
         note,
-        studentIds: Array.from(selectedStudentIds),
-        classId: classId || undefined,
+        studentIds: classMembers.map((m) => m.id),
+        classId,
       })
       if (result.code === 0) {
         const msg = `已新增 ${result.data.created} 条排课` + (result.data.skipped > 0 ? `，跳过 ${result.data.skipped} 条重复` : '')
         setSuccess(msg)
-        // 连续新增：清空日期，保留课程/班级/学员选择方便下一次操作
+        // 连续新增：清空日期，保留课程/班级选择方便下一次操作
         setDates([])
         // 通知父组件刷新数据
         onUpdated()
@@ -235,10 +179,10 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
   }
 
   // 确认按钮文案：含已选数量统计
-  const plannedCount = dates.length * selectedStudentIds.size
+  const plannedCount = dates.length * classMembers.length
   const confirmText =
     plannedCount > 0
-      ? `新增排课（${dates.length} 日 × ${selectedStudentIds.size} 人 = ${plannedCount} 条）`
+      ? `新增排课（${dates.length} 日 × ${classMembers.length} 人 = ${plannedCount} 条）`
       : '新增排课'
 
   return (
@@ -259,8 +203,7 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
       <div className="space-y-4">
         {/* 必填说明 */}
         <div className="text-xs text-slate-400">
-          <span className="text-rose-500">*</span> 为必填项，选择课程后将为每位选中学员在所选每个日期生成一条排课
-          {classes.length > 0 && '；选择班级可自动带出成员名单与默认时间'}
+          <span className="text-rose-500">*</span> 为必填项，选择班级后自动带出成员名单，为每位成员在所选每个日期生成一条排课
         </div>
 
         {/* 课程选择 */}
@@ -296,18 +239,24 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
           </div>
         </div>
 
-        {/* 班级选择（选填，选班级自动带出成员名单） */}
-        {classes.length > 0 && (
-          <div className="flex items-start gap-4">
-            <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'班级'}</span>
-            <div className="flex-1">
+        {/* 班级选择（必填，选班级自动带出成员名单） */}
+        <div className="flex items-start gap-4">
+          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
+            <span className="text-rose-500 mr-0.5">*</span>{'班级'}
+          </span>
+          <div className="flex-1">
+            {classes.length === 0 ? (
+              <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                暂无班级，请先在「班级管理」中新增班级并添加成员
+              </div>
+            ) : (
               <select
                 value={classId}
                 onChange={(e) => handleClassChange(e.target.value)}
                 disabled={loadingMembers}
                 className={cn(inputClass, 'bg-white', loadingMembers && 'opacity-60')}
               >
-                <option value="">手动选择学员</option>
+                <option value="">请选择班级…</option>
                 {classOptions.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -315,17 +264,17 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
                   </option>
                 ))}
               </select>
-              {loadingMembers && (
-                <div className="mt-1 text-xs text-slate-400">正在加载班级成员…</div>
-              )}
-              {selectedClass && !loadingMembers && (
-                <div className="mt-1 text-xs text-slate-500">
-                  已按班级带出成员，仍可在下方手动增删
-                </div>
-              )}
-            </div>
+            )}
+            {loadingMembers && (
+              <div className="mt-1 text-xs text-slate-400">正在加载班级成员…</div>
+            )}
+            {selectedClass && !loadingMembers && (
+              <div className="mt-1 text-xs text-slate-500">
+                班级成员已自动带出，排课仅包含以下学员
+              </div>
+            )}
           </div>
-        )}
+        </div>
 
         {/* 日期（多选） */}
         <div className="flex items-start gap-4">
@@ -413,81 +362,46 @@ export function ScheduleAddModal({ courses, students, classes, onClose, onUpdate
           />
         </div>
 
-        {/* 学员多选（先选年级） */}
+        {/* 班级成员（只读展示） */}
         <div className="flex items-start gap-4">
           <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
             <span className="text-rose-500 mr-0.5">*</span>{'学员'}
           </span>
           <div className="flex-1 border border-slate-200 rounded-md overflow-hidden">
-            {/* 年级选择 + 搜索栏 + 全选 */}
-            <div className="flex flex-wrap items-center gap-2 px-2 py-1.5 border-b border-slate-100 bg-slate-50">
-              <select
-                value={grade}
-                onChange={(e) => setGrade(e.target.value)}
-                className="px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-brand-400 bg-white"
-              >
-                <option value="">全部年级</option>
-                {grades.map((g) => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
-              </select>
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="搜索姓名 / ID"
-                className="flex-1 min-w-[120px] px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-brand-400"
-              />
-              <button
-                type="button"
-                onClick={toggleSelectAll}
-                disabled={filteredStudents.length === 0}
-                className="text-xs text-brand-600 hover:text-brand-700 font-medium px-2 py-1 disabled:opacity-40 whitespace-nowrap"
-              >
-                {allFilteredSelected ? '取消全选' : '全选'}
-              </button>
-            </div>
             {/* 已选计数 */}
-            <div className="px-2 py-1 text-xs text-slate-500 border-b border-slate-100 bg-white">
-              已选 <span className="font-medium text-brand-600">{selectedStudentIds.size}</span> 名学员
-              {filteredStudents.length !== students.length && (
-                <span className="text-slate-400"> · 当前筛选 {filteredStudents.length} 名</span>
-              )}
+            <div className="px-2 py-1 text-xs text-slate-500 border-b border-slate-100 bg-slate-50">
+              共 <span className="font-medium text-brand-600">{classMembers.length}</span> 名学员
               {selectedClass && (
                 <span className="text-slate-400"> · 来自班级「{selectedClass.name}」</span>
               )}
             </div>
-            {/* 学员列表 */}
+            {/* 成员列表（只读） */}
             <div className="max-h-48 overflow-y-auto">
-              {filteredStudents.length === 0 ? (
+              {!classId ? (
                 <div className="px-3 py-6 text-center text-xs text-slate-400">
-                  {students.length === 0 ? '暂无学员数据' : '未找到匹配的学员'}
+                  请先选择班级，成员名单将自动带出
+                </div>
+              ) : loadingMembers ? (
+                <div className="px-3 py-6 text-center text-xs text-slate-400">
+                  正在加载班级成员…
+                </div>
+              ) : classMembers.length === 0 ? (
+                <div className="px-3 py-6 text-center text-xs text-slate-400">
+                  该班级暂无成员，请先在「班级管理」中添加成员
                 </div>
               ) : (
-                filteredStudents.map((s) => {
-                  const checked = selectedStudentIds.has(s.id)
-                  return (
-                    <label
-                      key={s.id}
-                      className={cn(
-                        'flex items-center gap-2 px-3 py-1.5 cursor-pointer border-b border-slate-50 last:border-0 transition-colors',
-                        checked ? 'bg-brand-50' : 'hover:bg-slate-50',
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleStudent(s.id)}
-                        className="w-4 h-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm text-slate-700 font-medium">{s.name}</span>
-                        <span className="text-xs text-slate-400 ml-2 font-mono">{s.id}</span>
-                        {s.grade && <span className="text-xs text-slate-400 ml-1">· {s.grade}</span>}
-                      </div>
-                    </label>
-                  )
-                })
+                classMembers.map((s) => (
+                  <div
+                    key={s.id}
+                    className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-50 last:border-0 bg-brand-50/50"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm text-slate-700 font-medium">{s.name}</span>
+                      <span className="text-xs text-slate-400 ml-2 font-mono">{s.id}</span>
+                      {s.grade && <span className="text-xs text-slate-400 ml-1">· {s.grade}</span>}
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </div>

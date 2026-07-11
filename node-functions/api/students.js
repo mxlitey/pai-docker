@@ -15,11 +15,9 @@ export async function onRequestGet(context) {
   let students = await getStudents()
 
   if (q) {
-    // 精确匹配优先（id 或 name），模糊匹配其次
-    const exact = students.filter((s) => s.id === q || s.name === q)
-    const fuzzy = students.filter(
-      (s) => s.id !== q && s.name !== q && (s.name.includes(q) || s.id.includes(q))
-    )
+    // 精确匹配优先（仅 name），模糊匹配其次
+    const exact = students.filter((s) => s.name === q)
+    const fuzzy = students.filter((s) => s.name !== q && s.name.includes(q))
     students = [...exact, ...fuzzy]
   }
 

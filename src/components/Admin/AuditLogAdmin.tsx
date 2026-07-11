@@ -141,7 +141,7 @@ const FIELD_LABELS: Record<string, Record<string, string>> = {
   enrollments: {
     status: '状态', purchasedHours: '购买课时', giftHours: '赠课课时',
     unitPrice: '单价', totalAmount: '总金额', paidAmount: '已付金额',
-    discountAmount: '优惠金额', channel: '渠道', salesId: '销售',
+    discountAmount: '优惠金额',
     paymentMethod: '支付方式', paymentStatus: '支付状态', contractNo: '合同号',
     expiredAt: '有效期', note: '备注',
   },
@@ -169,7 +169,7 @@ const VALUE_LABELS: Record<string, Record<string, string>> = {
   billingType: { per_lesson: '按课时', per_term: '按学期', per_month: '按月' },
   gender: { male: '男', female: '女' },
   giftMode: { discard: '赠课作废', refund: '赠课折算' },
-  type: { recharge: '充值', refund: '退课转入', enroll_deduct: '报名抵扣', withdraw: '提现' },
+  type: { refund: '退课转入', enroll_deduct: '报名抵扣' },
 }
 
 function valueLabel(field: string, val: unknown): string {

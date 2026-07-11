@@ -66,7 +66,6 @@ export function CourseAdmin({ courses, grades, busy, onBack, onDelete, onAdd, on
                     <th className="text-left py-2 px-2 font-medium">{'课程名称'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'年级'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'计费'}</th>
-                    <th className="text-left py-2 px-2 font-medium">ID</th>
                     <th className="text-right py-2 px-2 font-medium">{'操作'}</th>
                   </tr>
                 </thead>
@@ -91,7 +90,6 @@ export function CourseAdmin({ courses, grades, busy, onBack, onDelete, onAdd, on
                       <td className="py-2.5 px-2 text-slate-600 text-xs">
                         {c.billingType === 'per_term' ? '按期' : c.billingType === 'per_month' ? '按月' : '按课时'}
                       </td>
-                      <td className="py-2.5 px-2 text-slate-500 font-mono text-xs">{c.id}</td>
                       <td className="py-2.5 px-2 text-right whitespace-nowrap">
                         <button
                           onClick={() => setEditing(c)}
