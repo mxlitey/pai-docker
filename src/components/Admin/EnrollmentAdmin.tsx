@@ -178,7 +178,7 @@ export function EnrollmentAdmin({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-background">
       {/* 顶部栏 */}
       <SubPageHeader title={'报名管理'} onBack={onBack} count={sorted.length}>
         <Button variant="primary" onClick={() => setAdding(true)} disabled={actionDisabled}>
@@ -191,21 +191,21 @@ export function EnrollmentAdmin({
         <section className="card p-4 mb-4">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
-              <label className="text-xs text-slate-500">{'学员'}</label>
+              <label className="text-xs text-muted-foreground">{'学员'}</label>
               <input
                 type="text"
                 value={searchStudent}
                 onChange={(e) => setSearchStudent(e.target.value)}
                 placeholder={'搜索学员姓名'}
-                className={cn(inputClass, 'bg-white w-48')}
+                className={cn(inputClass, 'bg-background w-48')}
               />
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-xs text-slate-500">{'状态'}</label>
+              <label className="text-xs text-muted-foreground">{'状态'}</label>
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value as '' | EnrollmentStatus)}
-                className={cn(inputClass, 'bg-white w-32')}
+                className={cn(inputClass, 'bg-background w-32')}
               >
                 {STATUS_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -214,7 +214,7 @@ export function EnrollmentAdmin({
                 ))}
               </select>
             </div>
-            <span className="text-xs text-slate-400 whitespace-nowrap">
+            <span className="text-xs text-muted-foreground/70 whitespace-nowrap">
               共 {sorted.length} 条
             </span>
           </div>
@@ -238,7 +238,7 @@ export function EnrollmentAdmin({
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 text-slate-500 text-xs">
+                  <tr className="border-b border-border text-muted-foreground text-xs">
                     <th className="text-left py-2 px-2 font-medium">{'学员'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'课程'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'状态'}</th>
@@ -259,16 +259,16 @@ export function EnrollmentAdmin({
                     return (
                       <tr
                         key={e.id}
-                        className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                        className="border-b border-border hover:bg-muted/50 transition-colors"
                       >
-                        <td className="py-2.5 px-2 font-medium text-slate-700 whitespace-nowrap">
+                        <td className="py-2.5 px-2 font-medium text-foreground whitespace-nowrap">
                           {student ? (
                             student.name
                           ) : (
-                            <span className="text-slate-300">{e.studentId}</span>
+                            <span className="text-muted-foreground/40">{e.studentId}</span>
                           )}
                         </td>
-                        <td className="py-2.5 px-2 text-slate-700">
+                        <td className="py-2.5 px-2 text-foreground">
                           <div className="flex items-center gap-1.5 whitespace-nowrap">
                             <span
                               className={cn(
@@ -279,48 +279,48 @@ export function EnrollmentAdmin({
                             {course ? (
                               course.name
                             ) : (
-                              <span className="text-slate-300">{e.courseId}</span>
+                              <span className="text-muted-foreground/40">{e.courseId}</span>
                             )}
                           </div>
                         </td>
                         <td className="py-2.5 px-2">
                           <StatusBadge status={effectiveStatus(e)} />
                         </td>
-                        <td className="py-2.5 px-2 text-right text-slate-700 whitespace-nowrap font-medium">
+                        <td className="py-2.5 px-2 text-right text-foreground whitespace-nowrap font-medium">
                           {e.purchasedHours}
                         </td>
-                        <td className="py-2.5 px-2 text-right text-slate-600 whitespace-nowrap">
+                        <td className="py-2.5 px-2 text-right text-muted-foreground whitespace-nowrap">
                           {e.giftHours > 0 ? (
                             e.giftHours
                           ) : (
-                            <span className="text-slate-300">0</span>
+                            <span className="text-muted-foreground/40">0</span>
                           )}
                         </td>
                         <td className="py-2.5 px-2">{renderRemaining(e)}</td>
-                        <td className="py-2.5 px-2 text-right text-slate-600 whitespace-nowrap">
+                        <td className="py-2.5 px-2 text-right text-muted-foreground whitespace-nowrap">
                           {formatMoney(e.unitPrice)}
                         </td>
-                        <td className="py-2.5 px-2 text-right text-slate-600 whitespace-nowrap">
+                        <td className="py-2.5 px-2 text-right text-muted-foreground whitespace-nowrap">
                           {formatMoney(e.totalAmount)}
                         </td>
-                        <td className="py-2.5 px-2 text-right text-slate-600 whitespace-nowrap">
+                        <td className="py-2.5 px-2 text-right text-muted-foreground whitespace-nowrap">
                           {formatMoney(e.paidAmount)}
                         </td>
-                        <td className="py-2.5 px-2 text-slate-500 text-xs whitespace-nowrap">
+                        <td className="py-2.5 px-2 text-muted-foreground text-xs whitespace-nowrap">
                           {formatDateTime(e.enrolledAt)}
                         </td>
                         <td className="py-2.5 px-2 text-right whitespace-nowrap">
                           <button
                             onClick={() => setEditing(e)}
                             disabled={actionDisabled}
-                            className="text-brand-600 hover:text-brand-700 text-xs font-medium mr-3 disabled:opacity-50"
+                            className="text-primary hover:text-brand-700 text-xs font-medium mr-3 disabled:opacity-50"
                           >
                             {'编辑'}
                           </button>
                           <button
                             onClick={() => handleDelete(e)}
                             disabled={actionDisabled}
-                            className="text-rose-600 hover:text-rose-700 text-xs font-medium disabled:opacity-50"
+                            className="text-destructive hover:text-rose-700 text-xs font-medium disabled:opacity-50"
                           >
                             {'删除'}
                           </button>
@@ -382,7 +382,7 @@ export function EnrollmentAdmin({
 function StatusBadge({ status }: { status: EnrollmentStatus }) {
   if (status === 'expired') {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-rose-50 text-rose-700 border border-rose-200">
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-destructive/10 text-rose-700 border border-rose-200">
         已过期
       </span>
     )
@@ -396,7 +396,7 @@ function StatusBadge({ status }: { status: EnrollmentStatus }) {
   }
   // settled
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600 border border-slate-200">
+    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-muted text-muted-foreground border border-border">
       已结转
     </span>
   )
@@ -408,13 +408,13 @@ function renderRemaining(e: Enrollment) {
   const usedUp = rem <= 0
   return (
     <div className="whitespace-nowrap">
-      <span className={usedUp ? 'text-rose-600 font-medium' : 'text-slate-700 font-medium'}>
+      <span className={usedUp ? 'text-destructive font-medium' : 'text-foreground font-medium'}>
         剩余 {rem}
       </span>
-      <span className="text-slate-400 text-xs">
+      <span className="text-muted-foreground/70 text-xs">
         （付费 {e.remainingPaidHours} + 赠课 {e.remainingGiftHours}）
       </span>
-      {usedUp && <span className="ml-1 text-xs text-rose-500">已用完</span>}
+      {usedUp && <span className="ml-1 text-xs text-destructive">已用完</span>}
     </div>
   )
 }
@@ -829,8 +829,8 @@ function EnrollmentEditModal({
     >
       <div className="space-y-4">
         {/* 必填说明 */}
-        <div className="text-xs text-slate-400">
-          <span className="text-rose-500">*</span> 为必填项
+        <div className="text-xs text-muted-foreground/70">
+          <span className="text-destructive">*</span> 为必填项
           {isEdit && <span className="ml-2">学员/课程不可修改</span>}
         </div>
 
@@ -845,13 +845,13 @@ function EnrollmentEditModal({
 
         {/* 学员 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
-            <span className="text-rose-500 mr-0.5">*</span>{'学员'}
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">
+            <span className="text-destructive mr-0.5">*</span>{'学员'}
           </span>
           <div className="flex-1">
             {isEdit ? (
               // 编辑模式：学员不可修改，只读展示
-              <div className="pt-2 text-sm text-slate-700">
+              <div className="pt-2 text-sm text-foreground">
                 {studentMap.get(form.studentId)?.name || form.studentId}
                 {studentMap.get(form.studentId)?.grade ? `（${studentMap.get(form.studentId)!.grade}）` : ''}
               </div>
@@ -866,7 +866,7 @@ function EnrollmentEditModal({
                   containerClassName="max-w-none"
                 />
                 {selectedStudent && (
-                  <div className="mt-1 text-xs text-slate-400">
+                  <div className="mt-1 text-xs text-muted-foreground/70">
                     {`已选：${selectedStudent.name}（${selectedStudent.grade || '不指定年级'}）`}
                   </div>
                 )}
@@ -877,14 +877,14 @@ function EnrollmentEditModal({
 
         {/* 课程 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
-            <span className="text-rose-500 mr-0.5">*</span>{'课程'}
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">
+            <span className="text-destructive mr-0.5">*</span>{'课程'}
           </span>
           <div className="flex-1">
             <select
               value={form.courseId}
               onChange={(e) => handleCourseChange(e.target.value)}
-              className={cn(inputClass, 'bg-white')}
+              className={cn(inputClass, 'bg-background')}
               disabled={isEdit}
             >
               <option value="">{'请选择课程'}</option>
@@ -903,7 +903,7 @@ function EnrollmentEditModal({
               <p className="mt-1 text-xs text-amber-600">{'该年级暂无可选课程，请先在课程管理中为该年级添加课程'}</p>
             )}
             {!isEdit && selectedStudent?.grade && filteredCourses.length > 0 && (
-              <p className="mt-1 text-xs text-slate-400">{`仅显示「${selectedStudent.grade}」年级及未分级的课程`}</p>
+              <p className="mt-1 text-xs text-muted-foreground/70">{`仅显示「${selectedStudent.grade}」年级及未分级的课程`}</p>
             )}
           </div>
         </div>
@@ -911,8 +911,8 @@ function EnrollmentEditModal({
         {/* 编辑模式：当前剩余（只读） */}
         {isEdit && enrollment && (
           <div className="flex items-start gap-4">
-            <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">当前剩余</span>
-            <div className="flex-1 pt-2 text-sm text-slate-600">
+            <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">当前剩余</span>
+            <div className="flex-1 pt-2 text-sm text-muted-foreground">
               付费剩余 {enrollment.remainingPaidHours} + 赠课剩余 {enrollment.remainingGiftHours}
               {' = '}
               {enrollment.remainingPaidHours + enrollment.remainingGiftHours}
@@ -923,11 +923,11 @@ function EnrollmentEditModal({
         {/* 编辑模式：状态 */}
         {isEdit && (
           <div className="flex items-start gap-4">
-            <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'状态'}</span>
+            <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'状态'}</span>
             <select
               value={form.status}
               onChange={(e) => setField('status', e.target.value as EnrollmentStatus)}
-              className={cn(inputClass, 'bg-white')}
+              className={cn(inputClass, 'bg-background')}
             >
               <option value="active">进行中</option>
               <option value="settled">已结转</option>
@@ -938,8 +938,8 @@ function EnrollmentEditModal({
 
         {/* 购课课时 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
-            <span className="text-rose-500 mr-0.5">*</span>{'购课课时'}
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">
+            <span className="text-destructive mr-0.5">*</span>{'购课课时'}
           </span>
           <div className="flex-1 space-y-1">
             <input
@@ -951,7 +951,7 @@ function EnrollmentEditModal({
               className={inputClass}
               placeholder="如：40"
             />
-            <div className="text-xs text-slate-400">
+            <div className="text-xs text-muted-foreground/70">
               {isEdit
                 ? '修改购课课时将按差额调整剩余；如原 40 改为 50，剩余 +10'
                 : '报名的付费购课课时，点名时按课时扣减'}
@@ -961,7 +961,7 @@ function EnrollmentEditModal({
 
         {/* 赠课课时 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'赠课课时'}</span>
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'赠课课时'}</span>
           <div className="flex-1 space-y-1">
             <input
               type="number"
@@ -980,12 +980,12 @@ function EnrollmentEditModal({
 
         {/* 单价 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
-            <span className="text-rose-500 mr-0.5">*</span>{'单价'}
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">
+            <span className="text-destructive mr-0.5">*</span>{'单价'}
           </span>
           <div className="flex-1 space-y-1">
             <div className="flex items-center gap-2">
-              <span className="text-slate-400 text-sm">¥</span>
+              <span className="text-muted-foreground/70 text-sm">¥</span>
               <input
                 type="number"
                 min={0}
@@ -996,7 +996,7 @@ function EnrollmentEditModal({
                 placeholder="每课时单价，如 200"
               />
             </div>
-            <div className="text-xs text-slate-400">
+            <div className="text-xs text-muted-foreground/70">
               {isEdit ? '修改单价不影响已扣减的历史，仅影响后续显示' : '报名时锁定单价；可填 0 表示免费'}
             </div>
           </div>
@@ -1019,10 +1019,10 @@ function EnrollmentEditModal({
 
         {/* 实付金额（= 应付总价 - 账户余额抵扣） */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'实付金额'}</span>
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'实付金额'}</span>
           <div className="flex-1 space-y-1">
             <div className="flex items-center gap-2">
-              <span className="text-slate-400 text-sm">¥</span>
+              <span className="text-muted-foreground/70 text-sm">¥</span>
               <input
                 type="number"
                 min={0}
@@ -1033,7 +1033,7 @@ function EnrollmentEditModal({
                 placeholder="默认等于应付金额"
               />
             </div>
-            <div className="text-xs text-slate-400">
+            <div className="text-xs text-muted-foreground/70">
               {form.useBalance && studentBalance > 0
                 ? `实付 = 应付总价 - 余额抵扣 ${formatMoney(balanceDeductPreview)} = ${formatMoney(cashPaidPreview)}`
                 : '默认等于应付金额；勾选余额抵扣后自动减去账户余额'}
@@ -1044,7 +1044,7 @@ function EnrollmentEditModal({
         {/* 余额抵扣（仅新增模式 + 学员有余额时展示） */}
         {!isEdit && studentBalance > 0 && (
           <div className="flex items-start gap-4">
-            <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'余额抵扣'}</span>
+            <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'余额抵扣'}</span>
             <div className="flex-1 space-y-2">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -1053,15 +1053,15 @@ function EnrollmentEditModal({
                   onChange={(e) => handleUseBalanceChange(e.target.checked)}
                   className="w-4 h-4"
                 />
-                <span className="text-sm text-slate-700">
+                <span className="text-sm text-foreground">
                   {'使用账户余额抵扣'}
-                  <span className="ml-2 text-xs text-slate-400">
+                  <span className="ml-2 text-xs text-muted-foreground/70">
                     {`当前余额 ${formatMoney(studentBalance)}`}
                   </span>
                 </span>
               </label>
               {form.useBalance && (
-                <div className="bg-brand-50 border border-brand-100 rounded-md px-3 py-2 text-xs text-slate-700 space-y-0.5">
+                <div className="bg-primary/10 border border-brand-100 rounded-md px-3 py-2 text-xs text-foreground space-y-0.5">
                   <div>{`余额抵扣：${formatMoney(balanceDeductPreview)}`}</div>
                   <div>{`现金补差：${formatMoney(cashPaidPreview)}`}</div>
                   {cashPaidPreview <= 0 && (
@@ -1085,7 +1085,7 @@ function EnrollmentEditModal({
 
         {/* 备注 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'备注'}</span>
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'备注'}</span>
           <textarea
             value={form.note}
             onChange={(e) => setField('note', e.target.value)}
@@ -1097,7 +1097,7 @@ function EnrollmentEditModal({
 
         {/* 错误提示 */}
         {error && (
-          <div className="bg-rose-50 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
+          <div className="bg-destructive/10 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
             {error}
           </div>
         )}

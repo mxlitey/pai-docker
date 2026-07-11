@@ -3,6 +3,7 @@ import { formatDate } from '@/utils/date'
 import { ScheduleCard } from '../ScheduleCard'
 import { format } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
+import { ClipboardList } from 'lucide-react'
 
 interface DayViewProps {
   currentDate: Date
@@ -26,11 +27,11 @@ export function DayView({ currentDate, schedules, onScheduleClick }: DayViewProp
   return (
     <div className="card overflow-hidden">
       {/* 日期头部 */}
-      <div className="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-brand-50 to-transparent">
-        <div className="text-lg font-semibold text-slate-800">
+      <div className="px-5 py-4 border-b border-border bg-gradient-to-r from-brand-50 to-transparent">
+        <div className="text-lg font-semibold text-foreground">
           {format(currentDate, 'yyyy年M月d日 EEEE', { locale: zhCN })}
         </div>
-        <div className="text-sm text-slate-500 mt-0.5">
+        <div className="text-sm text-muted-foreground mt-0.5">
           {`共 ${daySchedules.length} 节课`}
         </div>
       </div>
@@ -38,10 +39,8 @@ export function DayView({ currentDate, schedules, onScheduleClick }: DayViewProp
       {/* 时间轴内容 */}
       <div className="p-5">
         {daySchedules.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-            <svg className="w-12 h-12 mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground/70">
+            <ClipboardList className="w-12 h-12 mb-3 opacity-50" strokeWidth={1.5} />
             <span className="text-sm">{'今日无排课'}</span>
           </div>
         ) : (
@@ -52,9 +51,9 @@ export function DayView({ currentDate, schedules, onScheduleClick }: DayViewProp
               return (
                 <div key={slot.labelKey}>
                   <div className="flex items-center gap-3 mb-3">
-                    <span className="text-sm font-medium text-slate-700">{slot.labelKey}</span>
-                    <div className="flex-1 h-px bg-slate-100" />
-                    <span className="text-xs text-slate-400">{slotSchedules.length}{'节'}</span>
+                    <span className="text-sm font-medium text-foreground">{slot.labelKey}</span>
+                    <div className="flex-1 h-px bg-muted" />
+                    <span className="text-xs text-muted-foreground/70">{slotSchedules.length}{'节'}</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pl-4">
                     {slotSchedules.map((s) => (

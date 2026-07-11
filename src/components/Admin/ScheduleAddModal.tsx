@@ -202,14 +202,14 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
     >
       <div className="space-y-4">
         {/* 必填说明 */}
-        <div className="text-xs text-slate-400">
-          <span className="text-rose-500">*</span> 为必填项，选择班级后自动带出成员名单，为每位成员在所选每个日期生成一条排课
+        <div className="text-xs text-muted-foreground/70">
+          <span className="text-destructive">*</span> 为必填项，选择班级后自动带出成员名单，为每位成员在所选每个日期生成一条排课
         </div>
 
         {/* 课程选择 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
-            <span className="text-rose-500 mr-0.5">*</span>{'课程'}
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">
+            <span className="text-destructive mr-0.5">*</span>{'课程'}
           </span>
           <div className="flex-1">
             {courses.length === 0 ? (
@@ -220,7 +220,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
               <select
                 value={courseId}
                 onChange={(e) => setCourseId(e.target.value)}
-                className={cn(inputClass, 'bg-white')}
+                className={cn(inputClass, 'bg-background')}
               >
                 <option value="">请选择课程…</option>
                 {courses.map((c) => (
@@ -231,7 +231,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
               </select>
             )}
             {selectedCourse && (
-              <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-500">
+              <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
                 <span className={cn('inline-block w-2.5 h-2.5 rounded-full', getCourseDotClass(selectedCourse.color))} />
                 <span className="font-mono">{selectedCourse.id}</span>
               </div>
@@ -241,8 +241,8 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
 
         {/* 班级选择（必填，选班级自动带出成员名单） */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
-            <span className="text-rose-500 mr-0.5">*</span>{'班级'}
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">
+            <span className="text-destructive mr-0.5">*</span>{'班级'}
           </span>
           <div className="flex-1">
             {classes.length === 0 ? (
@@ -254,7 +254,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
                 value={classId}
                 onChange={(e) => handleClassChange(e.target.value)}
                 disabled={loadingMembers}
-                className={cn(inputClass, 'bg-white', loadingMembers && 'opacity-60')}
+                className={cn(inputClass, 'bg-background', loadingMembers && 'opacity-60')}
               >
                 <option value="">请选择班级…</option>
                 {classOptions.map((c) => (
@@ -266,10 +266,10 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
               </select>
             )}
             {loadingMembers && (
-              <div className="mt-1 text-xs text-slate-400">正在加载班级成员…</div>
+              <div className="mt-1 text-xs text-muted-foreground/70">正在加载班级成员…</div>
             )}
             {selectedClass && !loadingMembers && (
-              <div className="mt-1 text-xs text-slate-500">
+              <div className="mt-1 text-xs text-muted-foreground">
                 班级成员已自动带出，排课仅包含以下学员
               </div>
             )}
@@ -278,8 +278,8 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
 
         {/* 日期（多选） */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
-            <span className="text-rose-500 mr-0.5">*</span>{'日期'}
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">
+            <span className="text-destructive mr-0.5">*</span>{'日期'}
           </span>
           <div className="flex-1 space-y-2">
             <div className="flex items-center gap-2">
@@ -294,13 +294,13 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
               </Button>
             </div>
             {dates.length === 0 ? (
-              <div className="text-xs text-slate-400">尚未添加日期，可添加多个日期一次性排课</div>
+              <div className="text-xs text-muted-foreground/70">尚未添加日期，可添加多个日期一次性排课</div>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {dates.map((d) => (
                   <span
                     key={d}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-brand-50 text-brand-700 border border-brand-200 rounded-md"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-primary/10 text-brand-700 border border-brand-200 rounded-md"
                   >
                     <span className="font-mono">{d}</span>
                     <button
@@ -320,7 +320,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
 
         {/* 时间 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'时间'}</span>
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'时间'}</span>
           <div className="flex items-center gap-2 flex-1">
             <input
               type="time"
@@ -328,7 +328,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
               onChange={(e) => setStartTime(e.target.value)}
               className={inputClass}
             />
-            <span className="text-slate-400">-</span>
+            <span className="text-muted-foreground/70">-</span>
             <input
               type="time"
               value={endTime}
@@ -340,7 +340,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
 
         {/* 教师 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'教师'}</span>
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'教师'}</span>
           <input
             type="text"
             value={teacher}
@@ -352,7 +352,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
 
         {/* 地点 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'地点'}</span>
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'地点'}</span>
           <input
             type="text"
             value={location}
@@ -364,41 +364,41 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
 
         {/* 班级成员（只读展示） */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
-            <span className="text-rose-500 mr-0.5">*</span>{'学员'}
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">
+            <span className="text-destructive mr-0.5">*</span>{'学员'}
           </span>
-          <div className="flex-1 border border-slate-200 rounded-md overflow-hidden">
+          <div className="flex-1 border border-border rounded-md overflow-hidden">
             {/* 已选计数 */}
-            <div className="px-2 py-1 text-xs text-slate-500 border-b border-slate-100 bg-slate-50">
-              共 <span className="font-medium text-brand-600">{classMembers.length}</span> 名学员
+            <div className="px-2 py-1 text-xs text-muted-foreground border-b border-border bg-background">
+              共 <span className="font-medium text-primary">{classMembers.length}</span> 名学员
               {selectedClass && (
-                <span className="text-slate-400"> · 来自班级「{selectedClass.name}」</span>
+                <span className="text-muted-foreground/70"> · 来自班级「{selectedClass.name}」</span>
               )}
             </div>
             {/* 成员列表（只读） */}
             <div className="max-h-48 overflow-y-auto">
               {!classId ? (
-                <div className="px-3 py-6 text-center text-xs text-slate-400">
+                <div className="px-3 py-6 text-center text-xs text-muted-foreground/70">
                   请先选择班级，成员名单将自动带出
                 </div>
               ) : loadingMembers ? (
-                <div className="px-3 py-6 text-center text-xs text-slate-400">
+                <div className="px-3 py-6 text-center text-xs text-muted-foreground/70">
                   正在加载班级成员…
                 </div>
               ) : classMembers.length === 0 ? (
-                <div className="px-3 py-6 text-center text-xs text-slate-400">
+                <div className="px-3 py-6 text-center text-xs text-muted-foreground/70">
                   该班级暂无成员，请先在「班级管理」中添加成员
                 </div>
               ) : (
                 classMembers.map((s) => (
                   <div
                     key={s.id}
-                    className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-50 last:border-0 bg-brand-50/50"
+                    className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-50 last:border-0 bg-primary/5"
                   >
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm text-slate-700 font-medium">{s.name}</span>
-                      <span className="text-xs text-slate-400 ml-2 font-mono">{s.id}</span>
-                      {s.grade && <span className="text-xs text-slate-400 ml-1">· {s.grade}</span>}
+                      <span className="text-sm text-foreground font-medium">{s.name}</span>
+                      <span className="text-xs text-muted-foreground/70 ml-2 font-mono">{s.id}</span>
+                      {s.grade && <span className="text-xs text-muted-foreground/70 ml-1">· {s.grade}</span>}
                     </div>
                   </div>
                 ))
@@ -409,7 +409,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
 
         {/* 备注 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'备注'}</span>
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'备注'}</span>
           <input
             type="text"
             value={note}
@@ -421,7 +421,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
 
         {/* 错误/成功提示 */}
         {error && (
-          <div className="bg-rose-50 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
+          <div className="bg-destructive/10 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
             {error}
           </div>
         )}

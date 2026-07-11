@@ -1,24 +1,14 @@
-// 统一加载状态组件
-// <Loading /> 行内小圈；<LoadingBlock /> 卡片占位；<LoadingFullscreen /> 全屏
+// 统一加载状态组件 —— 使用 shadcn/ui 语义色
 import { cn } from '@/utils/cn'
+import { Loader2, AlertTriangle } from 'lucide-react'
 
 export function Spinner({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cn('animate-spin', className || 'w-4 h-4 text-brand-500')}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-    </svg>
-  )
+  return <Loader2 className={cn('animate-spin', className || 'w-4 h-4 text-primary')} />
 }
 
 export function Loading({ label = '加载中…' }: { label?: string }) {
   return (
-    <span className="inline-flex items-center gap-2 text-sm text-slate-500">
+    <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
       <Spinner />
       {label}
     </span>
@@ -27,17 +17,17 @@ export function Loading({ label = '加载中…' }: { label?: string }) {
 
 export function LoadingBlock({ label = '加载中…', className }: { label?: string; className?: string }) {
   return (
-    <div className={`card p-16 flex flex-col items-center justify-center ${className || ''}`}>
+    <div className={cn('card p-16 flex flex-col items-center justify-center', className)}>
       <Spinner className="w-8 h-8 mb-3" />
-      <span className="text-sm text-slate-400">{label}</span>
+      <span className="text-sm text-muted-foreground">{label}</span>
     </div>
   )
 }
 
 export function LoadingFullscreen({ label = '初始化中…' }: { label?: string }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
-      <div className="text-sm text-slate-500 flex items-center gap-2">
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="text-sm text-muted-foreground flex items-center gap-2">
         <Spinner />
         {label}
       </div>
@@ -55,19 +45,12 @@ export function ErrorBlock({
 }) {
   return (
     <div className="card p-16 flex flex-col items-center justify-center">
-      <div className="text-rose-500 mb-2">
-        <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-          />
-        </svg>
+      <div className="text-destructive mb-2">
+        <AlertTriangle className="w-10 h-10" />
       </div>
-      <p className="text-sm text-rose-600 mb-1">{message}</p>
+      <p className="text-sm text-destructive mb-1">{message}</p>
       {onRetry && (
-        <button onClick={onRetry} className="btn-ghost text-xs mt-2 border border-slate-200">
+        <button onClick={onRetry} className="btn-ghost text-xs mt-2 border border-border">
           重试
         </button>
       )}

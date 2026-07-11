@@ -262,7 +262,7 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
   const handleQuery = () => setQueryTick(t => t + 1)
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-background">
       <SubPageHeader title={'报表中心'} onBack={onBack} />
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-4">
@@ -273,8 +273,8 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
             className={cn(
               'flex-shrink-0 px-4 py-2 text-sm rounded-md whitespace-nowrap transition-colors',
               isOverview
-                ? 'bg-brand-500 text-white'
-                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50',
+                ? 'bg-primary text-white'
+                : 'bg-background text-muted-foreground border border-border hover:bg-muted/50',
             )}
           >
             概览
@@ -288,8 +288,8 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
                 className={cn(
                   'flex-shrink-0 px-4 py-2 text-sm rounded-md whitespace-nowrap transition-colors',
                   active
-                    ? 'bg-brand-500 text-white'
-                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50',
+                    ? 'bg-primary text-white'
+                    : 'bg-background text-muted-foreground border border-border hover:bg-muted/50',
                 )}
               >
                 {rt.label}
@@ -302,7 +302,7 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
         <section className="card p-4">
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1 w-36">
-              <span className="text-xs text-slate-500">{'开始日期'}</span>
+              <span className="text-xs text-muted-foreground">{'开始日期'}</span>
               <input
                 type="date"
                 value={startDate}
@@ -311,7 +311,7 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
               />
             </label>
             <label className="flex flex-col gap-1 w-36">
-              <span className="text-xs text-slate-500">{'结束日期'}</span>
+              <span className="text-xs text-muted-foreground">{'结束日期'}</span>
               <input
                 type="date"
                 value={endDate}
@@ -321,7 +321,7 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
             </label>
             {!isOverview && currentConfig && (
               <label className="flex flex-col gap-1 w-32">
-                <span className="text-xs text-slate-500">{'分组'}</span>
+                <span className="text-xs text-muted-foreground">{'分组'}</span>
                 <select
                   value={groupBy}
                   onChange={e => setGroupBy(e.target.value as GroupBy)}
@@ -352,8 +352,8 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
               const val = card.format ? card.format(raw) : String(raw)
               return (
                 <div key={card.label} className="card p-5">
-                  <div className="text-2xl font-semibold text-slate-800">{val}</div>
-                  <div className="text-xs text-slate-400 mt-1">{card.label}</div>
+                  <div className="text-2xl font-semibold text-foreground">{val}</div>
+                  <div className="text-xs text-muted-foreground/70 mt-1">{card.label}</div>
                 </div>
               )
             })}
@@ -373,10 +373,10 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
                       : '—'
                   return (
                     <div key={sk.key} className="card p-4">
-                      <div className="text-2xl font-semibold text-slate-800">
+                      <div className="text-2xl font-semibold text-foreground">
                         {val}
                       </div>
-                      <div className="text-xs text-slate-400 mt-1">{sk.label}</div>
+                      <div className="text-xs text-muted-foreground/70 mt-1">{sk.label}</div>
                     </div>
                   )
                 })}
@@ -389,7 +389,7 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="bg-slate-50 text-slate-500 text-xs">
+                      <tr className="bg-background text-muted-foreground text-xs">
                         {currentConfig!.columns.map(c => (
                           <th
                             key={c.key}
@@ -402,7 +402,7 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
                     </thead>
                     <tbody>
                       {rows.map((row, i) => (
-                        <tr key={i} className="border-t border-slate-100">
+                        <tr key={i} className="border-t border-border">
                           {currentConfig!.columns.map(c => {
                             const raw = row[c.key]
                             const cell = c.format
@@ -413,7 +413,7 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
                             return (
                               <td
                                 key={c.key}
-                                className="px-4 py-2.5 text-slate-700 whitespace-nowrap"
+                                className="px-4 py-2.5 text-foreground whitespace-nowrap"
                               >
                                 {cell}
                               </td>

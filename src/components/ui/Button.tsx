@@ -1,7 +1,5 @@
-// 统一按钮组件 —— 支持 loading 状态与变体
-// 用法：
-//   <Button variant="primary" loading={saving} onClick={...}>保存</Button>
-//   <Button variant="danger">删除</Button>
+// 统一按钮组件 —— 包装 shadcn/ui Button，保留原有 API（variant/loading）
+// 变体映射：primary→default, danger→destructive, ghost→ghost, outline→outline
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { cn } from '@/utils/cn'
 import { Spinner } from './Loading'
@@ -14,11 +12,11 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode
 }
 
-const VARIANT: Record<Variant, string> = {
-  primary: 'bg-brand-500 text-white hover:bg-brand-600',
-  ghost: 'text-slate-600 hover:bg-slate-100',
-  danger: 'bg-rose-600 text-white hover:bg-rose-700',
-  outline: 'text-slate-600 border border-slate-200 hover:bg-slate-50',
+const VARIANT_CLASS: Record<Variant, string> = {
+  primary: 'bg-primary text-primary-foreground hover:bg-brand-600',
+  ghost: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+  danger: 'bg-destructive text-destructive-foreground hover:bg-rose-700',
+  outline: 'border border-input bg-background hover:bg-accent hover:text-accent-foreground',
 }
 
 export function Button({ variant = 'primary', loading, children, className, disabled, ...rest }: ButtonProps) {
@@ -27,9 +25,8 @@ export function Button({ variant = 'primary', loading, children, className, disa
       {...rest}
       disabled={disabled || loading}
       className={cn(
-        'btn',
-        VARIANT[variant],
-        'disabled:opacity-50 disabled:cursor-not-allowed',
+        'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 px-4 py-2 h-9',
+        VARIANT_CLASS[variant],
         className,
       )}
     >

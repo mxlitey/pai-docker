@@ -232,7 +232,7 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-background">
       {/* 顶部栏 */}
       <SubPageHeader title={'点名管理'} onBack={onBack} count={loadedDate ? schedules.length : undefined} />
 
@@ -241,12 +241,12 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
         <section className="card p-4">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600">点名日期</label>
+              <label className="text-sm text-muted-foreground">点名日期</label>
               <input
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-400"
+                className="px-3 py-1.5 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus-visible:ring-ring"
               />
             </div>
             <Button
@@ -258,7 +258,7 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
               {'加载当日排课'}
             </Button>
             {loadedDate && (
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-muted-foreground/70">
                 已加载 {loadedDate} · 共 {schedules.length} 条
               </span>
             )}
@@ -267,7 +267,7 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
 
         {/* 提示与错误 */}
         {error && (
-          <div className="bg-rose-50 border border-rose-200 rounded-lg px-4 py-2.5 text-sm text-rose-700">
+          <div className="bg-destructive/10 border border-rose-200 rounded-lg px-4 py-2.5 text-sm text-rose-700">
             {error}
           </div>
         )}
@@ -285,10 +285,10 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3 sm:gap-4 text-xs flex-wrap">
                   <span className="text-green-600">{'到课'} {stats.present}</span>
-                  <span className="text-rose-500">{'缺勤'} {stats.absent}</span>
-                  <span className="text-slate-400">{'未点名'} {stats.unset}</span>
-                  <span className="text-slate-300">|</span>
-                  <span className="text-brand-600">待保存 {changedItems.length}</span>
+                  <span className="text-destructive">{'缺勤'} {stats.absent}</span>
+                  <span className="text-muted-foreground/70">{'未点名'} {stats.unset}</span>
+                  <span className="text-muted-foreground/40">|</span>
+                  <span className="text-primary">待保存 {changedItems.length}</span>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
@@ -299,13 +299,13 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
                   </button>
                   <button
                     onClick={() => setAll(false)}
-                    className="btn-ghost border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs py-1 px-2.5"
+                    className="btn-ghost border border-rose-200 text-rose-700 hover:bg-destructive/10 text-xs py-1 px-2.5"
                   >
                     {'全选缺勤'}
                   </button>
                   <button
                     onClick={() => setAll(undefined)}
-                    className="btn-ghost border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs py-1 px-2.5"
+                    className="btn-ghost border border-border text-muted-foreground hover:bg-muted/50 text-xs py-1 px-2.5"
                   >
                     {'全部未点名'}
                   </button>
@@ -327,7 +327,7 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
               return (
                 <div key={group.key} className="card p-4 sm:p-5">
                   {/* 班级(课程)年级标题 */}
-                  <div className="flex items-start sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-100">
+                  <div className="flex items-start sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-border">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span
@@ -336,25 +336,25 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
                             getCourseDotClass(group.color),
                           )}
                         />
-                        <h3 className="font-semibold text-slate-800 text-sm sm:text-base truncate">
+                        <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">
                           {group.title}
                         </h3>
                         {group.subTitle && (
-                          <span className="text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded flex-shrink-0">
+                          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded flex-shrink-0">
                             {group.subTitle}
                           </span>
                         )}
-                        <span className="text-xs text-slate-400 flex-shrink-0">
+                        <span className="text-xs text-muted-foreground/70 flex-shrink-0">
                           {group.schedules.length} 人
                         </span>
                       </div>
-                      <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
+                      <div className="text-xs text-muted-foreground/70 mt-0.5 flex items-center gap-2 flex-wrap">
                         {group.teacher && <span>{group.teacher}</span>}
                         {group.location && <span>· {group.location}</span>}
-                        <span className="text-slate-300">·</span>
+                        <span className="text-muted-foreground/40">·</span>
                         <span className="text-green-600">到 {gp}</span>
-                        <span className="text-rose-500">缺 {ga}</span>
-                        <span className="text-slate-400">未 {gu}</span>
+                        <span className="text-destructive">缺 {ga}</span>
+                        <span className="text-muted-foreground/70">未 {gu}</span>
                       </div>
                     </div>
                   </div>
@@ -376,18 +376,18 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
                         {/* 时间段子标题 + 时间段级批量操作 */}
                         <div className="flex items-center justify-between gap-2 mb-1.5 px-1 flex-wrap">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-mono text-slate-600 font-medium">
+                            <span className="text-xs font-mono text-muted-foreground font-medium">
                               {tg.startTime}
-                              <span className="text-slate-300 mx-1">→</span>
+                              <span className="text-muted-foreground/40 mx-1">→</span>
                               {tg.endTime}
                             </span>
-                            <span className="text-xs text-slate-400">
+                            <span className="text-xs text-muted-foreground/70">
                               {tg.schedules.length} 人
                             </span>
-                            <span className="text-slate-300 text-xs">·</span>
+                            <span className="text-muted-foreground/40 text-xs">·</span>
                             <span className="text-xs text-green-600">到 {tp}</span>
-                            <span className="text-xs text-rose-500">缺 {ta}</span>
-                            <span className="text-xs text-slate-400">未 {tu}</span>
+                            <span className="text-xs text-destructive">缺 {ta}</span>
+                            <span className="text-xs text-muted-foreground/70">未 {tu}</span>
                           </div>
                           <div className="flex items-center gap-1">
                             <button
@@ -398,7 +398,7 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
                             </button>
                             <button
                               onClick={() => setGroupAll({ schedules: tg.schedules }, false)}
-                              className="btn-ghost border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs py-0.5 px-2"
+                              className="btn-ghost border border-rose-200 text-rose-700 hover:bg-destructive/10 text-xs py-0.5 px-2"
                             >
                               全缺
                             </button>
@@ -411,10 +411,10 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
                             return (
                               <div
                                 key={s.id}
-                                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border border-slate-100 rounded-lg px-3 py-2 hover:bg-slate-50/50"
+                                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border border-border rounded-lg px-3 py-2 hover:bg-muted/50"
                               >
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <div className="text-sm text-slate-800 font-medium truncate">
+                                  <div className="text-sm text-foreground font-medium truncate">
                                     {s.studentName}
                                   </div>
                                 </div>
@@ -427,7 +427,7 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
                                       'flex-1 sm:flex-initial px-2.5 py-1 text-xs rounded transition-colors',
                                       cur === true
                                         ? 'bg-green-600 text-white'
-                                        : 'bg-slate-100 text-slate-500 hover:bg-green-100 hover:text-green-700',
+                                        : 'bg-muted text-muted-foreground hover:bg-green-100 hover:text-green-700',
                                     )}
                                   >
                                     {'到课'}
@@ -438,7 +438,7 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
                                       'flex-1 sm:flex-initial px-2.5 py-1 text-xs rounded transition-colors',
                                       cur === false
                                         ? 'bg-rose-600 text-white'
-                                        : 'bg-slate-100 text-slate-500 hover:bg-rose-100 hover:text-rose-700',
+                                        : 'bg-muted text-muted-foreground hover:bg-rose-100 hover:text-rose-700',
                                     )}
                                   >
                                     {'缺勤'}
@@ -449,7 +449,7 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
                                       'flex-1 sm:flex-initial px-2.5 py-1 text-xs rounded transition-colors',
                                       cur === undefined
                                         ? 'bg-slate-400 text-white'
-                                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200',
+                                        : 'bg-muted text-muted-foreground hover:bg-muted',
                                     )}
                                     title="标记为未点名"
                                   >
@@ -504,21 +504,21 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
           }
         >
           <div className="space-y-3">
-            <div className="text-sm text-slate-600">
+            <div className="text-sm text-muted-foreground">
               成功更新 <span className="font-medium text-green-600">{failSummary.updated}</span> 条排课出勤、
               <span className="font-medium text-green-600">{failSummary.enrollments}</span> 条报名记录课时。
             </div>
-            <div className="text-sm text-rose-600 font-medium">
+            <div className="text-sm text-destructive font-medium">
               以下 {failErrors.length} 项处理失败：
             </div>
-            <div className="bg-rose-50 border border-rose-200 rounded-md p-3 space-y-1 max-h-60 overflow-y-auto">
+            <div className="bg-destructive/10 border border-rose-200 rounded-md p-3 space-y-1 max-h-60 overflow-y-auto">
               {failErrors.map((err, idx) => (
                 <div key={idx} className="text-xs text-rose-700">
                   {idx + 1}. {err}
                 </div>
               ))}
             </div>
-            <div className="text-xs text-slate-400">
+            <div className="text-xs text-muted-foreground/70">
               常见原因：学员未报名该课程、剩余课时不足、排课未关联课程等。请检查学员报名状态后重试。
             </div>
           </div>

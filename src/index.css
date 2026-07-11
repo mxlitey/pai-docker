@@ -3,28 +3,90 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* shadcn/ui 语义色变量 —— 映射到 brand 色阶 */
+    --background: 210 40% 98%;           /* slate-50 */
+    --foreground: 222 47% 11%;           /* slate-800 */
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 226 100% 60%;             /* brand-500 #3366ff */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 96%;            /* slate-100 */
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;     /* slate-500 */
+
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 72% 51%;            /* rose-600 */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;               /* slate-200 */
+    --input: 214 32% 91%;
+    --ring: 226 100% 60%;                /* brand-500 */
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 226 100% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 226 100% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
   html {
     -webkit-font-smoothing: antialiased;
   }
   body {
-    @apply bg-slate-50 text-slate-800;
+    @apply bg-background text-foreground;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
       'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   }
 }
 
 @layer components {
+  /* 保留 .card 兼容类，映射到 shadcn/ui Card 样式 */
+  .card {
+    @apply rounded-lg border border-border bg-card text-card-foreground shadow-sm;
+  }
+  /* 保留 .btn 系列兼容类 */
   .btn {
     @apply inline-flex items-center justify-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-primary {
-    @apply btn bg-brand-500 text-white hover:bg-brand-600;
+    @apply btn bg-primary text-primary-foreground hover:bg-brand-600;
   }
   .btn-ghost {
-    @apply btn text-slate-600 hover:bg-slate-100;
-  }
-  .card {
-    @apply bg-white rounded-lg shadow-sm border border-slate-200;
+    @apply btn text-muted-foreground hover:bg-accent;
   }
 }
 
@@ -40,11 +102,11 @@
   @apply bg-slate-400;
 }
 
-/* 隐藏滚动条但保留滚动能力（用于选项卡横向滑动等场景） */
+/* 隐藏滚动条但保留滚动能力 */
 .no-scrollbar {
-  -ms-overflow-style: none;  /* IE/Edge */
-  scrollbar-width: none;     /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 .no-scrollbar::-webkit-scrollbar {
-  display: none;             /* Chrome/Safari */
+  display: none;
 }

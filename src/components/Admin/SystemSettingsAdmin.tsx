@@ -23,6 +23,7 @@ import {
   inputClass,
   toast,
 } from '@/components/ui'
+import { Info } from 'lucide-react'
 
 interface SystemSettingsAdminProps {
   // 配置变更后通知父级刷新（如项目名称变更需更新页头）
@@ -318,7 +319,7 @@ export function SystemSettingsAdmin({
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
+    <div className="min-h-screen flex flex-col bg-background">
       <SubPageHeader title={'系统设置'} onBack={onBack}>
         {dirty && !busy && (
           <Button variant="ghost" onClick={handleReset}>{'撤销'}</Button>
@@ -340,11 +341,11 @@ export function SystemSettingsAdmin({
           <>
             {/* 项目名称设置 */}
             <section className="card p-5">
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2 mb-1">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
+              <h2 className="text-base font-semibold text-foreground flex items-center gap-2 mb-1">
+                <span className="w-1 h-4 bg-primary rounded"></span>
                 {'项目名称'}
               </h2>
-              <p className="text-xs text-slate-500 mb-4 ml-3">
+              <p className="text-xs text-muted-foreground mb-4 ml-3">
                 显示在首页标题、页脚与浏览器标签页。修改后立即生效，无需重启服务。
               </p>
               <div className="ml-3">
@@ -357,7 +358,7 @@ export function SystemSettingsAdmin({
                   className={inputClass}
                 />
                 <div className="flex items-center justify-between mt-1.5">
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-muted-foreground/70">
                     {appName.length}/50
                   </span>
                   {dirty && (
@@ -369,16 +370,16 @@ export function SystemSettingsAdmin({
 
             {/* 续费预警与有效期 */}
             <section className="card p-5">
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2 mb-1">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
+              <h2 className="text-base font-semibold text-foreground flex items-center gap-2 mb-1">
+                <span className="w-1 h-4 bg-primary rounded"></span>
                 {'续费预警与有效期'}
               </h2>
-              <p className="text-xs text-slate-500 mb-4 ml-3">
+              <p className="text-xs text-muted-foreground mb-4 ml-3">
                 设置学员课时不足时的预警阈值，并可手动处理已过期的课时记录。修改阈值后点击顶部「保存」生效。
               </p>
               <div className="ml-3 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">{'续费预警阈值'}</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">{'续费预警阈值'}</label>
                   <input
                     type="number"
                     min={0}
@@ -388,24 +389,24 @@ export function SystemSettingsAdmin({
                     }
                     className={inputClass}
                   />
-                  <p className="text-xs text-slate-400 mt-1.5">{'剩余课时 ≤ 此值时在学员列表标红提醒'}</p>
+                  <p className="text-xs text-muted-foreground/70 mt-1.5">{'剩余课时 ≤ 此值时在学员列表标红提醒'}</p>
                 </div>
-                <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
+                <div className="flex items-center gap-3 pt-3 border-t border-border">
                   <Button variant="outline" loading={expiring} onClick={handleExpire}>
                     {'立即处理过期课时'}
                   </Button>
-                  <span className="text-xs text-slate-400">手动触发已过期课时的结算处理</span>
+                  <span className="text-xs text-muted-foreground/70">手动触发已过期课时的结算处理</span>
                 </div>
               </div>
             </section>
 
             {/* 数据备份与恢复 */}
             <section className="card p-5">
-              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2 mb-1">
-                <span className="w-1 h-4 bg-brand-500 rounded"></span>
+              <h2 className="text-base font-semibold text-foreground flex items-center gap-2 mb-1">
+                <span className="w-1 h-4 bg-primary rounded"></span>
                 {'数据备份与恢复'}
               </h2>
-              <p className="text-xs text-slate-500 mb-4 ml-3">
+              <p className="text-xs text-muted-foreground mb-4 ml-3">
                 手动创建数据快照、恢复历史备份或调整自动备份保留策略。
               </p>
               <div className="ml-3 space-y-4">
@@ -416,7 +417,7 @@ export function SystemSettingsAdmin({
                     </Button>
                   </div>
                   <div className="flex-1 min-w-[220px]">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                    <label className="block text-sm font-medium text-foreground mb-1">
                       {'自动备份 Cron 表达式'}
                     </label>
                     <input
@@ -432,11 +433,11 @@ export function SystemSettingsAdmin({
                     ) : cronDesc ? (
                       <p className="text-xs text-emerald-600 mt-1.5">{cronDesc}</p>
                     ) : (
-                      <p className="text-xs text-slate-400 mt-1.5">{'格式：分 时 日 月 周（如 0 3 * * * = 每天 3:00）'}</p>
+                      <p className="text-xs text-muted-foreground/70 mt-1.5">{'格式：分 时 日 月 周（如 0 3 * * * = 每天 3:00）'}</p>
                     )}
                   </div>
                   <div className="min-w-[140px]">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                    <label className="block text-sm font-medium text-foreground mb-1">
                       {'自动备份保留天数'}
                     </label>
                     <input
@@ -448,12 +449,12 @@ export function SystemSettingsAdmin({
                       }
                       className={inputClass}
                     />
-                    <p className="text-xs text-slate-400 mt-1.5">
+                    <p className="text-xs text-muted-foreground/70 mt-1.5">
                       {'超过此天数的备份自动清理'}
                     </p>
                   </div>
                   <div className="min-w-[140px]">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                    <label className="block text-sm font-medium text-foreground mb-1">
                       {'最大保留份数'}
                     </label>
                     <input
@@ -465,7 +466,7 @@ export function SystemSettingsAdmin({
                       }
                       className={inputClass}
                     />
-                    <p className="text-xs text-slate-400 mt-1.5">
+                    <p className="text-xs text-muted-foreground/70 mt-1.5">
                       {'分钟级备份时按此上限裁剪最旧备份，防止磁盘撑爆'}
                     </p>
                   </div>
@@ -481,8 +482,8 @@ export function SystemSettingsAdmin({
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-slate-100">
-                  <h3 className="text-sm font-medium text-slate-700 mb-3">备份列表</h3>
+                <div className="pt-3 border-t border-border">
+                  <h3 className="text-sm font-medium text-foreground mb-3">备份列表</h3>
                   {backupsLoading ? (
                     <LoadingBlock />
                   ) : backups.length === 0 ? (
@@ -494,7 +495,7 @@ export function SystemSettingsAdmin({
                     <div className="overflow-x-auto -mx-1">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
+                          <tr className="text-left text-xs text-muted-foreground border-b border-border">
                             <th className="py-2 px-1 font-medium">{'文件名'}</th>
                             <th className="py-2 px-1 font-medium whitespace-nowrap">{'大小'}</th>
                             <th className="py-2 px-1 font-medium whitespace-nowrap">{'创建时间'}</th>
@@ -504,13 +505,13 @@ export function SystemSettingsAdmin({
                         <tbody>
                           {backups.map((b) => (
                             <tr key={b.filename} className="border-b border-slate-50">
-                              <td className="py-2 px-1 font-mono text-xs text-slate-700 break-all max-w-[220px]">
+                              <td className="py-2 px-1 font-mono text-xs text-foreground break-all max-w-[220px]">
                                 {b.filename}
                               </td>
-                              <td className="py-2 px-1 text-slate-600 whitespace-nowrap">
+                              <td className="py-2 px-1 text-muted-foreground whitespace-nowrap">
                                 {formatSize(b.size)}
                               </td>
-                              <td className="py-2 px-1 text-slate-600 whitespace-nowrap">
+                              <td className="py-2 px-1 text-muted-foreground whitespace-nowrap">
                                 {fmtDateTimeFull(b.createdAt)}
                               </td>
                               <td className="py-2 px-1 text-right">
@@ -542,14 +543,12 @@ export function SystemSettingsAdmin({
             </section>
 
             {/* 说明 */}
-            <section className="card p-5 bg-slate-50 border-slate-200">
-              <div className="flex gap-2.5 text-sm text-slate-600">
-                <svg className="w-5 h-5 flex-shrink-0 mt-0.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+            <section className="card p-5 bg-background border-border">
+              <div className="flex gap-2.5 text-sm text-muted-foreground">
+                <Info className="w-5 h-5 flex-shrink-0 mt-0.5 text-muted-foreground/70" />
                 <div className="space-y-1 text-xs">
-                  <p className="font-medium text-slate-600">配置说明</p>
-                  <ul className="space-y-0.5 text-slate-500">
+                  <p className="font-medium text-muted-foreground">配置说明</p>
+                  <ul className="space-y-0.5 text-muted-foreground">
                     <li>· 所有配置存储在 SQLite 数据库中，容器重建后仍保留</li>
                     <li>· 项目名称修改后，已打开的页面需刷新才能看到更新</li>
                     <li>· 后续将支持更多系统配置项（如主题色、时区等）</li>

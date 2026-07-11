@@ -1,6 +1,7 @@
 import type { Schedule } from '@/types'
 import { cn } from '@/utils/cn'
 import { getCourseCardClass } from '@/utils/courseColors'
+import { Check, X } from 'lucide-react'
 
 interface ScheduleCardProps {
   schedule: Schedule
@@ -68,9 +69,7 @@ function AttendanceBadge({ schedule, compact = false }: { schedule: Schedule; co
         )}
         title={'到课'}
       >
-        <svg className={compact ? 'w-2 h-2' : 'w-2.5 h-2.5'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3.5} d="M5 13l4 4L19 7" />
-        </svg>
+        <Check className={compact ? 'w-2 h-2' : 'w-2.5 h-2.5'} strokeWidth={3.5} />
       </span>
     )
   }
@@ -79,14 +78,12 @@ function AttendanceBadge({ schedule, compact = false }: { schedule: Schedule; co
     return (
       <span
         className={cn(
-          'absolute bg-rose-600 text-white rounded-full flex items-center justify-center shadow-sm',
+          'absolute bg-destructive text-white rounded-full flex items-center justify-center shadow-sm',
           compact ? 'top-0 right-0 w-3.5 h-3.5' : 'top-1 right-1 w-4 h-4',
         )}
         title={'缺勤'}
       >
-        <svg className={compact ? 'w-2 h-2' : 'w-2.5 h-2.5'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3.5} d="M6 18L18 6M6 6l12 12" />
-        </svg>
+        <X className={compact ? 'w-2 h-2' : 'w-2.5 h-2.5'} strokeWidth={3.5} />
       </span>
     )
   }
@@ -94,7 +91,7 @@ function AttendanceBadge({ schedule, compact = false }: { schedule: Schedule; co
   if (!compact) {
     return (
       <span
-        className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-slate-400/60"
+        className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-muted-foreground/60"
         title={'未点名'}
       />
     )

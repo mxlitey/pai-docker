@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { bootstrapSuperAdmin } from '@/api/admin'
 import { Button, Field, inputClass } from '@/components/ui'
+import { CheckCircle2, Info } from 'lucide-react'
 
 interface BootstrapProps {
   onSuccess: () => void
@@ -24,7 +25,7 @@ function passwordStrength(pwd: string): number {
 
 const STRENGTH_LABELS = ['很弱', '弱', '一般', '较强', '强']
 const STRENGTH_COLORS = [
-  'bg-slate-200',
+  'bg-muted',
   'bg-rose-400',
   'bg-amber-400',
   'bg-blue-400',
@@ -76,22 +77,15 @@ export function Bootstrap({ onSuccess, onExit }: BootstrapProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4 py-8">
+    <div className="min-h-screen flex items-center justify-center bg-background px-4 py-8">
       <div className="w-full max-w-md">
         {/* 头部 */}
         <div className="text-center mb-6">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-brand-500 flex items-center justify-center text-white mb-4">
-            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-primary flex items-center justify-center text-white mb-4">
+            <CheckCircle2 className="w-7 h-7" />
           </div>
-          <h1 className="text-xl font-semibold text-slate-800">{'系统初始化'}</h1>
-          <p className="text-sm text-slate-500 mt-1.5">
+          <h1 className="text-xl font-semibold text-foreground">{'系统初始化'}</h1>
+          <p className="text-sm text-muted-foreground mt-1.5">
             {'首次使用请创建超级管理员账号'}
           </p>
         </div>
@@ -99,19 +93,7 @@ export function Bootstrap({ onSuccess, onExit }: BootstrapProps) {
         {/* 提示卡片 */}
         <div className="card p-4 mb-4 bg-amber-50 border-amber-200">
           <div className="flex gap-2.5 text-sm text-amber-700">
-            <svg
-              className="w-5 h-5 flex-shrink-0 mt-0.5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+            <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
             <div className="space-y-1">
               <p className="font-medium">安全提示</p>
               <ul className="text-xs space-y-0.5 text-amber-600">
@@ -169,12 +151,12 @@ export function Bootstrap({ onSuccess, onExit }: BootstrapProps) {
                     <div
                       key={i}
                       className={`h-1 flex-1 rounded-full transition-colors ${
-                        i < strength ? STRENGTH_COLORS[strength] : 'bg-slate-100'
+                        i < strength ? STRENGTH_COLORS[strength] : 'bg-muted'
                       }`}
                     />
                   ))}
                 </div>
-                <span className="text-xs text-slate-400 w-8 text-right">
+                <span className="text-xs text-muted-foreground/70 w-8 text-right">
                   {STRENGTH_LABELS[strength]}
                 </span>
               </div>
@@ -205,7 +187,7 @@ export function Bootstrap({ onSuccess, onExit }: BootstrapProps) {
 
           {/* 错误提示 */}
           {error && (
-            <div className="bg-rose-50 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
+            <div className="bg-destructive/10 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
               {error}
             </div>
           )}
@@ -225,7 +207,7 @@ export function Bootstrap({ onSuccess, onExit }: BootstrapProps) {
           </Button>
         </form>
 
-        <p className="text-center text-xs text-slate-400 mt-4">
+        <p className="text-center text-xs text-muted-foreground/70 mt-4">
           用户名创建后不可修改，请妥善记忆
         </p>
       </div>

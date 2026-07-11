@@ -103,7 +103,7 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-background">
       <SubPageHeader title={'班级管理'} onBack={onBack} count={classes.length}>
         <Button variant="primary" onClick={() => setAdding(true)} disabled={actionDisabled}>
           + {'新增班级'}
@@ -112,7 +112,7 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
 
       <main className="max-w-5xl mx-auto px-4 py-6">
         {loading ? (
-          <div className="card p-10 text-center text-sm text-slate-400">{'加载中…'}</div>
+          <div className="card p-10 text-center text-sm text-muted-foreground/70">{'加载中…'}</div>
         ) : classes.length === 0 ? (
           <EmptyState
             title={'暂无班级，请先新增'}
@@ -134,7 +134,7 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
                 placeholder={'搜索班级名称'}
                 className={cn(inputClass, 'max-w-xs')}
               />
-              <span className="text-xs text-slate-400 whitespace-nowrap">
+              <span className="text-xs text-muted-foreground/70 whitespace-nowrap">
                 共 {filtered.length} 个班级
               </span>
             </div>
@@ -142,7 +142,7 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 text-slate-500 text-xs">
+                  <tr className="border-b border-border text-muted-foreground text-xs">
                     <th className="text-left py-2 px-2 font-medium">{'班级名称'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'关联课程'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'年级'}</th>
@@ -156,27 +156,27 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-8 text-center text-slate-400">
+                      <td colSpan={8} className="py-8 text-center text-muted-foreground/70">
                         {'无匹配的班级'}
                       </td>
                     </tr>
                   ) : (
                     filtered.map((c) => (
-                      <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                        <td className="py-2.5 px-2 font-medium text-slate-700">{c.name}</td>
-                        <td className="py-2.5 px-2 text-slate-600">
-                          {c.courseName || <span className="text-slate-300">—</span>}
+                      <tr key={c.id} className="border-b border-border hover:bg-muted/50 transition-colors">
+                        <td className="py-2.5 px-2 font-medium text-foreground">{c.name}</td>
+                        <td className="py-2.5 px-2 text-muted-foreground">
+                          {c.courseName || <span className="text-muted-foreground/40">—</span>}
                         </td>
-                        <td className="py-2.5 px-2 text-slate-600">{c.grade || '—'}</td>
-                        <td className="py-2.5 px-2 text-slate-600">
-                          {c.teacher || <span className="text-slate-300">—</span>}
+                        <td className="py-2.5 px-2 text-muted-foreground">{c.grade || '—'}</td>
+                        <td className="py-2.5 px-2 text-muted-foreground">
+                          {c.teacher || <span className="text-muted-foreground/40">—</span>}
                         </td>
-                        <td className="py-2.5 px-2 text-slate-600">{c.memberCount ?? 0}</td>
-                        <td className="py-2.5 px-2 text-slate-600">{c.capacity ?? 0}</td>
+                        <td className="py-2.5 px-2 text-muted-foreground">{c.memberCount ?? 0}</td>
+                        <td className="py-2.5 px-2 text-muted-foreground">{c.capacity ?? 0}</td>
                         <td className="py-2.5 px-2">
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                             c.status === 'inactive'
-                              ? 'bg-slate-100 text-slate-500'
+                              ? 'bg-muted text-muted-foreground'
                               : 'bg-green-50 text-green-700'
                           }`}>
                             {c.status === 'inactive' ? '停用' : '启用'}
@@ -186,21 +186,21 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
                           <button
                             onClick={() => setEditing(c)}
                             disabled={actionDisabled}
-                            className="text-brand-600 hover:text-brand-700 text-xs font-medium disabled:opacity-50 mr-3"
+                            className="text-primary hover:text-brand-700 text-xs font-medium disabled:opacity-50 mr-3"
                           >
                             {'编辑'}
                           </button>
                           <button
                             onClick={() => setManagingMembers(c)}
                             disabled={actionDisabled}
-                            className="text-brand-600 hover:text-brand-700 text-xs font-medium disabled:opacity-50 mr-3"
+                            className="text-primary hover:text-brand-700 text-xs font-medium disabled:opacity-50 mr-3"
                           >
                             {'成员'}
                           </button>
                           <button
                             onClick={() => handleDelete(c)}
                             disabled={actionDisabled}
-                            className="text-rose-500 hover:text-rose-600 text-xs font-medium disabled:opacity-50"
+                            className="text-destructive hover:text-destructive text-xs font-medium disabled:opacity-50"
                           >
                             {'删除'}
                           </button>
@@ -487,15 +487,15 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
               step={300}
               value={form.defaultStartTime}
               onChange={(e) => update({ defaultStartTime: e.target.value })}
-              className={cn(inputClass, 'bg-white w-32')}
+              className={cn(inputClass, 'bg-background w-32')}
             />
-            <span className="text-slate-400 px-1">-</span>
+            <span className="text-muted-foreground/70 px-1">-</span>
             <input
               type="time"
               step={300}
               value={form.defaultEndTime}
               onChange={(e) => update({ defaultEndTime: e.target.value })}
-              className={cn(inputClass, 'bg-white w-32')}
+              className={cn(inputClass, 'bg-background w-32')}
             />
           </div>
         </Field>
@@ -666,13 +666,13 @@ function ClassMembersModal({ cls, students, onClose, onMembersChanged, showToast
       <div className="space-y-4">
         {/* 成员名单 */}
         {loading ? (
-          <div className="text-center text-sm text-slate-400 py-8">{'加载中…'}</div>
+          <div className="text-center text-sm text-muted-foreground/70 py-8">{'加载中…'}</div>
         ) : members.length === 0 ? (
-          <div className="text-center text-sm text-slate-400 py-8">{'暂无成员，点击下方"添加成员"'}</div>
+          <div className="text-center text-sm text-muted-foreground/70 py-8">{'暂无成员，点击下方"添加成员"'}</div>
         ) : (
-          <div className="border border-slate-200 rounded-md overflow-hidden">
+          <div className="border border-border rounded-md overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs">
+              <thead className="bg-background text-muted-foreground text-xs">
                 <tr>
                   <th className="text-left py-2 px-3 font-medium">{'姓名'}</th>
                   <th className="text-left py-2 px-3 font-medium">{'年级'}</th>
@@ -681,24 +681,24 @@ function ClassMembersModal({ cls, students, onClose, onMembersChanged, showToast
                   <th className="text-right py-2 px-3 font-medium">{'操作'}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {members.map((m) => (
-                  <tr key={m.id} className="hover:bg-slate-50/50">
-                    <td className="py-2 px-3 font-medium text-slate-700">{m.name}</td>
-                    <td className="py-2 px-3 text-slate-600">
-                      {m.grade || <span className="text-slate-300">—</span>}
+                  <tr key={m.id} className="hover:bg-muted/50">
+                    <td className="py-2 px-3 font-medium text-foreground">{m.name}</td>
+                    <td className="py-2 px-3 text-muted-foreground">
+                      {m.grade || <span className="text-muted-foreground/40">—</span>}
                     </td>
-                    <td className="py-2 px-3 text-slate-600">
-                      {m.phone || <span className="text-slate-300">—</span>}
+                    <td className="py-2 px-3 text-muted-foreground">
+                      {m.phone || <span className="text-muted-foreground/40">—</span>}
                     </td>
-                    <td className="py-2 px-3 text-slate-500 text-xs">
-                      {m.joinedAt ? m.joinedAt.slice(0, 10) : <span className="text-slate-300">—</span>}
+                    <td className="py-2 px-3 text-muted-foreground text-xs">
+                      {m.joinedAt ? m.joinedAt.slice(0, 10) : <span className="text-muted-foreground/40">—</span>}
                     </td>
                     <td className="py-2 px-3 text-right">
                       <button
                         onClick={() => handleRemove(m)}
                         disabled={busy}
-                        className="text-rose-500 hover:text-rose-600 text-xs font-medium disabled:opacity-50"
+                        className="text-destructive hover:text-destructive text-xs font-medium disabled:opacity-50"
                       >
                         {'移除'}
                       </button>
@@ -711,7 +711,7 @@ function ClassMembersModal({ cls, students, onClose, onMembersChanged, showToast
         )}
 
         {/* 添加成员区 */}
-        <div className="border-t border-slate-100 pt-4">
+        <div className="border-t border-border pt-4">
           {!showAdd ? (
             <Button variant="outline" onClick={() => setShowAdd(true)} disabled={busy}>
               + {'添加成员'}
@@ -726,28 +726,28 @@ function ClassMembersModal({ cls, students, onClose, onMembersChanged, showToast
                   placeholder={'搜索姓名 / 年级 / 手机号'}
                   className={cn(inputClass, 'max-w-xs')}
                 />
-                <span className="text-xs text-slate-400 whitespace-nowrap">
+                <span className="text-xs text-muted-foreground/70 whitespace-nowrap">
                   可选 {available.length} 人{cls.grade ? `（${cls.grade}）` : ''}
                 </span>
               </div>
-              <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-md">
+              <div className="max-h-56 overflow-y-auto border border-border rounded-md">
                 {available.length === 0 ? (
-                  <div className="text-center text-sm text-slate-400 py-6">{'无可添加的学员'}</div>
+                  <div className="text-center text-sm text-muted-foreground/70 py-6">{'无可添加的学员'}</div>
                 ) : (
                   available.map((s) => (
                     <label
                       key={s.id}
-                      className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-b-0"
+                      className="flex items-center gap-3 px-3 py-2 hover:bg-muted/50 cursor-pointer border-b border-slate-50 last:border-b-0"
                     >
                       <input
                         type="checkbox"
                         checked={selected.has(s.id)}
                         onChange={() => toggle(s.id)}
-                        className="w-4 h-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400"
+                        className="w-4 h-4 rounded border-border text-primary focus:ring-ring"
                       />
-                      <span className="text-sm text-slate-700 font-medium">{s.name}</span>
-                      {s.grade && <span className="text-xs text-slate-400">{s.grade}</span>}
-                      {s.phone && <span className="text-xs text-slate-400">{s.phone}</span>}
+                      <span className="text-sm text-foreground font-medium">{s.name}</span>
+                      {s.grade && <span className="text-xs text-muted-foreground/70">{s.grade}</span>}
+                      {s.phone && <span className="text-xs text-muted-foreground/70">{s.phone}</span>}
                     </label>
                   ))
                 )}

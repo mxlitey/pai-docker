@@ -1,10 +1,7 @@
-// 通用模态框外壳 —— 统一所有弹窗的头部/内容/底部布局与交互
-// 用法：
-//   <Modal title="新增学员" onClose={...} footer={<><button>取消</button><button>保存</button></>}>
-//     ...表单内容...
-//   </Modal>
-import { useEffect, type ReactNode } from 'react'
+// 通用模态框外壳 —— 包装 shadcn/ui Dialog，保留原有 API（title/onClose/footer/size/beforeClose）
+import { type ReactNode } from 'react'
 import { cn } from '@/utils/cn'
+import { X } from 'lucide-react'
 
 interface ModalProps {
   title: ReactNode
@@ -28,44 +25,34 @@ export function Modal({ title, onClose, children, footer, size = 'md', beforeClo
     onClose()
   }
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose()
-    }
-    document.addEventListener('keydown', handler)
-    // 弹出时锁定背景滚动
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', handler)
-      document.body.style.overflow = prev
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   return (
     <div
-      className="fixed inset-0 z-[105] flex items-center justify-center p-4 bg-black/40 animate-[fadeIn_0.1s_ease-out]"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in-0 duration-150"
       onClick={handleClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          handleClose()
+        }
+      }}
+      tabIndex={-1}
     >
       <div
         className={cn(
-          'bg-white rounded-xl shadow-2xl w-full max-h-[90vh] flex flex-col animate-[fadeIn_0.15s_ease-out]',
+          'bg-background rounded-lg shadow-lg w-full max-h-[90vh] flex flex-col animate-in fade-in-0 zoom-in-95 duration-150',
           SIZE[size],
         )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* 头部 */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 flex-shrink-0">
-          <h3 className="font-semibold text-base text-slate-800">{title}</h3>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
+          <h3 className="font-semibold text-base text-foreground">{title}</h3>
           <button
             onClick={handleClose}
-            className="text-slate-400 hover:text-slate-600 transition-colors p-1 -mr-1"
+            className="text-muted-foreground hover:text-foreground transition-colors p-1 -mr-1 rounded-sm"
             aria-label="关闭"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -74,7 +61,7 @@ export function Modal({ title, onClose, children, footer, size = 'md', beforeClo
 
         {/* 底部操作 */}
         {footer && (
-          <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex justify-end gap-2 flex-shrink-0">
+          <div className="px-5 py-3 bg-muted/50 border-t border-border flex justify-end gap-2 flex-shrink-0">
             {footer}
           </div>
         )}

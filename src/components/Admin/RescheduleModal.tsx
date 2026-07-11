@@ -194,18 +194,18 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
     >
       <div className="space-y-4">
         {/* 原排课信息 */}
-        <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 space-y-1">
-          <div className="text-xs text-slate-400 mb-1">原排课{isMakeupMode ? '（缺勤）' : ''}</div>
-          <div className="text-sm text-slate-700 font-medium">
+        <div className="bg-background border border-border rounded-lg px-4 py-3 space-y-1">
+          <div className="text-xs text-muted-foreground/70 mb-1">原排课{isMakeupMode ? '（缺勤）' : ''}</div>
+          <div className="text-sm text-foreground font-medium">
             {schedule.studentName} · {origCourseName}
           </div>
-          <div className="text-sm text-slate-600">
+          <div className="text-sm text-muted-foreground">
             {schedule.date}
             {schedule.startTime ? ` ${schedule.startTime}` : ''}
             {schedule.endTime ? `-${schedule.endTime}` : ''}
           </div>
           {(schedule.teacher || schedule.location) && (
-            <div className="text-xs text-slate-500">
+            <div className="text-xs text-muted-foreground">
               {schedule.teacher ? `教师：${schedule.teacher}` : ''}
               {schedule.teacher && schedule.location ? ' · ' : ''}
               {schedule.location ? `地点：${schedule.location}` : ''}
@@ -216,30 +216,30 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
         {/* 调课历史（仅调课模式显示，补课不写 schedule_changes） */}
         {!isMakeupMode && (loadingChanges || changes.length > 0) && (
           <div className="space-y-2">
-            <div className="text-xs text-slate-400">调课历史（{changes.length}）</div>
+            <div className="text-xs text-muted-foreground/70">调课历史（{changes.length}）</div>
             {loadingChanges ? (
-              <div className="text-xs text-slate-400">加载中…</div>
+              <div className="text-xs text-muted-foreground/70">加载中…</div>
             ) : (
               <div className="space-y-1.5 max-h-40 overflow-y-auto">
                 {changes.map((c) => (
                   <div
                     key={c.id}
-                    className="text-xs bg-amber-50 border border-amber-100 rounded px-3 py-2 text-slate-600"
+                    className="text-xs bg-amber-50 border border-amber-100 rounded px-3 py-2 text-muted-foreground"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-slate-400 line-through">
+                      <span className="text-muted-foreground/70 line-through">
                         {c.beforeDate} {c.beforeStartTime || ''}
                       </span>
-                      <span className="text-slate-400">→</span>
-                      <span className="text-slate-700 font-medium">
+                      <span className="text-muted-foreground/70">→</span>
+                      <span className="text-foreground font-medium">
                         {c.afterDate} {c.afterStartTime || ''}
                       </span>
                     </div>
                     {c.reason && (
-                      <div className="mt-0.5 text-slate-500">原因：{c.reason}</div>
+                      <div className="mt-0.5 text-muted-foreground">原因：{c.reason}</div>
                     )}
                     {c.createdAt && (
-                      <div className="mt-0.5 text-slate-400">{c.createdAt}</div>
+                      <div className="mt-0.5 text-muted-foreground/70">{c.createdAt}</div>
                     )}
                   </div>
                 ))}
@@ -250,12 +250,12 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
 
         {/* 新时间表单 */}
         <div className="space-y-3 pt-2">
-          <div className="text-sm text-slate-400">{isMakeupMode ? '补课时间' : '调至新时间'}</div>
+          <div className="text-sm text-muted-foreground/70">{isMakeupMode ? '补课时间' : '调至新时间'}</div>
 
           {/* 新日期 */}
           <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-400 w-20 flex-shrink-0">
-              <span className="text-rose-500 mr-0.5">*</span>新日期
+            <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0">
+              <span className="text-destructive mr-0.5">*</span>新日期
             </span>
             <input
               type="date"
@@ -267,7 +267,7 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
 
           {/* 新时间 */}
           <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-400 w-20 flex-shrink-0">新时间</span>
+            <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0">新时间</span>
             <div className="flex items-center gap-2 flex-1">
               <input
                 type="time"
@@ -275,7 +275,7 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
                 onChange={(e) => setNewStartTime(e.target.value)}
                 className={inputClass}
               />
-              <span className="text-slate-400">-</span>
+              <span className="text-muted-foreground/70">-</span>
               <input
                 type="time"
                 value={newEndTime}
@@ -287,10 +287,10 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
         </div>
 
         {/* 插班设置：可选改课程/班级/老师/地点 */}
-        <div className="space-y-3 pt-2 border-t border-slate-100">
+        <div className="space-y-3 pt-2 border-t border-border">
           <div className="flex items-center justify-between">
-            <div className="text-sm text-slate-400">插班设置</div>
-            <div className="text-xs text-slate-400">
+            <div className="text-sm text-muted-foreground/70">插班设置</div>
+            <div className="text-xs text-muted-foreground/70">
               {insertChanged ? '已调整课程/班级/老师/地点' : '默认沿用原排课，可按需调整'}
             </div>
           </div>
@@ -298,11 +298,11 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
           {/* 课程 */}
           {courses.length > 0 && (
             <div className="flex items-center gap-4">
-              <span className="text-sm text-slate-400 w-20 flex-shrink-0">课程</span>
+              <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0">课程</span>
               <select
                 value={newCourseId}
                 onChange={(e) => handleCourseChange(e.target.value)}
-                className={cn(inputClass, 'bg-white')}
+                className={cn(inputClass, 'bg-background')}
               >
                 <option value="">不指定课程</option>
                 {courses.map((c) => (
@@ -317,11 +317,11 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
           {/* 班级 */}
           {classes.length > 0 && (
             <div className="flex items-center gap-4">
-              <span className="text-sm text-slate-400 w-20 flex-shrink-0">班级</span>
+              <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0">班级</span>
               <select
                 value={newClassId}
                 onChange={(e) => handleClassChange(e.target.value)}
-                className={cn(inputClass, 'bg-white')}
+                className={cn(inputClass, 'bg-background')}
               >
                 <option value="">不指定班级</option>
                 {classOptions.map((c) => (
@@ -335,7 +335,7 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
 
           {/* 老师 */}
           <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-400 w-20 flex-shrink-0">教师</span>
+            <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0">教师</span>
             <input
               type="text"
               value={newTeacher}
@@ -347,7 +347,7 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
 
           {/* 地点 */}
           <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-400 w-20 flex-shrink-0">地点</span>
+            <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0">地点</span>
             <input
               type="text"
               value={newLocation}
@@ -360,7 +360,7 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
 
         {/* 原因 */}
         <div className="flex items-center gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0">{isMakeupMode ? '补课说明' : '调课原因'}</span>
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0">{isMakeupMode ? '补课说明' : '调课原因'}</span>
           <input
             type="text"
             value={reason}
