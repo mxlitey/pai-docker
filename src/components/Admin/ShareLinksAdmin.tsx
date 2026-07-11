@@ -91,20 +91,20 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-full bg-background">
       <SubPageHeader title={'分享链接'} onBack={onBack} count={students.length} countLabel="人" />
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-4">
         {/* 说明 */}
         <section className="card p-4">
-          <div className="text-xs text-slate-500 leading-relaxed space-y-1.5">
+          <div className="text-xs text-muted-foreground leading-relaxed space-y-1.5">
             <p>
               为每位学员生成家长端专属链接。家长点击链接后需输入报名时登记的
-              <strong className="text-slate-700">手机号后 4 位</strong>
+              <strong className="text-foreground">手机号后 4 位</strong>
               进行身份验证，通过后仅可查看该学员的排课、课时余额与教师课后反馈。
             </p>
             <p>
-              链接格式：<code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono">域名/?s=学员id</code>
+              链接格式：<code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">域名/?s=学员id</code>
             </p>
             <p className="text-amber-600">
               ⚠️ 学员档案未填写手机号时家长无法验真，请先到「学员管理」补充家长手机号。
@@ -123,7 +123,7 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
                 placeholder={'搜索姓名 / ID'}
                 className={inputClass}
               />
-              <span className="text-xs text-slate-400 whitespace-nowrap">
+              <span className="text-xs text-muted-foreground/70 whitespace-nowrap">
                 共 {filtered.length} 人
               </span>
             </div>
@@ -144,7 +144,7 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
           <section className="card p-0 overflow-hidden">
             {/* 桌面端表格 */}
             <table className="w-full text-sm hidden sm:table">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs">
+              <thead className="bg-background border-b border-border text-muted-foreground text-xs">
                 <tr>
                   <th className="text-left py-2 px-4 font-medium">{'姓名'}</th>
                   <th className="text-left py-2 px-4 font-medium">手机号</th>
@@ -152,29 +152,29 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
                   <th className="text-right py-2 px-4 font-medium">{'操作'}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {filtered.map((s) => {
                   const phoneOk = hasPhone(s)
                   return (
-                    <tr key={s.id} className="hover:bg-slate-50/50">
-                      <td className="py-2.5 px-4 font-medium text-slate-800 whitespace-nowrap">
+                    <tr key={s.id} className="hover:bg-muted/50">
+                      <td className="py-2.5 px-4 font-medium text-foreground whitespace-nowrap">
                         {s.name}
                       </td>
-                      <td className="py-2.5 px-4 text-slate-500 whitespace-nowrap">
+                      <td className="py-2.5 px-4 text-muted-foreground whitespace-nowrap">
                         {phoneOk ? (
                           <span className="font-mono text-xs">{s.phone?.replace(/(\d{4})$/, '****$1')}</span>
                         ) : (
-                          <span className="text-rose-500 text-xs">未登记</span>
+                          <span className="text-destructive text-xs">未登记</span>
                         )}
                       </td>
-                      <td className="py-2.5 px-4 text-slate-600 text-xs font-mono break-all">
+                      <td className="py-2.5 px-4 text-muted-foreground text-xs font-mono break-all">
                         {phoneOk ? buildLink(s) : '—'}
                       </td>
                       <td className="py-2.5 px-4 text-right whitespace-nowrap">
                         <button
                           onClick={() => handleCopy(s)}
                           disabled={!phoneOk}
-                          className="btn-ghost border border-slate-200 text-xs py-1 px-2.5 hover:bg-brand-50 hover:text-brand-700 hover:border-brand-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="btn-ghost border border-border text-xs py-1 px-2.5 hover:bg-primary/10 hover:text-primary hover:border-brand-200 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           {copiedId === s.id ? '已复制' : '复制'}
                         </button>
@@ -186,24 +186,24 @@ export function ShareLinksAdmin({ students, onBack }: ShareLinksAdminProps) {
             </table>
 
             {/* 移动端卡片列表 */}
-            <div className="sm:hidden divide-y divide-slate-100">
+            <div className="sm:hidden divide-y divide-border">
               {filtered.map((s) => {
                 const phoneOk = hasPhone(s)
                 return (
                   <div key={s.id} className="p-3 space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="text-sm font-medium text-slate-800 truncate">
+                        <div className="text-sm font-medium text-foreground truncate">
                           {s.name}
                         </div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-muted-foreground/70">
                           {phoneOk ? `手机尾号 ${s.phone?.replace(/\D/g, '').slice(-4)}` : '未登记手机号'}
                         </div>
                       </div>
                       <button
                         onClick={() => handleCopy(s)}
                         disabled={!phoneOk}
-                        className="btn-ghost border border-slate-200 text-xs py-1 px-2.5 hover:bg-brand-50 hover:text-brand-700 hover:border-brand-200 flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="btn-ghost border border-border text-xs py-1 px-2.5 hover:bg-primary/10 hover:text-primary hover:border-brand-200 flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {copiedId === s.id ? '已复制' : '复制'}
                       </button>

@@ -5,6 +5,7 @@ import { cn } from '@/utils/cn'
 import { ScheduleCard } from '../ScheduleCard'
 import { format } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
+import { ClipboardList } from 'lucide-react'
 
 interface WeekViewProps {
   currentDate: Date
@@ -43,14 +44,14 @@ export function WeekView({ currentDate, schedules, onScheduleClick }: WeekViewPr
       {/* 小屏提示：日期切换说明 + 圆点图例 */}
       <div className="sm:hidden flex items-center justify-center gap-3 px-3 py-2 text-xs text-amber-700 bg-amber-50 border-b border-amber-100">
         <span>{'点击下方日期切换查看'}</span>
-        <span className="flex items-center gap-1 text-slate-500">
+        <span className="flex items-center gap-1 text-muted-foreground">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-500" />
           {'表示当天有排课'}
         </span>
       </div>
 
       {/* ============ 星期表头（共用，大屏可点击高亮当日列；小屏作为日期切换 tabs） ============ */}
-      <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+      <div className="grid grid-cols-7 border-b border-border bg-background">
         {weekDays.map((day) => {
           const isToday = day.toDateString() === today.toDateString()
           const dayStr = formatDate(day)
@@ -62,13 +63,13 @@ export function WeekView({ currentDate, schedules, onScheduleClick }: WeekViewPr
               key={day.toISOString()}
               onClick={() => setSelectedDay(dayStr)}
               className={cn(
-                'py-2 text-center border-r border-slate-100 last:border-r-0 transition-colors',
+                'py-2 text-center border-r border-border last:border-r-0 transition-colors',
                 'sm:cursor-default sm:pointer-events-none',
-                isSelected && 'bg-white',
+                isSelected && 'bg-background',
               )}
               type="button"
             >
-              <div className="text-xs text-slate-400">
+              <div className="text-xs text-muted-foreground/70">
                 {weekdayKeys[day.getDay()]}
               </div>
               <div
@@ -77,14 +78,14 @@ export function WeekView({ currentDate, schedules, onScheduleClick }: WeekViewPr
                   isToday
                     ? 'bg-brand-500 text-white font-semibold'
                     : isSelected
-                      ? 'text-brand-600 font-semibold'
-                      : 'text-slate-700',
+                      ? 'text-primary font-semibold'
+                      : 'text-foreground',
                 )}
               >
                 {format(day, 'd')}
               </div>
               {/* 大屏：显示节数文字 */}
-              <div className="text-[10px] text-slate-400 mt-0.5 hidden sm:block">
+              <div className="text-[10px] text-muted-foreground/70 mt-0.5 hidden sm:block">
                 {daySchedules.length > 0 ? `${daySchedules.length}节` : ''}
               </div>
               {/* 小屏：有课显示品牌色圆点，无课占位保持高度一致 */}
@@ -108,11 +109,11 @@ export function WeekView({ currentDate, schedules, onScheduleClick }: WeekViewPr
           return (
             <div
               key={day.toISOString()}
-              className="border-r border-slate-100 last:border-r-0 p-1.5 space-y-2 min-h-[400px]"
+              className="border-r border-border last:border-r-0 p-1.5 space-y-2 min-h-[400px]"
             >
               {daySchedules.length === 0 ? (
                 <div className="h-full flex items-center justify-center">
-                  <span className="text-xs text-slate-300">{'无课'}</span>
+                  <span className="text-xs text-muted-foreground/40">{'无课'}</span>
                 </div>
               ) : (
                 daySchedules.map((s) => (
@@ -133,14 +134,14 @@ export function WeekView({ currentDate, schedules, onScheduleClick }: WeekViewPr
         {/* 选中日标题 */}
         <div className="flex items-center justify-between mb-3">
           <div>
-            <div className="text-base font-semibold text-slate-800">
+            <div className="text-base font-semibold text-foreground">
               {format(
                 weekDays.find((d) => formatDate(d) === selectedDay) || weekDays[0],
                 'M月d日 EEEE',
                 { locale: zhCN },
               )}
             </div>
-            <div className="text-xs text-slate-500 mt-0.5">
+            <div className="text-xs text-muted-foreground mt-0.5">
               {`共 ${selectedSchedules.length} 节课`}
             </div>
           </div>
@@ -148,10 +149,8 @@ export function WeekView({ currentDate, schedules, onScheduleClick }: WeekViewPr
 
         {/* 当日课程列表 */}
         {selectedSchedules.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-            <svg className="w-10 h-10 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground/70">
+            <ClipboardList className="w-10 h-10 mb-2 opacity-50" strokeWidth={1.5} />
             <span className="text-sm">{'今日无排课'}</span>
           </div>
         ) : (

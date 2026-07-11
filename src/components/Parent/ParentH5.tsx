@@ -16,6 +16,7 @@ import { WeekView } from '../Calendar/WeekView'
 import { DayView } from '../Calendar/DayView'
 import { ScheduleDetail } from '../ScheduleDetail'
 import type { Schedule, Feedback, ViewMode } from '@/types'
+import { AlertTriangle, Lock, Loader2, Star } from 'lucide-react'
 
 type Phase = 'loading' | 'verify' | 'verified' | 'error'
 
@@ -88,15 +89,13 @@ export function ParentH5({ appName }: { appName: string }) {
   // ===== 错误页 =====
   if (phase === 'error') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-6 text-center">
-        <div className="w-14 h-14 rounded-full bg-rose-100 text-rose-500 flex items-center justify-center mb-4">
-          <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6 text-center">
+        <div className="w-14 h-14 rounded-full bg-rose-100 text-destructive flex items-center justify-center mb-4">
+          <AlertTriangle className="w-7 h-7" />
         </div>
-        <p className="text-sm text-slate-600 mb-1">无法访问</p>
-        <p className="text-xs text-slate-400 max-w-xs leading-relaxed">{errorMsg}</p>
-        <p className="text-xs text-slate-400 mt-4">请联系老师获取新的专属链接</p>
+        <p className="text-sm text-muted-foreground mb-1">无法访问</p>
+        <p className="text-xs text-muted-foreground/70 max-w-xs leading-relaxed">{errorMsg}</p>
+        <p className="text-xs text-muted-foreground/70 mt-4">请联系老师获取新的专属链接</p>
       </div>
     )
   }
@@ -104,27 +103,25 @@ export function ParentH5({ appName }: { appName: string }) {
   // ===== 手机号校验页 =====
   if (phase === 'verify') {
     return (
-      <div className="min-h-screen flex flex-col bg-slate-50">
-        <header className="bg-white border-b border-slate-200 py-3 px-4 flex items-center justify-between">
-          <span className="font-semibold text-slate-800 text-sm">{appName}</span>
+      <div className="min-h-screen flex flex-col bg-background">
+        <header className="bg-background border-b border-border py-3 px-4 flex items-center justify-between">
+          <span className="font-semibold text-foreground text-sm">{appName}</span>
         </header>
         <main className="flex-1 flex flex-col items-center justify-center px-6 py-10">
           <div className="w-full max-w-sm">
             <div className="text-center mb-6">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mb-3">
-                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-3">
+                <Lock className="w-7 h-7" />
               </div>
-              <h1 className="text-lg font-semibold text-slate-800">身份验证</h1>
-              <p className="text-sm text-slate-400 mt-1">
-                学员：<span className="text-slate-600 font-medium">{studentName}</span>
+              <h1 className="text-lg font-semibold text-foreground">身份验证</h1>
+              <p className="text-sm text-muted-foreground/70 mt-1">
+                学员：<span className="text-muted-foreground font-medium">{studentName}</span>
               </p>
             </div>
 
             <form onSubmit={handleVerify} className="card p-6 space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">
                   {phoneHint}
                 </label>
                 <input
@@ -144,7 +141,7 @@ export function ParentH5({ appName }: { appName: string }) {
               </div>
 
               {errorMsg && (
-                <div className="bg-rose-50 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
+                <div className="bg-destructive/10 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
                   {errorMsg}
                 </div>
               )}
@@ -158,7 +155,7 @@ export function ParentH5({ appName }: { appName: string }) {
               </button>
             </form>
 
-            <p className="text-xs text-slate-400 text-center mt-4 leading-relaxed">
+            <p className="text-xs text-muted-foreground/70 text-center mt-4 leading-relaxed">
               仅可查看本学员信息，如需修改请联系老师
             </p>
           </div>
@@ -170,12 +167,9 @@ export function ParentH5({ appName }: { appName: string }) {
   // ===== 加载中 =====
   if (phase === 'loading' || !data) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-sm text-slate-500 flex items-center gap-2">
-          <svg className="animate-spin w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-sm text-muted-foreground flex items-center gap-2">
+          <Loader2 className="animate-spin w-4 h-4 text-primary" />
           {'加载中…'}
         </div>
       </div>
@@ -184,17 +178,17 @@ export function ParentH5({ appName }: { appName: string }) {
 
   // ===== 已验证：学员信息主页 =====
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+    <div className="min-h-screen bg-background">
+      <header className="bg-background border-b border-border sticky top-0 z-10">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center font-semibold">
+            <div className="w-9 h-9 rounded-full bg-brand-100 text-primary flex items-center justify-center font-semibold">
               {data.student.name.charAt(0)}
             </div>
             <div>
-              <div className="font-semibold text-slate-800 text-sm">{data.student.name}</div>
+              <div className="font-semibold text-foreground text-sm">{data.student.name}</div>
               {data.student.grade && (
-                <div className="text-xs text-slate-400">{data.student.grade}</div>
+                <div className="text-xs text-muted-foreground/70">{data.student.grade}</div>
               )}
             </div>
           </div>
@@ -206,12 +200,12 @@ export function ParentH5({ appName }: { appName: string }) {
         <section className="card p-4 bg-gradient-to-r from-brand-50 to-transparent">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center font-semibold text-base">
+              <div className="w-10 h-10 rounded-full bg-brand-100 text-primary flex items-center justify-center font-semibold text-base">
                 {data.student.name.charAt(0)}
               </div>
               <div>
-                <div className="font-semibold text-slate-800">{data.student.name}</div>
-                <div className="text-xs text-slate-400">
+                <div className="font-semibold text-foreground">{data.student.name}</div>
+                <div className="text-xs text-muted-foreground/70">
                   {[
                     data.student.grade,
                     data.student.parentName,
@@ -220,8 +214,8 @@ export function ParentH5({ appName }: { appName: string }) {
               </div>
             </div>
             <div className="text-right">
-              <div className="text-xs text-slate-400">总排课</div>
-              <div className="text-lg font-semibold text-brand-600">{data.schedules.length}</div>
+              <div className="text-xs text-muted-foreground/70">总排课</div>
+              <div className="text-lg font-semibold text-primary">{data.schedules.length}</div>
             </div>
           </div>
           {/* 课时余额速览 */}
@@ -229,8 +223,8 @@ export function ParentH5({ appName }: { appName: string }) {
             <div className="mt-3 pt-3 border-t border-brand-100/60 space-y-1.5">
               {data.enrollments.map((e, i) => (
                 <div key={`${e.courseId}-${i}`} className="flex items-center justify-between text-xs">
-                  <span className="text-slate-600">{e.courseName || `课程 ${e.courseId.slice(-6)}`}</span>
-                  <span className={`font-medium ${e.remainingHours > 0 ? 'text-brand-600' : 'text-slate-400'}`}>
+                  <span className="text-muted-foreground">{e.courseName || `课程 ${e.courseId.slice(-6)}`}</span>
+                  <span className={`font-medium ${e.remainingHours > 0 ? 'text-primary' : 'text-muted-foreground/70'}`}>
                     剩余 {e.remainingHours} 课时
                   </span>
                 </div>
@@ -245,21 +239,19 @@ export function ParentH5({ appName }: { appName: string }) {
         {/* 教师课后反馈 */}
         {data.feedback.length > 0 && (
           <section className="card p-4">
-            <h2 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
-              <svg className="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-              </svg>
+            <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-1.5">
+              <Star className="w-4 h-4 text-amber-500" />
               教师课后反馈（{data.feedback.length}）
             </h2>
             <div className="space-y-3">
               {data.feedback.map((fb: Feedback) => (
                 <div key={fb.id} className="border-b border-slate-50 last:border-0 pb-3 last:pb-0">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-slate-500">{fb.date || '—'}</span>
+                    <span className="text-xs text-muted-foreground">{fb.date || '—'}</span>
                     <span className="text-amber-500 text-xs">{renderStars(fb.rating)}</span>
                   </div>
                   {fb.content && (
-                    <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">{fb.content}</p>
+                    <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{fb.content}</p>
                   )}
                 </div>
               ))}
@@ -267,7 +259,7 @@ export function ParentH5({ appName }: { appName: string }) {
           </section>
         )}
 
-        <p className="text-xs text-slate-300 text-center py-2">
+        <p className="text-xs text-muted-foreground/40 text-center py-2">
           如需调整排课或信息有误，请联系老师
         </p>
       </main>

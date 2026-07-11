@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { Check, ChevronDown } from 'lucide-react'
 import type { Schedule, Student } from '@/types'
 import { updateSchedule, deleteSchedule } from '@/api/admin'
 import { cn } from '@/utils/cn'
@@ -164,22 +165,22 @@ export function ScheduleEditor({
     >
       <div className="space-y-4">
         {/* 必填说明 */}
-        <div className="text-xs text-slate-400">
-          <span className="text-rose-500">*</span> 为必填项
+        <div className="text-xs text-muted-foreground/70">
+          <span className="text-destructive">*</span> 为必填项
         </div>
 
         {/* 不可编辑的 id */}
         <div className="flex items-center gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0">排课ID</span>
-          <span className="text-sm text-slate-600 font-mono bg-slate-50 px-2 py-1 rounded break-all">
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0">排课ID</span>
+          <span className="text-sm text-muted-foreground font-mono bg-background px-2 py-1 rounded break-all">
             {form.id}
           </span>
         </div>
 
         {/* 学员选择（搜索） */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
-            <span className="text-rose-500 mr-0.5">*</span>{'学员'}
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">
+            <span className="text-destructive mr-0.5">*</span>{'学员'}
           </span>
           <StudentSearchSelect
             students={students}
@@ -190,8 +191,8 @@ export function ScheduleEditor({
 
         {/* 课程名称 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
-            <span className="text-rose-500 mr-0.5">*</span>{'课程名称'}
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">
+            <span className="text-destructive mr-0.5">*</span>{'课程名称'}
           </span>
           <input
             type="text"
@@ -204,8 +205,8 @@ export function ScheduleEditor({
 
         {/* 日期 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">
-            <span className="text-rose-500 mr-0.5">*</span>{'日期'}
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">
+            <span className="text-destructive mr-0.5">*</span>{'日期'}
           </span>
           <input
             type="date"
@@ -217,7 +218,7 @@ export function ScheduleEditor({
 
         {/* 时间 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'时间'}</span>
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'时间'}</span>
           <div className="flex items-center gap-2 flex-1">
             <input
               type="time"
@@ -225,7 +226,7 @@ export function ScheduleEditor({
               onChange={(e) => handleChange('startTime', e.target.value)}
               className={inputClass}
             />
-            <span className="text-slate-400">-</span>
+            <span className="text-muted-foreground/70">-</span>
             <input
               type="time"
               value={form.endTime}
@@ -237,7 +238,7 @@ export function ScheduleEditor({
 
         {/* 教师 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'教师'}</span>
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'教师'}</span>
           <input
             type="text"
             value={form.teacher}
@@ -249,7 +250,7 @@ export function ScheduleEditor({
 
         {/* 地点 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'地点'}</span>
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'地点'}</span>
           <input
             type="text"
             value={form.location}
@@ -261,7 +262,7 @@ export function ScheduleEditor({
 
         {/* 备注 */}
         <div className="flex items-start gap-4">
-          <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'备注'}</span>
+          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'备注'}</span>
           <input
             type="text"
             value={form.note}
@@ -288,7 +289,7 @@ export function ScheduleEditor({
 
         {/* 错误/成功提示 */}
         {error && (
-          <div className="bg-rose-50 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
+          <div className="bg-destructive/10 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
             {error}
           </div>
         )}
@@ -398,30 +399,25 @@ function StudentSearchSelect({ students, value, onChange }: StudentSearchSelectP
         />
         {/* 选中态标记 */}
         {selected && !open && (
-          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono bg-slate-50 px-1.5 py-0.5 rounded">
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground/70 font-mono bg-background px-1.5 py-0.5 rounded">
             {selected.id}
           </span>
         )}
         {/* 下拉箭头 */}
-        <svg
+        <ChevronDown
           className={cn(
-            'absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 transition-transform pointer-events-none',
+            'absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 transition-transform pointer-events-none',
             open && 'rotate-180',
           )}
           style={{ display: selected && !open ? 'none' : 'block' }}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        />
       </div>
 
       {/* 下拉列表 */}
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+        <div className="absolute z-50 mt-1 w-full bg-background border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
           {filtered.length === 0 ? (
-            <div className="px-3 py-6 text-center text-xs text-slate-400">
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground/70">
               {students.length === 0 ? '暂无学员数据' : '未找到匹配的学员'}
             </div>
           ) : (
@@ -432,21 +428,19 @@ function StudentSearchSelect({ students, value, onChange }: StudentSearchSelectP
                 onMouseEnter={() => setHighlight(idx)}
                 className={cn(
                   'px-3 py-2 cursor-pointer border-b border-slate-50 last:border-0',
-                  idx === highlight ? 'bg-brand-50' : 'hover:bg-slate-50',
+                  idx === highlight ? 'bg-primary/10' : 'hover:bg-muted/50',
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm text-slate-700 font-medium truncate">{s.name}</div>
-                    <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
+                    <div className="text-sm text-foreground font-medium truncate">{s.name}</div>
+                    <div className="text-xs text-muted-foreground/70 flex items-center gap-2 mt-0.5">
                       <span className="font-mono">{s.id}</span>
                       {s.grade && <span>· {s.grade}</span>}
                     </div>
                   </div>
                   {s.id === value && (
-                    <svg className="w-4 h-4 text-brand-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
+                    <Check className="w-4 h-4 text-primary flex-shrink-0" />
                   )}
                 </div>
               </div>

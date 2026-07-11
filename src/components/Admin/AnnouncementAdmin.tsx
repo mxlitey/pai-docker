@@ -33,36 +33,36 @@ export function AnnouncementAdmin({
     : ''
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-full bg-background">
       <SubPageHeader title={'公告管理'} onBack={onBack} />
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-5">
         {/* 公告设置 */}
         <section className="card p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-              <span className="w-1 h-4 bg-brand-500 rounded"></span>
+            <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+              <span className="w-1 h-4 bg-primary rounded"></span>
               {'公告内容'}
             </h2>
             {updatedAtLabel && (
-              <span className="text-xs text-slate-400">最近更新：{updatedAtLabel}</span>
+              <span className="text-xs text-muted-foreground/70">最近更新：{updatedAtLabel}</span>
             )}
           </div>
 
-          <div className="text-xs text-slate-500 mb-2 leading-relaxed">
+          <div className="text-xs text-muted-foreground mb-2 leading-relaxed">
             公告内容将展示在首页公告栏。支持 Markdown 语法（标题、列表、表格、链接、加粗、删除线、任务列表等）。
             内容为空时公告栏自动隐藏。保存后所有用户下次加载页面时即可看到最新公告。
           </div>
 
           {/* 编辑 / 预览 切换 */}
-          <div className="flex items-center gap-1 mb-2 border-b border-slate-200">
+          <div className="flex items-center gap-1 mb-2 border-b border-border">
             <button
               type="button"
               onClick={() => setAnnounceTab('edit')}
               className={
                 announceTab === 'edit'
-                  ? 'px-3 py-1.5 text-xs font-medium text-brand-600 border-b-2 border-brand-500 -mb-px'
-                  : 'px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700'
+                  ? 'px-3 py-1.5 text-xs font-medium text-primary border-b-2 border-primary -mb-px'
+                  : 'px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground'
               }
             >
               {'编辑'}
@@ -72,8 +72,8 @@ export function AnnouncementAdmin({
               onClick={() => setAnnounceTab('preview')}
               className={
                 announceTab === 'preview'
-                  ? 'px-3 py-1.5 text-xs font-medium text-brand-600 border-b-2 border-brand-500 -mb-px'
-                  : 'px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700'
+                  ? 'px-3 py-1.5 text-xs font-medium text-primary border-b-2 border-primary -mb-px'
+                  : 'px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground'
               }
             >
               {'预览'}
@@ -87,51 +87,51 @@ export function AnnouncementAdmin({
               onChange={(e) => setAnnouncementText(e.target.value)}
               placeholder={'请输入公告内容（支持 Markdown）'}
               maxLength={5000}
-              className="w-full h-72 px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-400 resize-y font-mono"
+              className="w-full h-72 px-3 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus-visible:ring-ring resize-y font-mono"
             />
           ) : (
-            <div className="w-full h-72 px-3 py-2 text-sm border border-slate-200 rounded-md overflow-y-auto bg-white announcement-md">
+            <div className="w-full h-72 px-3 py-2 text-sm border border-border rounded-md overflow-y-auto bg-background announcement-md">
               {announcementText.trim() ? (
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
-                    h1: ({ children }) => <h1 className="text-lg font-bold text-slate-800 mt-3 mb-2">{children}</h1>,
-                    h2: ({ children }) => <h2 className="text-base font-bold text-slate-800 mt-3 mb-2">{children}</h2>,
-                    h3: ({ children }) => <h3 className="text-sm font-bold text-slate-800 mt-2 mb-1">{children}</h3>,
-                    h4: ({ children }) => <h4 className="text-sm font-semibold text-slate-700 mt-2 mb-1">{children}</h4>,
+                    h1: ({ children }) => <h1 className="text-lg font-bold text-foreground mt-3 mb-2">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-base font-bold text-foreground mt-3 mb-2">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-sm font-bold text-foreground mt-2 mb-1">{children}</h3>,
+                    h4: ({ children }) => <h4 className="text-sm font-semibold text-foreground mt-2 mb-1">{children}</h4>,
                     p: ({ children }) => <p className="my-2">{children}</p>,
                     ul: ({ children }) => <ul className="list-disc pl-5 my-2 space-y-1">{children}</ul>,
                     ol: ({ children }) => <ol className="list-decimal pl-5 my-2 space-y-1">{children}</ol>,
                     li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-                    strong: ({ children }) => <strong className="font-semibold text-slate-800">{children}</strong>,
+                    strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
                     em: ({ children }) => <em className="italic">{children}</em>,
-                    del: ({ children }) => <del className="text-slate-400">{children}</del>,
+                    del: ({ children }) => <del className="text-muted-foreground/70">{children}</del>,
                     a: ({ children, href }) => (
-                      <a href={href} target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:text-brand-700 underline">
+                      <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary underline">
                         {children}
                       </a>
                     ),
                     blockquote: ({ children }) => (
-                      <blockquote className="border-l-2 border-amber-300 pl-3 my-2 text-slate-500 italic">{children}</blockquote>
+                      <blockquote className="border-l-2 border-amber-300 pl-3 my-2 text-muted-foreground italic">{children}</blockquote>
                     ),
                     code: ({ children, className }) => {
                       const isBlock = className?.includes('language-')
                       if (isBlock) {
-                        return <code className="block bg-slate-100 text-slate-800 rounded px-3 py-2 my-2 overflow-x-auto text-xs font-mono">{children}</code>
+                        return <code className="block bg-muted text-foreground rounded px-3 py-2 my-2 overflow-x-auto text-xs font-mono">{children}</code>
                       }
-                      return <code className="bg-slate-100 text-rose-600 rounded px-1 py-0.5 text-xs font-mono">{children}</code>
+                      return <code className="bg-muted text-destructive rounded px-1 py-0.5 text-xs font-mono">{children}</code>
                     },
                     pre: ({ children }) => <pre className="my-2">{children}</pre>,
                     table: ({ children }) => (
                       <div className="overflow-x-auto my-2">
-                        <table className="min-w-full text-xs border border-slate-200 rounded">{children}</table>
+                        <table className="min-w-full text-xs border border-border rounded">{children}</table>
                       </div>
                     ),
-                    thead: ({ children }) => <thead className="bg-slate-50 text-slate-700">{children}</thead>,
-                    tbody: ({ children }) => <tbody className="divide-y divide-slate-100">{children}</tbody>,
-                    th: ({ children }) => <th className="px-2 py-1 text-left font-semibold border-b border-slate-200">{children}</th>,
-                    td: ({ children }) => <td className="px-2 py-1 border-b border-slate-100">{children}</td>,
-                    hr: () => <hr className="my-3 border-slate-200" />,
+                    thead: ({ children }) => <thead className="bg-background text-foreground">{children}</thead>,
+                    tbody: ({ children }) => <tbody className="divide-y divide-border">{children}</tbody>,
+                    th: ({ children }) => <th className="px-2 py-1 text-left font-semibold border-b border-border">{children}</th>,
+                    td: ({ children }) => <td className="px-2 py-1 border-b border-border">{children}</td>,
+                    hr: () => <hr className="my-3 border-border" />,
                     input: ({ checked, ...rest }) => (
                       <input type="checkbox" checked={checked} disabled className="mr-1.5 align-middle" {...rest} />
                     ),
@@ -140,12 +140,12 @@ export function AnnouncementAdmin({
                   {announcementText}
                 </ReactMarkdown>
               ) : (
-                <div className="text-slate-400 italic">暂无内容，切换到「编辑」标签输入公告</div>
+                <div className="text-muted-foreground/70 italic">暂无内容，切换到「编辑」标签输入公告</div>
               )}
             </div>
           )}
           <div className="flex items-center justify-between mt-3">
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-muted-foreground/70">
               {announcementText.length}/5000 字 · 支持 Markdown
             </span>
             <Button

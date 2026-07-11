@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } fr
 import { createPortal } from 'react-dom'
 import type { Student } from '@/types'
 import { cn } from '@/utils/cn'
+import { Search } from 'lucide-react'
 
 interface SearchBarProps {
   onSelectStudent: (student: Student) => void
@@ -123,7 +124,7 @@ export function SearchBar({ onSelectStudent, students, initialValue, onQueryChan
         <ul
           ref={dropdownRef as React.RefObject<HTMLUListElement>}
           style={style}
-          className="bg-white border border-slate-200 rounded-lg shadow-lg max-h-72 overflow-y-auto"
+          className="bg-background border border-border rounded-lg shadow-lg max-h-72 overflow-y-auto"
         >
           {results.map((student, index) => (
             <li
@@ -132,13 +133,13 @@ export function SearchBar({ onSelectStudent, students, initialValue, onQueryChan
               onMouseEnter={() => setHighlightIndex(index)}
               className={cn(
                 'flex items-center justify-between px-4 py-2.5 cursor-pointer text-sm transition-colors',
-                highlightIndex === index ? 'bg-brand-50 text-brand-700' : 'hover:bg-slate-50',
+                highlightIndex === index ? 'bg-primary/10 text-primary' : 'hover:bg-muted',
               )}
             >
               <div className="flex items-center gap-2">
                 <span className="font-medium">{student.name}</span>
                 {student.grade && (
-                  <span className="text-xs text-slate-400">{student.grade}</span>
+                  <span className="text-xs text-muted-foreground">{student.grade}</span>
                 )}
               </div>
             </li>
@@ -152,7 +153,7 @@ export function SearchBar({ onSelectStudent, students, initialValue, onQueryChan
         <div
           ref={dropdownRef as React.RefObject<HTMLDivElement>}
           style={style}
-          className="bg-white border border-slate-200 rounded-lg shadow-lg px-4 py-3 text-sm text-slate-400"
+          className="bg-background border border-border rounded-lg shadow-lg px-4 py-3 text-sm text-muted-foreground"
         >
           未找到匹配的学员
         </div>,
@@ -165,19 +166,7 @@ export function SearchBar({ onSelectStudent, students, initialValue, onQueryChan
   return (
     <div ref={containerRef} className={cn('relative w-full', containerClassName)}>
       <div ref={inputWrapperRef} className="relative">
-        <svg
-          className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M21 21l-4.35-4.35M17 10a7 7 0 11-14 0 7 7 0 0114 0z"
-          />
-        </svg>
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input
           type="text"
           value={query}
@@ -185,7 +174,7 @@ export function SearchBar({ onSelectStudent, students, initialValue, onQueryChan
           onKeyDown={handleKeyDown}
           onFocus={() => results.length > 0 && setOpen(true)}
           placeholder={'输入学员姓名搜索…'}
-          className="w-full pl-10 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent transition-all"
+          className="w-full pl-10 pr-4 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all"
         />
       </div>
 

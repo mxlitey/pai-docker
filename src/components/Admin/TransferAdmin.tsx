@@ -174,20 +174,20 @@ export function TransferAdmin({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-full bg-background">
       <SubPageHeader title={'结转退课'} onBack={onBack} />
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
         {/* 学员搜索 + 余额展示 */}
         <section className="card p-5">
-          <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
+          <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
             <span className="w-1 h-4 bg-brand-500 rounded"></span>
             搜索学员
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-500 mb-1.5">
-                <span className="text-rose-500 mr-0.5">*</span>{'学员'}
+              <label className="block text-sm text-muted-foreground mb-1.5">
+                <span className="text-destructive mr-0.5">*</span>{'学员'}
               </label>
               <SearchBar
                 onSelectStudent={handleStudentSelect}
@@ -204,7 +204,7 @@ export function TransferAdmin({
             </div>
             {selectedStudent && (
               <div className="flex items-end">
-                <div className="bg-brand-50 border border-brand-100 rounded-md px-4 py-3 w-full">
+                <div className="bg-primary/10 border border-brand-100 rounded-md px-4 py-3 w-full">
                   <div className="text-xs text-brand-700 font-medium mb-1">账户余额</div>
                   <div className="text-2xl font-bold text-brand-700">{formatMoney(selectedStudent.balance || 0)}</div>
                 </div>
@@ -221,24 +221,24 @@ export function TransferAdmin({
           <>
             {/* 退课表单 */}
             <section className="card p-5">
-              <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
                 <span className="w-1 h-4 bg-amber-500 rounded"></span>
                 退课（剩余课时折算入账户）
               </h2>
               <div className="space-y-3">
                 <div>
-                  <label className="block text-sm text-slate-500 mb-1.5">
-                    <span className="text-rose-500 mr-0.5">*</span>{'选择报名记录'}
+                  <label className="block text-sm text-muted-foreground mb-1.5">
+                    <span className="text-destructive mr-0.5">*</span>{'选择报名记录'}
                   </label>
                   {refundableEnrollments.length === 0 ? (
-                    <p className="text-xs text-slate-400 py-2 px-3 border border-dashed border-slate-200 rounded-md">
+                    <p className="text-xs text-muted-foreground/70 py-2 px-3 border border-dashed border-border rounded-md">
                       该学员无可退课的报名记录（需有剩余课时的进行中报名）
                     </p>
                   ) : (
                     <select
                       value={refundEnrollmentId}
                       onChange={(e) => setRefundEnrollmentId(e.target.value)}
-                      className={cn(inputClass, 'bg-white')}
+                      className={cn(inputClass, 'bg-background')}
                     >
                       <option value="">请选择报名记录</option>
                       {refundableEnrollments.map((e) => (
@@ -251,7 +251,7 @@ export function TransferAdmin({
                 </div>
 
                 <div>
-                  <label className="block text-sm text-slate-500 mb-1.5">赠课处理方式</label>
+                  <label className="block text-sm text-muted-foreground mb-1.5">赠课处理方式</label>
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -259,8 +259,8 @@ export function TransferAdmin({
                       className={cn(
                         'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
                         giftMode === 'discard'
-                          ? 'border-brand-400 bg-brand-50 text-brand-700'
-                          : 'border-slate-200 text-slate-500 hover:border-slate-300',
+                          ? 'border-brand-400 bg-primary/10 text-brand-700'
+                          : 'border-border text-muted-foreground hover:border-border',
                       )}
                     >
                       {'赠课作废（仅退付费课时）'}
@@ -271,8 +271,8 @@ export function TransferAdmin({
                       className={cn(
                         'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
                         giftMode === 'refund'
-                          ? 'border-brand-400 bg-brand-50 text-brand-700'
-                          : 'border-slate-200 text-slate-500 hover:border-slate-300',
+                          ? 'border-brand-400 bg-primary/10 text-brand-700'
+                          : 'border-border text-muted-foreground hover:border-border',
                       )}
                     >
                       {'赠课也折算'}
@@ -283,7 +283,7 @@ export function TransferAdmin({
                 {refundPreview && (
                   <div className="bg-amber-50 border border-amber-100 rounded-md px-4 py-3">
                     <div className="text-xs text-amber-700 font-medium mb-1">退课预览</div>
-                    <div className="text-sm text-slate-700">
+                    <div className="text-sm text-foreground">
                       剩余 付费 {refundPreview.paid} + 赠课 {refundPreview.gift}（单价 {formatMoney(refundPreview.unitPrice)}）→
                       折算 {refundPreview.refundHours} 课时 = <span className="font-semibold">{formatMoney(refundPreview.amount)}</span> 入账户
                     </div>
@@ -291,7 +291,7 @@ export function TransferAdmin({
                 )}
 
                 <div>
-                  <label className="block text-sm text-slate-500 mb-1.5">备注（可选）</label>
+                  <label className="block text-sm text-muted-foreground mb-1.5">备注（可选）</label>
                   <input
                     type="text"
                     value={refundNote}
@@ -301,7 +301,7 @@ export function TransferAdmin({
                   />
                 </div>
 
-                <div className="text-xs text-slate-400">
+                <div className="text-xs text-muted-foreground/70">
                   退课后源报名标记为已结算，剩余课时清零；折算金额进入账户余额，可在新报名时用「余额抵扣」消耗。
                 </div>
 
@@ -313,7 +313,7 @@ export function TransferAdmin({
 
             {/* 账户流水 */}
             <section className="card p-5">
-              <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
                 <span className="w-1 h-4 bg-slate-400 rounded"></span>
                 账户流水
               </h2>
@@ -323,7 +323,7 @@ export function TransferAdmin({
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-slate-200 text-slate-500 text-xs">
+                      <tr className="border-b border-border text-muted-foreground text-xs">
                         <th className="text-left py-2 px-2 font-medium">{'时间'}</th>
                         <th className="text-left py-2 px-2 font-medium">{'类型'}</th>
                         <th className="text-right py-2 px-2 font-medium">{'金额'}</th>
@@ -335,14 +335,14 @@ export function TransferAdmin({
                       {transactions.map((t) => {
                         const isIn = t.type === 'refund'
                         return (
-                          <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                            <td className="py-2.5 px-2 text-slate-600 whitespace-nowrap text-xs">{fmtDateTime(t.createdAt)}</td>
-                            <td className="py-2.5 px-2 text-slate-700">{TX_TYPE_LABEL[t.type] || t.type}</td>
-                            <td className={cn('py-2.5 px-2 text-right font-medium', isIn ? 'text-emerald-600' : 'text-rose-600')}>
+                          <tr key={t.id} className="border-b border-border hover:bg-muted/50 transition-colors">
+                            <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap text-xs">{fmtDateTime(t.createdAt)}</td>
+                            <td className="py-2.5 px-2 text-foreground">{TX_TYPE_LABEL[t.type] || t.type}</td>
+                            <td className={cn('py-2.5 px-2 text-right font-medium', isIn ? 'text-emerald-600' : 'text-destructive')}>
                               {isIn ? '+' : '-'}{formatMoney(t.amount)}
                             </td>
-                            <td className="py-2.5 px-2 text-right text-slate-600">{formatMoney(t.balanceAfter)}</td>
-                            <td className="py-2.5 px-2 text-slate-500">{t.note || <span className="text-slate-300">—</span>}</td>
+                            <td className="py-2.5 px-2 text-right text-muted-foreground">{formatMoney(t.balanceAfter)}</td>
+                            <td className="py-2.5 px-2 text-muted-foreground">{t.note || <span className="text-muted-foreground/40">—</span>}</td>
                           </tr>
                         )
                       })}
@@ -355,14 +355,14 @@ export function TransferAdmin({
             {/* 退课记录 */}
             {transfers.length > 0 && (
               <section className="card p-5">
-                <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
                   <span className="w-1 h-4 bg-rose-400 rounded"></span>
                   退课记录
                 </h2>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-slate-200 text-slate-500 text-xs">
+                      <tr className="border-b border-border text-muted-foreground text-xs">
                         <th className="text-left py-2 px-2 font-medium">{'时间'}</th>
                         <th className="text-left py-2 px-2 font-medium">{'源报名'}</th>
                         <th className="text-left py-2 px-2 font-medium">{'赠课处理'}</th>
@@ -372,12 +372,12 @@ export function TransferAdmin({
                     </thead>
                     <tbody>
                       {transfers.map((t) => (
-                        <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                          <td className="py-2.5 px-2 text-slate-600 whitespace-nowrap text-xs">{fmtDateTime(t.createdAt)}</td>
-                          <td className="py-2.5 px-2 text-slate-600">{courseNameByEnrollment(t.fromEnrollmentId)}</td>
-                          <td className="py-2.5 px-2 text-slate-600">{t.giftMode === 'refund' ? '赠课折算' : '赠课作废'}</td>
-                          <td className="py-2.5 px-2 text-right text-slate-700 font-medium">{formatMoney(t.refundAmount)}</td>
-                          <td className="py-2.5 px-2 text-slate-500">{t.note || <span className="text-slate-300">—</span>}</td>
+                        <tr key={t.id} className="border-b border-border hover:bg-muted/50 transition-colors">
+                          <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap text-xs">{fmtDateTime(t.createdAt)}</td>
+                          <td className="py-2.5 px-2 text-muted-foreground">{courseNameByEnrollment(t.fromEnrollmentId)}</td>
+                          <td className="py-2.5 px-2 text-muted-foreground">{t.giftMode === 'refund' ? '赠课折算' : '赠课作废'}</td>
+                          <td className="py-2.5 px-2 text-right text-foreground font-medium">{formatMoney(t.refundAmount)}</td>
+                          <td className="py-2.5 px-2 text-muted-foreground">{t.note || <span className="text-muted-foreground/40">—</span>}</td>
                         </tr>
                       ))}
                     </tbody>

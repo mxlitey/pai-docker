@@ -1,4 +1,4 @@
-// UI 基础组件库 —— 统一交互设计
+// UI 基础组件库 —— 统一交互设计 + shadcn/ui 组件
 // 在应用根挂载一次 <UIHost/> 即可启用全局 Toast / Confirm
 export { toast, ToastHost } from './toast'
 export { confirmDialog, ConfirmHost } from './confirm'
@@ -9,6 +9,21 @@ export { Spinner, Loading, LoadingBlock, LoadingFullscreen, ErrorBlock } from '.
 export { SubPageHeader } from './SubPageHeader'
 export { Field, inputClass } from './Field'
 export { Button } from './Button'
+
+// shadcn/ui 组件（Button 除外，已有兼容版；其余按名导出避免冲突）
+export { Input, type InputProps } from './shadcn/input'
+export { Textarea, type TextareaProps } from './shadcn/textarea'
+export { Label } from './shadcn/label'
+export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent } from './shadcn/card'
+export { Badge, badgeVariants, type BadgeProps } from './shadcn/badge'
+export {
+  Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption,
+} from './shadcn/table'
+export { Separator } from './shadcn/separator'
+export {
+  Dialog, DialogPortal, DialogOverlay, DialogTrigger, DialogClose,
+  DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription,
+} from './shadcn/dialog'
 
 import { ToastHost } from './toast'
 import { ConfirmHost } from './confirm'

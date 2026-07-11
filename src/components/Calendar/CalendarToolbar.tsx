@@ -59,7 +59,7 @@ export function CalendarToolbar({
   const labels = getNavLabels(view, currentDate)
   // 月/周视图：左右按钮使用文字（显示具体月份/周）；日视图：保持紧凑文字
   const navBtnClass =
-    'px-2.5 py-1 text-xs font-medium rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition-colors whitespace-nowrap'
+    'px-2.5 py-1 text-xs font-medium rounded-md border border-border bg-background text-muted-foreground hover:bg-muted transition-colors whitespace-nowrap'
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 px-1">
@@ -85,7 +85,7 @@ export function CalendarToolbar({
       </div>
 
       {/* 视图切换 */}
-      <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
+      <div className="inline-flex rounded-lg border border-border bg-background p-0.5">
         {VIEW_OPTIONS.map((opt) => (
           <button
             key={opt.value}
@@ -94,7 +94,7 @@ export function CalendarToolbar({
               'px-4 py-1.5 text-sm font-medium rounded-md transition-all',
               view === opt.value
                 ? 'bg-brand-500 text-white shadow-sm'
-                : 'text-slate-600 hover:bg-slate-100',
+                : 'text-muted-foreground hover:bg-muted',
             )}
           >
             {opt.labelKey}

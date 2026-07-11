@@ -186,7 +186,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
   const showStudentColumn = mode === 'filter'
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-full bg-background">
       <SubPageHeader
         title={'排课管理'}
         onBack={onBack}
@@ -214,14 +214,14 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
         {/* 搜索区：双 Tab */}
         <section className="card p-5">
           {/* Tab 切换 */}
-          <div className="flex items-center gap-1 mb-4 border-b border-slate-200">
+          <div className="flex items-center gap-1 mb-4 border-b border-border">
             <button
               onClick={() => switchMode('filter')}
               className={
                 'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ' +
                 (mode === 'filter'
-                  ? 'border-brand-500 text-brand-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700')
+                  ? 'border-brand-500 text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground')
               }
             >
               条件筛选
@@ -231,8 +231,8 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
               className={
                 'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ' +
                 (mode === 'student'
-                  ? 'border-brand-500 text-brand-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700')
+                  ? 'border-brand-500 text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground')
               }
             >
               学员查询
@@ -243,11 +243,11 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
             <div className="space-y-3">
               <div className="flex flex-wrap items-end gap-3">
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">{'年级'}</label>
+                  <label className="block text-xs text-muted-foreground mb-1">{'年级'}</label>
                   <select
                     value={filterGrade}
                     onChange={(e) => setFilterGrade(e.target.value)}
-                    className={cn(inputClass, 'bg-white', 'min-w-[8rem]')}
+                    className={cn(inputClass, 'bg-background', 'min-w-[8rem]')}
                   >
                     <option value="">全部年级</option>
                     {grades.map((g) => (
@@ -256,11 +256,11 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">{'课程'}</label>
+                  <label className="block text-xs text-muted-foreground mb-1">{'课程'}</label>
                   <select
                     value={filterCourseId}
                     onChange={(e) => setFilterCourseId(e.target.value)}
-                    className={cn(inputClass, 'bg-white', 'min-w-[8rem]')}
+                    className={cn(inputClass, 'bg-background', 'min-w-[8rem]')}
                   >
                     <option value="">全部课程</option>
                     {courses.map((c) => (
@@ -273,7 +273,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
                 {/* 日期范围：两个输入框成组，手机端保持在同一行 */}
                 <div className="flex items-end gap-3 w-full sm:w-auto">
                   <div className="flex-1 sm:flex-none">
-                    <label className="block text-xs text-slate-500 mb-1">{'开始日期'}</label>
+                    <label className="block text-xs text-muted-foreground mb-1">{'开始日期'}</label>
                     <input
                       type="date"
                       value={filterStartDate}
@@ -282,7 +282,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
                     />
                   </div>
                   <div className="flex-1 sm:flex-none">
-                    <label className="block text-xs text-slate-500 mb-1">{'结束日期'}</label>
+                    <label className="block text-xs text-muted-foreground mb-1">{'结束日期'}</label>
                     <input
                       type="date"
                       value={filterEndDate}
@@ -309,18 +309,18 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
                   </Button>
                 )}
               </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <p className="text-xs text-muted-foreground/70 leading-relaxed">
                 提示：年级、日期范围与课程可单独或组合使用。全部留空将返回全量排课；数据量较大时建议限定日期范围以加快查询。
               </p>
             </div>
           ) : (
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-              <span className="text-sm text-slate-500">搜索学员：</span>
+              <span className="text-sm text-muted-foreground">搜索学员：</span>
               <div className="w-full max-w-md">
                 <SearchBar onSelectStudent={setSelectedStudent} students={students} />
               </div>
               {selectedStudent && (
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-muted-foreground/70">
                   当前：{selectedStudent.name}
                 </span>
               )}
@@ -350,7 +350,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 text-slate-500 text-xs">
+                  <tr className="border-b border-border text-muted-foreground text-xs">
                     {showStudentColumn && (
                       <th className="text-left py-2 px-2 font-medium">{'学员'}</th>
                     )}
@@ -369,15 +369,15 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
                     return (
                     <tr
                       key={s.id}
-                      className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                      className="border-b border-border hover:bg-muted/50 transition-colors"
                     >
                       {showStudentColumn && (
-                        <td className="py-2.5 px-2 text-slate-700 font-medium whitespace-nowrap">
+                        <td className="py-2.5 px-2 text-foreground font-medium whitespace-nowrap">
                           {s.studentName}
                         </td>
                       )}
                       <td className="py-2.5 px-2">
-                        <div className="font-medium text-slate-700 flex items-center gap-1.5 flex-wrap">
+                        <div className="font-medium text-foreground flex items-center gap-1.5 flex-wrap">
                           {s.courseName}
                           {s.makeupFor && (
                             <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded" title={`补课自 ${s.makeupFor}`}>
@@ -390,7 +390,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
                             </span>
                           )}
                           {s.status === 'cancelled' && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200 rounded">
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground border border-border rounded">
                               已取消
                             </span>
                           )}
@@ -400,12 +400,12 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
                             </span>
                           )}
                           {s.attended === false && s.status !== 'cancelled' && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-rose-50 text-rose-700 border border-rose-200 rounded">
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-destructive/10 text-rose-700 border border-rose-200 rounded">
                               缺勤
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-slate-400 font-mono">{s.id}</div>
+                        <div className="text-xs text-muted-foreground/70 font-mono">{s.id}</div>
                         {s.makeupFor && (
                           <div className="text-[10px] text-amber-500 font-mono mt-0.5" title="原缺勤排课ID">
                             ← {s.makeupFor}
@@ -417,18 +417,18 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
                           </div>
                         )}
                       </td>
-                      <td className="py-2.5 px-2 text-slate-600">{s.date}</td>
-                      <td className="py-2.5 px-2 text-slate-600">
+                      <td className="py-2.5 px-2 text-muted-foreground">{s.date}</td>
+                      <td className="py-2.5 px-2 text-muted-foreground">
                         {s.startTime}-{s.endTime}
                       </td>
-                      <td className="py-2.5 px-2 text-slate-600">{s.teacher}</td>
-                      <td className="py-2.5 px-2 text-slate-600">{s.location}</td>
+                      <td className="py-2.5 px-2 text-muted-foreground">{s.teacher}</td>
+                      <td className="py-2.5 px-2 text-muted-foreground">{s.location}</td>
                       <td className="py-2.5 px-2 text-right whitespace-nowrap">
                         {canModify && canUpdate && (
                           <button
                             onClick={() => setEditingSchedule(s)}
                             disabled={busy}
-                            className="text-brand-600 hover:text-brand-700 text-xs font-medium mr-3 disabled:opacity-50"
+                            className="text-primary hover:text-brand-700 text-xs font-medium mr-3 disabled:opacity-50"
                           >
                             {'编辑'}
                           </button>
@@ -455,13 +455,13 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
                           <button
                             onClick={() => handleDeleteSchedule(s)}
                             disabled={busy}
-                            className="text-rose-600 hover:text-rose-700 text-xs font-medium disabled:opacity-50"
+                            className="text-destructive hover:text-rose-700 text-xs font-medium disabled:opacity-50"
                           >
                             {'删除'}
                           </button>
                         )}
                         {!canModify && (
-                          <span className="text-xs text-slate-300">—</span>
+                          <span className="text-xs text-muted-foreground/40">—</span>
                         )}
                       </td>
                     </tr>

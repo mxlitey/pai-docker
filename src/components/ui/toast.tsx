@@ -1,8 +1,9 @@
-// 全局 Toast —— 命令式调用，在应用根挂载一次 <ToastHost/> 即可在任意位置使用
+// 全局 Toast —— 命令式调用，使用 shadcn/ui 语义色 + lucide 图标
 // 用法：import { toast } from '@/components/ui'
 //       toast.success('已保存') / toast.error('失败') / toast.info('提示') / toast.warning('注意')
 import { useState, useEffect, useCallback } from 'react'
 import { cn } from '@/utils/cn'
+import { CheckCircle2, XCircle, Info, AlertTriangle, X } from 'lucide-react'
 
 type ToastType = 'success' | 'error' | 'info' | 'warning'
 
@@ -43,44 +44,27 @@ export const toast = {
   dismiss,
 }
 
-const ICONS: Record<ToastType, JSX.Element> = {
-  success: (
-    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-    </svg>
-  ),
-  error: (
-    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-    </svg>
-  ),
-  info: (
-    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  ),
-  warning: (
-    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" />
-    </svg>
-  ),
+const ICONS: Record<ToastType, React.ReactNode> = {
+  success: <CheckCircle2 className="w-4 h-4 flex-shrink-0" />,
+  error: <XCircle className="w-4 h-4 flex-shrink-0" />,
+  info: <Info className="w-4 h-4 flex-shrink-0" />,
+  warning: <AlertTriangle className="w-4 h-4 flex-shrink-0" />,
 }
 
 const BORDER: Record<ToastType, string> = {
   success: 'border-l-green-500',
   error: 'border-l-rose-500',
-  info: 'border-l-brand-500',
+  info: 'border-l-primary',
   warning: 'border-l-amber-500',
 }
 
 const ICON_COLOR: Record<ToastType, string> = {
   success: 'text-green-500',
   error: 'text-rose-500',
-  info: 'text-brand-500',
+  info: 'text-primary',
   warning: 'text-amber-500',
 }
 
-// 在应用根挂载一次：<ToastHost/>
 export function ToastHost() {
   const [list, setList] = useState<ToastItem[]>(items)
   useEffect(() => {
@@ -97,7 +81,7 @@ export function ToastHost() {
         <div
           key={t.id}
           className={cn(
-            'pointer-events-auto flex items-center gap-2.5 w-full px-4 py-2.5 rounded-lg shadow-lg border border-l-4 border-slate-200 bg-white text-slate-700 text-sm animate-[fadeIn_0.15s_ease-out]',
+            'pointer-events-auto flex items-center gap-2.5 w-full px-4 py-2.5 rounded-lg shadow-lg border border-l-4 border-border bg-popover text-popover-foreground text-sm animate-in fade-in-0 slide-in-from-top-4 duration-150',
             BORDER[t.type],
           )}
         >
@@ -105,12 +89,10 @@ export function ToastHost() {
           <span className="flex-1 break-words">{t.message}</span>
           <button
             onClick={() => handleDismiss(t.id)}
-            className="text-slate-300 hover:text-slate-500 transition-colors flex-shrink-0"
+            className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
             aria-label="关闭"
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       ))}

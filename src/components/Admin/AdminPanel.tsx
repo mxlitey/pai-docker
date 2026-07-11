@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { Student, Course, EnrollmentSummary, Grade } from '@/types'
+import type { Student, Course, EnrollmentSummary, Grade, CurrentAdmin } from '@/types'
 import { searchStudents, getAnnouncement } from '@/api'
 import {
   verifyAuth,
@@ -21,6 +21,7 @@ import {
   getCurrentAdmin,
 } from '@/api/admin'
 import { canSeeModule } from '@/utils/permission'
+import { getAppName } from '@/config'
 import { AnnouncementAdmin } from './AnnouncementAdmin'
 import { ShareLinksAdmin } from './ShareLinksAdmin'
 import { StudentAdmin } from './StudentAdmin'
@@ -39,6 +40,39 @@ import { TeacherAdmin } from './TeacherAdmin'
 import { AdminLogin } from './AdminLogin'
 import { Bootstrap } from './Bootstrap'
 import { toast, confirmDialog } from '@/components/ui'
+import {
+  SidebarProvider, Sidebar, SidebarTrigger, SidebarRail, SidebarInset,
+  SidebarHeader, SidebarContent, SidebarFooter,
+  SidebarGroup, SidebarGroupLabel, SidebarGroupContent,
+  SidebarMenu, SidebarMenuItem, SidebarMenuButton,
+  useSidebar,
+} from '@/components/ui/shadcn/sidebar'
+import {
+  Breadcrumb, BreadcrumbList, BreadcrumbItem,
+  BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage,
+} from '@/components/ui/shadcn/breadcrumb'
+import { Separator } from '@/components/ui/shadcn/separator'
+import {
+  Loader2,
+  LogOut,
+  User,
+  Users,
+  GraduationCap,
+  LayoutGrid,
+  BookOpen,
+  ClipboardCheck,
+  ArrowLeftRight,
+  Calendar,
+  CheckCircle2,
+  Presentation,
+  Megaphone,
+  BarChart3,
+  Link2,
+  Settings,
+  ShieldCheck,
+  FileText,
+  GalleryVerticalEnd,
+} from 'lucide-react'
 
 interface AdminPanelProps {
   onExit: () => void
@@ -105,6 +139,146 @@ function writeSubPageToHash(sub: SubPage) {
   }
 }
 
+// 模块入口定义：按日常使用顺序排列（基础建档 → 教学运营 → 报表 → 系统）
+// 每个入口含权限点、标题、描述、图标、跳转目标，按当前用户权限过滤后再渲染
+const moduleEntries = [
+  // ===== 基础教务（建档类：学员 → 年级 → 课程 → 班级 → 教师）=====
+  { tab: 'basic', perm: 'students:view', sub: 'students', title: '学员管理', desc: '学员档案、报名汇总、续费预警', icon: 'students' },
+  { tab: 'basic', perm: 'grades:view', sub: 'grades', title: '年级管理', desc: '年级维护、批量升班、课程关联', icon: 'grades' },
+  { tab: 'basic', perm: 'courses:view', sub: 'courses', title: '课程管理', desc: '课程信息、单价、计费方式、关联年级', icon: 'courses' },
+  { tab: 'basic', perm: 'classes:view', sub: 'classes', title: '班级管理', desc: '班级建档、关联课程、固定学员名单', icon: 'classes' },
+  { tab: 'basic', perm: 'teachers:view', sub: 'teachers', title: '教师管理', desc: '课后反馈、教师绩效、评分', icon: 'teachers' },
+  // ===== 教学运营（业务流转：报名 → 结转退课 → 排课 → 点名）=====
+  { tab: 'operation', perm: 'enrollments:view', sub: 'enrollments', title: '报名管理', desc: '报名、购课赠课、课时余额', icon: 'enrollments' },
+  { tab: 'operation', perm: 'transfers:view', sub: 'transfers', title: '结转退课', desc: '退课折算入账户余额', icon: 'transfers' },
+  { tab: 'operation', perm: 'schedules:view', sub: 'schedules', title: '排课管理', desc: '排课、批量排课、点名扣减', icon: 'schedules' },
+  { tab: 'operation', perm: 'attendance:view', sub: 'attendance', title: '点名管理', desc: '按日期点名、批量点名、到课统计', icon: 'attendance' },
+  // ===== 报表中心（概览 + 明细报表，合并原数据看板）=====
+  { tab: 'data', perm: 'reports:view', sub: 'reports', title: '报表中心', desc: '经营概览、营收、课时、出勤、结转统计', icon: 'reports' },
+  // ===== 系统管理（配置 → 公告 → 账号 → 家长端链接 → 日志）=====
+  { tab: 'system', perm: 'settings:manage', sub: 'settings', title: '系统设置', desc: '项目名称、备份恢复、有效期', icon: 'settings' },
+  { tab: 'system', perm: 'announcement:view', sub: 'announcement', title: '公告管理', desc: '首页/家长端公告内容', icon: 'announcement' },
+  { tab: 'system', perm: 'admins:view', sub: 'admins', title: '管理员账号', desc: '账号增删、权限分配、启停', icon: 'admins' },
+  { tab: 'system', perm: 'students:view', sub: 'shareLinks', title: '分享链接', desc: '生成家长端专属访问链接', icon: 'shareLinks' },
+  { tab: 'system', perm: 'audit:view', sub: 'auditLogs', title: '审计日志', desc: '写操作留痕，按模块/人筛选', icon: 'auditLogs' },
+] as const
+
+// 图标映射：使用 lucide-react 图标，避免每个入口重复写 svg
+const iconMap: Record<string, React.ReactNode> = {
+  students: <Users className="w-5 h-5" />,
+  grades: <GraduationCap className="w-5 h-5" />,
+  classes: <LayoutGrid className="w-5 h-5" />,
+  courses: <BookOpen className="w-5 h-5" />,
+  enrollments: <ClipboardCheck className="w-5 h-5" />,
+  transfers: <ArrowLeftRight className="w-5 h-5" />,
+  schedules: <Calendar className="w-5 h-5" />,
+  attendance: <CheckCircle2 className="w-5 h-5" />,
+  teachers: <Presentation className="w-5 h-5" />,
+  announcement: <Megaphone className="w-5 h-5" />,
+  reports: <BarChart3 className="w-5 h-5" />,
+  shareLinks: <Link2 className="w-5 h-5" />,
+  settings: <Settings className="w-5 h-5" />,
+  admins: <ShieldCheck className="w-5 h-5" />,
+  auditLogs: <FileText className="w-5 h-5" />,
+}
+
+const tabs = [
+  { key: 'basic', label: '基础教务' },
+  { key: 'operation', label: '教学运营' },
+  { key: 'data', label: '报表中心' },
+  { key: 'system', label: '系统管理' },
+] as const
+
+// AppSidebar：后台侧边栏，按分组渲染模块入口，按权限过滤
+interface AppSidebarProps {
+  activeSubPage: SubPage
+  appName: string
+  currentAdmin: CurrentAdmin | null
+  onSelect: (sub: SubPage) => void
+  onLogout: () => void
+}
+
+function AppSidebar({ activeSubPage, appName, currentAdmin, onSelect, onLogout }: AppSidebarProps) {
+  const { setOpenMobile } = useSidebar()
+
+  const handleSelect = (sub: SubPage) => {
+    onSelect(sub)
+    setOpenMobile(false)
+  }
+
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" onClick={() => handleSelect(null)}>
+              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                <GalleryVerticalEnd className="size-4" />
+              </div>
+              <div className="flex flex-col gap-0.5 leading-none">
+                <span className="font-semibold">{appName}</span>
+                <span className="text-xs text-muted-foreground">后台管理</span>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+      <SidebarContent>
+        {tabs.map((tab) => {
+          const entries = moduleEntries.filter(
+            (e) => e.tab === tab.key && canSeeModule(currentAdmin, e.perm),
+          )
+          if (entries.length === 0) return null
+          return (
+            <SidebarGroup key={tab.key}>
+              <SidebarGroupLabel>{tab.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {entries.map((entry) => (
+                    <SidebarMenuItem key={entry.sub}>
+                      <SidebarMenuButton
+                        isActive={activeSubPage === entry.sub}
+                        onClick={() => handleSelect(entry.sub as SubPage)}
+                        tooltip={entry.desc}
+                      >
+                        {iconMap[entry.icon]}
+                        <span>{entry.title}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )
+        })}
+      </SidebarContent>
+      <SidebarRail />
+      <SidebarFooter>
+        <div className="flex items-center gap-2 px-2 py-1.5">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-accent text-sidebar-accent-foreground">
+            <User className="size-4" />
+          </div>
+          <div className="grid flex-1 min-w-0 text-left text-sm leading-tight">
+            <span className="truncate font-semibold">
+              {currentAdmin?.realName || currentAdmin?.username || '未登录'}
+            </span>
+            <span className="truncate text-xs text-muted-foreground">
+              {currentAdmin?.username || ''}
+            </span>
+          </div>
+          <button
+            onClick={onLogout}
+            className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            title="退出登录"
+          >
+            <LogOut className="size-4" />
+          </button>
+        </div>
+      </SidebarFooter>
+    </Sidebar>
+  )
+}
+
 export function AdminPanel({ onExit }: AdminPanelProps) {
   // 启动流程：先检查 bootstrap 状态，再校验 token
   // bootstrap=true → 渲染引导页；bootstrap=false → 检查 token 决定登录/已登录
@@ -120,6 +294,9 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
   // 操作状态
   const [busy, setBusy] = useState(false)
 
+  // 项目名称（与系统设置同步，侧边栏头部展示）
+  const [appName, setAppName] = useState(getAppName())
+
   // 公告设置（公告管理页编辑 + 保存）
   const [announcementText, setAnnouncementText] = useState('')
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState('')
@@ -128,8 +305,6 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
   const [activeSubPage, setActiveSubPage] = useState<SubPage>(() =>
     readSubPageFromHash(),
   )
-  // 主页分类选项卡：基础教务 / 教学运营 / 报表中心 / 系统管理
-  const [activeTab, setActiveTab] = useState<'basic' | 'operation' | 'data' | 'system'>('basic')
   // 当前登录用户（用于按权限隐藏模块入口）
   const currentAdmin = getCurrentAdmin()
 
@@ -451,15 +626,18 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     }
   }
 
+  // 侧边栏菜单选择：进入公告页时需预加载公告内容
+  const handleSelect = (sub: SubPage) => {
+    if (sub === 'announcement') handleLoadAnnouncement()
+    goSubPage(sub)
+  }
+
   // 校验中：显示加载状态
   if (checking) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-sm text-slate-500 flex items-center gap-2">
-          <svg className="animate-spin w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-sm text-muted-foreground flex items-center gap-2">
+          <Loader2 className="animate-spin w-4 h-4 text-primary" />
           {'加载中…'}
         </div>
       </div>
@@ -483,360 +661,281 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     )
   }
 
-  // 公告管理二级页面
-  if (activeSubPage === 'announcement') {
-    return (
-      <>
-        <AnnouncementAdmin
-          onBack={() => goSubPage(null)}
-          busy={busy}
-          announcementText={announcementText}
-          setAnnouncementText={setAnnouncementText}
-          announcementUpdatedAt={announcementUpdatedAt}
-          onSaveAnnouncement={handleSaveAnnouncement}
-        />
-      </>
-    )
+  // 当前激活模块（用于面包屑标题）
+  const currentModule = activeSubPage
+    ? moduleEntries.find((e) => e.sub === activeSubPage)
+    : null
+
+  // 渲染当前子页面内容（保留原有所有分支）
+  const renderSubPage = () => {
+    // 公告管理二级页面
+    if (activeSubPage === 'announcement') {
+      return (
+        <>
+          <AnnouncementAdmin
+            onBack={() => goSubPage(null)}
+            busy={busy}
+            announcementText={announcementText}
+            setAnnouncementText={setAnnouncementText}
+            announcementUpdatedAt={announcementUpdatedAt}
+            onSaveAnnouncement={handleSaveAnnouncement}
+          />
+        </>
+      )
+    }
+
+    // 分享链接二级页面
+    if (activeSubPage === 'shareLinks') {
+      return (
+        <>
+          <ShareLinksAdmin
+            students={students}
+            onBack={() => goSubPage(null)}
+          />
+        </>
+      )
+    }
+
+    // 系统设置二级页面
+    if (activeSubPage === 'settings') {
+      return (
+        <>
+          <SystemSettingsAdmin
+            onBack={() => goSubPage(null)}
+            busy={busy}
+            setBusy={setBusy}
+            showToast={showToast}
+            onConfigChanged={setAppName}
+          />
+        </>
+      )
+    }
+
+    // 学员管理二级页面
+    if (activeSubPage === 'students') {
+      return (
+        <>
+          <StudentAdmin
+            students={students}
+            grades={grades}
+            summaries={enrollmentSummaries}
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            onDelete={handleDeleteStudent}
+            onAdd={handleAddStudent}
+            onUpdate={handleUpdateStudent}
+            onGradesChange={loadGrades}
+          />
+        </>
+      )
+    }
+
+    // 年级管理二级页面
+    if (activeSubPage === 'grades') {
+      return (
+        <>
+          <GradeAdmin
+            grades={grades}
+            students={students}
+            courses={courses}
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            onGradesChange={loadGrades}
+            onStudentsChange={loadStudents}
+            showToast={showToast}
+          />
+        </>
+      )
+    }
+
+    // 班级管理二级页面
+    if (activeSubPage === 'classes') {
+      return (
+        <>
+          <ClassesAdmin
+            courses={courses}
+            grades={grades}
+            students={students}
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            showToast={showToast}
+          />
+        </>
+      )
+    }
+
+    // 课程管理二级页面
+    if (activeSubPage === 'courses') {
+      return (
+        <>
+          <CourseAdmin
+            courses={courses}
+            grades={grades}
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            onDelete={handleDeleteCourse}
+            onAdd={handleAddCourse}
+            onUpdate={handleUpdateCourse}
+          />
+        </>
+      )
+    }
+
+    // 报名管理二级页面
+    if (activeSubPage === 'enrollments') {
+      return (
+        <>
+          <EnrollmentAdmin
+            students={students}
+            courses={courses}
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            showToast={showToast}
+            onAuthError={handleApiError}
+            onStudentsChanged={loadStudents}
+          />
+        </>
+      )
+    }
+
+    // 结转退课二级页面
+    if (activeSubPage === 'transfers') {
+      return (
+        <>
+          <TransferAdmin
+            students={students}
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            showToast={showToast}
+            onAuthError={handleApiError}
+            onStudentsChanged={loadStudents}
+          />
+        </>
+      )
+    }
+
+    // 排课管理二级页面
+    if (activeSubPage === 'schedules') {
+      return (
+        <>
+          <ScheduleAdmin
+            students={students}
+            courses={courses}
+            grades={grades}
+            onBack={() => goSubPage(null)}
+            onToast={showToast}
+            currentAdmin={currentAdmin}
+          />
+        </>
+      )
+    }
+
+    // 点名管理二级页面
+    if (activeSubPage === 'attendance') {
+      return (
+        <>
+          <AttendanceAdmin
+            busy={busy}
+            onBack={() => goSubPage(null)}
+            onLoad={async (d) => {
+              const r = await getAttendanceList(d)
+              if (r.code !== 0) throw new Error(r.message)
+              return r.data
+            }}
+            onSave={async (d, items) => {
+              const r = await setAttendance(d, items)
+              if (r.code !== 0) throw new Error(r.message)
+              // 保存后刷新报名汇总（剩余课时已按报名记录扣减）
+              await loadEnrollmentSummaries()
+              return r.data
+            }}
+          />
+        </>
+      )
+    }
+
+    // 管理员账号管理二级页面（仅超管）
+    if (activeSubPage === 'admins') {
+      return <AdminUserAdmin onBack={() => goSubPage(null)} />
+    }
+
+    // 审计日志二级页面（仅超管）
+    if (activeSubPage === 'auditLogs') {
+      return <AuditLogAdmin onBack={() => goSubPage(null)} />
+    }
+
+    // 报表中心二级页面
+    if (activeSubPage === 'reports') {
+      return <ReportsAdmin onBack={() => goSubPage(null)} />
+    }
+
+    if (activeSubPage === 'teachers') {
+      return <TeacherAdmin onBack={() => goSubPage(null)} />
+    }
+
+    return null
   }
-
-  // 分享链接二级页面
-  if (activeSubPage === 'shareLinks') {
-    return (
-      <>
-        <ShareLinksAdmin
-          students={students}
-          onBack={() => goSubPage(null)}
-        />
-      </>
-    )
-  }
-
-  // 系统设置二级页面
-  if (activeSubPage === 'settings') {
-    return (
-      <>
-        <SystemSettingsAdmin
-          onBack={() => goSubPage(null)}
-          busy={busy}
-          setBusy={setBusy}
-          showToast={showToast}
-        />
-      </>
-    )
-  }
-
-  // 学员管理二级页面
-  if (activeSubPage === 'students') {
-    return (
-      <>
-        <StudentAdmin
-          students={students}
-          grades={grades}
-          summaries={enrollmentSummaries}
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          onDelete={handleDeleteStudent}
-          onAdd={handleAddStudent}
-          onUpdate={handleUpdateStudent}
-          onGradesChange={loadGrades}
-        />
-      </>
-    )
-  }
-
-  // 年级管理二级页面
-  if (activeSubPage === 'grades') {
-    return (
-      <>
-        <GradeAdmin
-          grades={grades}
-          students={students}
-          courses={courses}
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          onGradesChange={loadGrades}
-          onStudentsChange={loadStudents}
-          showToast={showToast}
-        />
-      </>
-    )
-  }
-
-  // 班级管理二级页面
-  if (activeSubPage === 'classes') {
-    return (
-      <>
-        <ClassesAdmin
-          courses={courses}
-          grades={grades}
-          students={students}
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          showToast={showToast}
-        />
-      </>
-    )
-  }
-
-  // 课程管理二级页面
-  if (activeSubPage === 'courses') {
-    return (
-      <>
-        <CourseAdmin
-          courses={courses}
-          grades={grades}
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          onDelete={handleDeleteCourse}
-          onAdd={handleAddCourse}
-          onUpdate={handleUpdateCourse}
-        />
-      </>
-    )
-  }
-
-  // 报名管理二级页面
-  if (activeSubPage === 'enrollments') {
-    return (
-      <>
-        <EnrollmentAdmin
-          students={students}
-          courses={courses}
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          showToast={showToast}
-          onAuthError={handleApiError}
-          onStudentsChanged={loadStudents}
-        />
-      </>
-    )
-  }
-
-  // 结转退课二级页面
-  if (activeSubPage === 'transfers') {
-    return (
-      <>
-        <TransferAdmin
-          students={students}
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          showToast={showToast}
-          onAuthError={handleApiError}
-          onStudentsChanged={loadStudents}
-        />
-      </>
-    )
-  }
-
-  // 排课管理二级页面
-  if (activeSubPage === 'schedules') {
-    return (
-      <>
-        <ScheduleAdmin
-          students={students}
-          courses={courses}
-          grades={grades}
-          onBack={() => goSubPage(null)}
-          onToast={showToast}
-          currentAdmin={currentAdmin}
-        />
-      </>
-    )
-  }
-
-  // 点名管理二级页面
-  if (activeSubPage === 'attendance') {
-    return (
-      <>
-        <AttendanceAdmin
-          busy={busy}
-          onBack={() => goSubPage(null)}
-          onLoad={async (d) => {
-            const r = await getAttendanceList(d)
-            if (r.code !== 0) throw new Error(r.message)
-            return r.data
-          }}
-          onSave={async (d, items) => {
-            const r = await setAttendance(d, items)
-            if (r.code !== 0) throw new Error(r.message)
-            // 保存后刷新报名汇总（剩余课时已按报名记录扣减）
-            await loadEnrollmentSummaries()
-            return r.data
-          }}
-        />
-      </>
-    )
-  }
-
-  // 管理员账号管理二级页面（仅超管）
-  if (activeSubPage === 'admins') {
-    return <AdminUserAdmin onBack={() => goSubPage(null)} />
-  }
-
-  // 审计日志二级页面（仅超管）
-  if (activeSubPage === 'auditLogs') {
-    return <AuditLogAdmin onBack={() => goSubPage(null)} />
-  }
-
-  // 报表中心二级页面
-  if (activeSubPage === 'reports') {
-    return <ReportsAdmin onBack={() => goSubPage(null)} />
-  }
-
-  if (activeSubPage === 'teachers') {
-    return <TeacherAdmin onBack={() => goSubPage(null)} />
-  }
-
-  // 模块入口定义：按日常使用顺序排列（基础建档 → 教学运营 → 报表 → 系统）
-  // 每个入口含权限点、标题、描述、图标、跳转目标，按当前用户权限过滤后再渲染
-  const moduleEntries = [
-    // ===== 基础教务（建档类：学员 → 年级 → 课程 → 班级 → 教师）=====
-    { tab: 'basic', perm: 'students:view', sub: 'students', title: '学员管理', desc: '学员档案、报名汇总、续费预警', icon: 'students' },
-    { tab: 'basic', perm: 'grades:view', sub: 'grades', title: '年级管理', desc: '年级维护、批量升班、课程关联', icon: 'grades' },
-    { tab: 'basic', perm: 'courses:view', sub: 'courses', title: '课程管理', desc: '课程信息、单价、计费方式、关联年级', icon: 'courses' },
-    { tab: 'basic', perm: 'classes:view', sub: 'classes', title: '班级管理', desc: '班级建档、关联课程、固定学员名单', icon: 'classes' },
-    { tab: 'basic', perm: 'teachers:view', sub: 'teachers', title: '教师管理', desc: '课后反馈、教师绩效、评分', icon: 'teachers' },
-    // ===== 教学运营（业务流转：报名 → 结转退课 → 排课 → 点名）=====
-    { tab: 'operation', perm: 'enrollments:view', sub: 'enrollments', title: '报名管理', desc: '报名、购课赠课、课时余额', icon: 'enrollments' },
-    { tab: 'operation', perm: 'transfers:view', sub: 'transfers', title: '结转退课', desc: '退课折算入账户余额', icon: 'transfers' },
-    { tab: 'operation', perm: 'schedules:view', sub: 'schedules', title: '排课管理', desc: '排课、批量排课、点名扣减', icon: 'schedules' },
-    { tab: 'operation', perm: 'attendance:view', sub: 'attendance', title: '点名管理', desc: '按日期点名、批量点名、到课统计', icon: 'attendance' },
-    // ===== 报表中心（概览 + 明细报表，合并原数据看板）=====
-    { tab: 'data', perm: 'reports:view', sub: 'reports', title: '报表中心', desc: '经营概览、营收、课时、出勤、结转统计', icon: 'reports' },
-    // ===== 系统管理（配置 → 公告 → 账号 → 家长端链接 → 日志）=====
-    { tab: 'system', perm: 'settings:manage', sub: 'settings', title: '系统设置', desc: '项目名称、备份恢复、有效期', icon: 'settings' },
-    { tab: 'system', perm: 'announcement:view', sub: 'announcement', title: '公告管理', desc: '首页/家长端公告内容', icon: 'announcement' },
-    { tab: 'system', perm: 'admins:view', sub: 'admins', title: '管理员账号', desc: '账号增删、权限分配、启停', icon: 'admins' },
-    { tab: 'system', perm: 'students:view', sub: 'shareLinks', title: '分享链接', desc: '生成家长端专属访问链接', icon: 'shareLinks' },
-    { tab: 'system', perm: 'audit:view', sub: 'auditLogs', title: '审计日志', desc: '写操作留痕，按模块/人筛选', icon: 'auditLogs' },
-  ] as const
-
-  // 图标 SVG（命令式映射，避免每个入口重复写 svg）
-  const iconMap: Record<string, React.ReactNode> = {
-    students: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4z" />,
-    grades: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />,
-    classes: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />,
-    courses: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />,
-    enrollments: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />,
-    transfers: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />,
-    schedules: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />,
-    attendance: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />,
-    teachers: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />,
-    announcement: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />,
-    reports: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />,
-    shareLinks: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />,
-    settings: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z" />,
-    admins: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />,
-    auditLogs: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />,
-  }
-
-  const tabs = [
-    { key: 'basic', label: '基础教务' },
-    { key: 'operation', label: '教学运营' },
-    { key: 'data', label: '报表中心' },
-    { key: 'system', label: '系统管理' },
-  ] as const
-
-  // 当前 tab 下可见的入口（按权限过滤）
-  const visibleEntries = moduleEntries.filter(
-    (e) => e.tab === activeTab && canSeeModule(currentAdmin, e.perm),
-  )
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* 顶部栏 */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div>
-              <h1 className="text-lg font-semibold text-slate-800">{'后台管理'}</h1>
+    <SidebarProvider>
+      <AppSidebar
+        activeSubPage={activeSubPage}
+        appName={appName}
+        currentAdmin={currentAdmin}
+        onSelect={handleSelect}
+        onLogout={() => {
+          clearToken()
+          setAuthed(false)
+        }}
+      />
+      <SidebarInset>
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 h-4" />
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                {activeSubPage ? (
+                  <BreadcrumbLink asChild>
+                    <button
+                      onClick={() => handleSelect(null)}
+                      className="cursor-pointer"
+                    >
+                      后台管理
+                    </button>
+                  </BreadcrumbLink>
+                ) : (
+                  <BreadcrumbPage>后台管理</BreadcrumbPage>
+                )}
+              </BreadcrumbItem>
+              {currentModule && (
+                <>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>{currentModule.title}</BreadcrumbPage>
+                  </BreadcrumbItem>
+                </>
+              )}
+            </BreadcrumbList>
+          </Breadcrumb>
+        </header>
+        <main className="flex-1 overflow-auto">
+          {activeSubPage === null ? (
+            <div className="flex min-h-full items-center justify-center p-8">
+              <div className="text-center max-w-md">
+                <h2 className="text-2xl font-semibold text-foreground mb-2">
+                  欢迎使用后台管理
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  请从左侧菜单选择要管理的模块
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                clearToken()
-                setAuthed(false)
-              }}
-              className="btn-ghost"
-              title={'退出登录'}
-            >
-              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              <span className="hidden sm:inline">{'退出登录'}</span>
-            </button>
-            <button onClick={onExit} className="btn-ghost">
-              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              <span className="hidden sm:inline">返回首页</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
-        {/* 分类选项卡：仅允许横向滑动，禁止纵向滑动（移动端修复）；隐藏滚动条保持可滑动 */}
-        <div className="flex items-center gap-1 mb-5 border-b border-slate-200 overflow-x-auto overflow-y-hidden touch-pan-x overscroll-x-contain no-scrollbar">
-          {tabs.map((tab) => {
-            const count = moduleEntries.filter(
-              (e) => e.tab === tab.key && canSeeModule(currentAdmin, e.perm),
-            ).length
-            if (count === 0) return null
-            return (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-                  activeTab === tab.key
-                    ? 'border-brand-500 text-brand-600'
-                    : 'border-transparent text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                {tab.label}
-                <span className="ml-1.5 text-xs text-slate-400">{count}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* 模块入口网格 */}
-        {visibleEntries.length === 0 ? (
-          <div className="card p-12 text-center text-slate-400 text-sm">
-            当前分类暂无可用模块
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {visibleEntries.map((entry) => (
-              <button
-                key={entry.sub}
-                onClick={() => {
-                  if (entry.sub === 'announcement') handleLoadAnnouncement()
-                  goSubPage(entry.sub as SubPage)
-                }}
-                className="card p-5 text-left hover:shadow-md hover:border-brand-200 transition-all group"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center flex-shrink-0 group-hover:bg-brand-100 transition-colors">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      {iconMap[entry.icon]}
-                    </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold text-slate-800 mb-1">{entry.title}</h3>
-                    <p className="text-xs text-slate-500 leading-relaxed">{entry.desc}</p>
-                  </div>
-                  <svg className="w-4 h-4 text-slate-300 group-hover:text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </main>
-    </div>
+          ) : (
+            renderSubPage()
+          )}
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }
-

@@ -103,7 +103,7 @@ export function GradeAdmin({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-full bg-background">
       <SubPageHeader title={'年级管理'} onBack={onBack} count={grades.length}>
         <Button variant="outline" onClick={() => setPromoting(true)} disabled={actionDisabled || grades.length < 2}>
           {'批量升班'}
@@ -129,7 +129,7 @@ export function GradeAdmin({
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 text-slate-500 text-xs">
+                  <tr className="border-b border-border text-muted-foreground text-xs">
                     <th className="text-left py-2 px-2 font-medium">{'年级名称'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'排序'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'状态'}</th>
@@ -144,35 +144,35 @@ export function GradeAdmin({
                     const studentCount = studentCountByGrade.get(g.name) || 0
                     const courseCount = courseCountByGrade.get(g.name) || 0
                     return (
-                      <tr key={g.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                        <td className="py-2.5 px-2 font-medium text-slate-700">{g.name}</td>
-                        <td className="py-2.5 px-2 text-slate-600">{g.sortOrder ?? 0}</td>
+                      <tr key={g.id} className="border-b border-border hover:bg-muted/50 transition-colors">
+                        <td className="py-2.5 px-2 font-medium text-foreground">{g.name}</td>
+                        <td className="py-2.5 px-2 text-muted-foreground">{g.sortOrder ?? 0}</td>
                         <td className="py-2.5 px-2">
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                             g.status === 'inactive'
-                              ? 'bg-slate-100 text-slate-500'
+                              ? 'bg-muted text-muted-foreground'
                               : 'bg-green-50 text-green-700'
                           }`}>
                             {g.status === 'inactive' ? '停用' : '启用'}
                           </span>
                         </td>
-                        <td className="py-2.5 px-2 text-slate-600">{studentCount}</td>
-                        <td className="py-2.5 px-2 text-slate-600">{courseCount}</td>
-                        <td className="py-2.5 px-2 text-slate-500 max-w-xs truncate">
-                          {g.description || <span className="text-slate-300">—</span>}
+                        <td className="py-2.5 px-2 text-muted-foreground">{studentCount}</td>
+                        <td className="py-2.5 px-2 text-muted-foreground">{courseCount}</td>
+                        <td className="py-2.5 px-2 text-muted-foreground max-w-xs truncate">
+                          {g.description || <span className="text-muted-foreground/40">—</span>}
                         </td>
                         <td className="py-2.5 px-2 text-right whitespace-nowrap">
                           <button
                             onClick={() => setEditing(g)}
                             disabled={actionDisabled}
-                            className="text-brand-600 hover:text-brand-700 text-xs font-medium disabled:opacity-50 mr-3"
+                            className="text-primary hover:text-brand-700 text-xs font-medium disabled:opacity-50 mr-3"
                           >
                             {'编辑'}
                           </button>
                           <button
                             onClick={() => handleDelete(g)}
                             disabled={actionDisabled}
-                            className="text-rose-500 hover:text-rose-600 text-xs font-medium disabled:opacity-50"
+                            className="text-destructive hover:text-destructive text-xs font-medium disabled:opacity-50"
                           >
                             {'删除'}
                           </button>
@@ -417,7 +417,7 @@ function PromoteModal({ grades, onClose, onDone, showToast }: PromoteModalProps)
           </select>
         </Field>
         {error && (
-          <div className="bg-rose-50 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
+          <div className="bg-destructive/10 border border-rose-200 rounded-md px-3 py-2 text-sm text-rose-700">
             {error}
           </div>
         )}

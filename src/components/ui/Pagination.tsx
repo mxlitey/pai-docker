@@ -1,12 +1,11 @@
 // 统一分页组件 —— 首末页 + 当前页前后 2 页，其余省略
-// 用法：<Pagination page={page} totalPages={total} pageSize={size} total={total} onPageChange={setPage} />
+// 使用 shadcn/ui 语义色
 import { cn } from '@/utils/cn'
 
 interface PaginationProps {
   page: number
   totalPages: number
   onPageChange: (p: number) => void
-  // 可选：展示「共 N 条」
   total?: number
   pageSize?: number
 }
@@ -15,9 +14,9 @@ export function Pagination({ page, totalPages, onPageChange, total, pageSize }: 
   if (totalPages <= 1) {
     if (total !== undefined && pageSize !== undefined) {
       return (
-        <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
-          <span className="text-xs text-slate-400">共 {total} 条</span>
-          <span className="text-xs text-slate-300">第 1 / 1 页</span>
+        <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
+          <span className="text-xs text-muted-foreground">共 {total} 条</span>
+          <span className="text-xs text-muted-foreground/60">第 1 / 1 页</span>
         </div>
       )
     }
@@ -34,11 +33,11 @@ export function Pagination({ page, totalPages, onPageChange, total, pageSize }: 
     }
   }
 
-  const btnClass = 'btn-ghost border border-slate-200 text-xs py-1 px-2.5'
+  const btnClass = 'btn-ghost border border-border text-xs py-1 px-2.5'
 
   return (
-    <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
-      <span className="text-xs text-slate-400">
+    <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
+      <span className="text-xs text-muted-foreground">
         {total !== undefined && pageSize !== undefined
           ? `共 ${total} 条 · 第 ${page} / ${totalPages} 页`
           : `第 ${page} / ${totalPages} 页 · 每页 ${pageSize ?? ''} 条`}
@@ -53,7 +52,7 @@ export function Pagination({ page, totalPages, onPageChange, total, pageSize }: 
         </button>
         {buttons.map((b, idx) =>
           b === '...' ? (
-            <span key={`e${idx}`} className="text-slate-400 text-xs px-1.5 select-none">
+            <span key={`e${idx}`} className="text-muted-foreground text-xs px-1.5 select-none">
               …
             </span>
           ) : (
@@ -64,7 +63,7 @@ export function Pagination({ page, totalPages, onPageChange, total, pageSize }: 
                 'text-xs py-1 px-2.5 rounded-md transition-colors',
                 b === page
                   ? 'btn-primary'
-                  : 'btn-ghost border border-slate-200',
+                  : 'btn-ghost border border-border',
               )}
             >
               {b}

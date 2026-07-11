@@ -18,11 +18,11 @@ export function MonthView({ currentDate, schedules, onScheduleClick }: MonthView
       {/* ============ 大屏：7列网格（保持原样） ============ */}
       <div className="hidden sm:block">
         {/* 星期表头 */}
-        <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+        <div className="grid grid-cols-7 border-b border-border bg-background">
           {WEEKDAYS.map((day) => (
             <div
               key={day}
-              className="py-2 text-center text-xs font-medium text-slate-500"
+              className="py-2 text-center text-xs font-medium text-muted-foreground"
             >
               {'周'}{day}
             </div>
@@ -39,8 +39,8 @@ export function MonthView({ currentDate, schedules, onScheduleClick }: MonthView
               <div
                 key={index}
                 className={cn(
-                  'min-h-[110px] border-b border-r border-slate-100 p-1 overflow-hidden',
-                  !cell.isCurrentMonth && 'bg-slate-50/50',
+                  'min-h-[110px] border-b border-r border-border p-1 overflow-hidden',
+                  !cell.isCurrentMonth && 'bg-background/50',
                   (index + 1) % 7 === 0 && 'border-r-0',
                   index >= 35 && 'border-b-0',
                 )}
@@ -54,14 +54,14 @@ export function MonthView({ currentDate, schedules, onScheduleClick }: MonthView
                         : cell.isCurrentMonth
                           ? isWeekend
                             ? 'text-rose-400'
-                            : 'text-slate-600'
-                          : 'text-slate-300',
+                            : 'text-muted-foreground'
+                          : 'text-muted-foreground/40',
                     )}
                   >
                     {dayNum}
                   </span>
                   {cell.schedules.length > 0 && cell.isCurrentMonth && (
-                    <span className="text-[10px] text-slate-400">
+                    <span className="text-[10px] text-muted-foreground/70">
                       {cell.schedules.length}{'节'}
                     </span>
                   )}
@@ -76,7 +76,7 @@ export function MonthView({ currentDate, schedules, onScheduleClick }: MonthView
                     />
                   ))}
                   {cell.schedules.length > 3 && (
-                    <div className="text-[10px] text-slate-400 pl-1">
+                    <div className="text-[10px] text-muted-foreground/70 pl-1">
                       +{cell.schedules.length - 3} {'更多'}
                     </div>
                   )}
@@ -97,11 +97,11 @@ export function MonthView({ currentDate, schedules, onScheduleClick }: MonthView
         <div className="overflow-x-auto -webkit-overflow-scrolling-touch">
           <div className="min-w-[770px]">
             {/* 星期表头 */}
-            <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+            <div className="grid grid-cols-7 border-b border-border bg-background">
               {WEEKDAYS.map((day) => (
                 <div
                   key={day}
-                  className="py-2 text-center text-xs font-medium text-slate-500"
+                  className="py-2 text-center text-xs font-medium text-muted-foreground"
                 >
                   {'周'}{day}
                 </div>
@@ -117,8 +117,8 @@ export function MonthView({ currentDate, schedules, onScheduleClick }: MonthView
                   <div
                     key={index}
                     className={cn(
-                      'min-h-[110px] border-b border-r border-slate-100 p-1.5 overflow-hidden',
-                      !cell.isCurrentMonth && 'bg-slate-50/50',
+                      'min-h-[110px] border-b border-r border-border p-1.5 overflow-hidden',
+                      !cell.isCurrentMonth && 'bg-background/50',
                       (index + 1) % 7 === 0 && 'border-r-0',
                       index >= 35 && 'border-b-0',
                     )}
@@ -132,14 +132,14 @@ export function MonthView({ currentDate, schedules, onScheduleClick }: MonthView
                             : cell.isCurrentMonth
                               ? isWeekend
                                 ? 'text-rose-400'
-                                : 'text-slate-600'
-                              : 'text-slate-300',
+                                : 'text-muted-foreground'
+                              : 'text-muted-foreground/40',
                         )}
                       >
                         {dayNum}
                       </span>
                       {cell.schedules.length > 0 && cell.isCurrentMonth && (
-                        <span className="text-[10px] text-slate-400">
+                        <span className="text-[10px] text-muted-foreground/70">
                           {cell.schedules.length}{'节'}
                         </span>
                       )}
@@ -154,7 +154,7 @@ export function MonthView({ currentDate, schedules, onScheduleClick }: MonthView
                         />
                       ))}
                       {cell.schedules.length > 3 && (
-                        <div className="text-[10px] text-slate-400 pl-1">
+                        <div className="text-[10px] text-muted-foreground/70 pl-1">
                           +{cell.schedules.length - 3} {'更多'}
                         </div>
                       )}

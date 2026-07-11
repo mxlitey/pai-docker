@@ -38,7 +38,7 @@ export function CourseAdmin({ courses, grades, busy, onBack, onDelete, onAdd, on
   }, [courses, safePage])
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-full bg-background">
       <SubPageHeader title={'课程管理'} onBack={onBack} count={courses.length}>
         <Button variant="primary" onClick={() => setAdding(true)} disabled={busy}>
           + {'新增课程'}
@@ -61,7 +61,7 @@ export function CourseAdmin({ courses, grades, busy, onBack, onDelete, onAdd, on
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 text-slate-500 text-xs">
+                  <tr className="border-b border-border text-muted-foreground text-xs">
                     <th className="text-left py-2 px-2 font-medium">{'颜色'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'课程名称'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'年级'}</th>
@@ -73,7 +73,7 @@ export function CourseAdmin({ courses, grades, busy, onBack, onDelete, onAdd, on
                   {pageItems.map((c) => (
                     <tr
                       key={c.id}
-                      className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                      className="border-b border-border hover:bg-muted/50 transition-colors"
                     >
                       <td className="py-2.5 px-2">
                         <span
@@ -83,25 +83,25 @@ export function CourseAdmin({ courses, grades, busy, onBack, onDelete, onAdd, on
                           )}
                         />
                       </td>
-                      <td className="py-2.5 px-2 font-medium text-slate-700">{c.name}</td>
-                      <td className="py-2.5 px-2 text-slate-600">
-                        {c.grade || <span className="text-slate-300">—</span>}
+                      <td className="py-2.5 px-2 font-medium text-foreground">{c.name}</td>
+                      <td className="py-2.5 px-2 text-muted-foreground">
+                        {c.grade || <span className="text-muted-foreground/40">—</span>}
                       </td>
-                      <td className="py-2.5 px-2 text-slate-600 text-xs">
+                      <td className="py-2.5 px-2 text-muted-foreground text-xs">
                         {c.billingType === 'per_term' ? '按期' : c.billingType === 'per_month' ? '按月' : '按课时'}
                       </td>
                       <td className="py-2.5 px-2 text-right whitespace-nowrap">
                         <button
                           onClick={() => setEditing(c)}
                           disabled={busy}
-                          className="text-brand-600 hover:text-brand-700 text-xs font-medium mr-3 disabled:opacity-50"
+                          className="text-primary hover:text-brand-700 text-xs font-medium mr-3 disabled:opacity-50"
                         >
                           {'编辑'}
                         </button>
                         <button
                           onClick={() => onDelete(c)}
                           disabled={busy}
-                          className="text-rose-600 hover:text-rose-700 text-xs font-medium disabled:opacity-50"
+                          className="text-destructive hover:text-rose-700 text-xs font-medium disabled:opacity-50"
                         >
                           {'删除'}
                         </button>
@@ -277,8 +277,8 @@ function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalP
                 className={cn(
                   'flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs transition-all',
                   form.color === opt.key
-                    ? 'border-slate-400 bg-slate-50 ring-1 ring-slate-300'
-                    : 'border-slate-200 hover:border-slate-300',
+                    ? 'border-slate-400 bg-background ring-1 ring-slate-300'
+                    : 'border-border hover:border-border',
                 )}
               >
                 <span className={cn('inline-block w-3 h-3 rounded-full', opt.dot)} />
