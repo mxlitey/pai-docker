@@ -20,6 +20,26 @@ import { AlertTriangle, Lock, Loader2, Star } from 'lucide-react'
 
 type Phase = 'loading' | 'verify' | 'verified' | 'error'
 
+// 家长端免验证缓存：验证通过后将手机尾号存入 localStorage，下次打开链接自动登录
+// key 按学员 ID 隔离，避免不同学员串数据；仅存手机尾号（4位），无敏感信息
+function parentTokenKey(studentId: string) {
+  return `parent_access_${studentId}`
+}
+function loadCachedSuffix(studentId: string): string {
+  try {
+    return localStorage.getItem(parentTokenKey(studentId)) || ''
+  } catch {
+    return ''
+  }
+}
+function cacheSuffix(studentId: string, suffix: string) {
+  try {
+    localStorage.setItem(parentTokenKey(studentId), suffix)
+  } catch {
+    // 忽略写入失败
+  }
+}
+
 function renderStars(rating: number): string {
   const r = Math.max(0, Math.min(5, Math.round(rating)))
   return '★'.repeat(r) + '☆'.repeat(5 - r)
@@ -48,6 +68,21 @@ export function ParentH5({ appName }: { appName: string }) {
         }
         return
       }
+      // 1) 优先尝试 localStorage 缓存的手机尾号，命中则直接免验证登录
+      const cached = loadCachedSuffix(studentId)
+      if (cached.length === 4) {
+        try {
+          const result = await verifyParentAccess(studentId, cached)
+          if (cancelled) return
+          setData(result)
+          setStudentName(result.student.name)
+          setPhase('verified')
+          return
+        } catch {
+          // 缓存失效（手机号已变更等），回退到手动验证流程
+        }
+      }
+      // 2) 无缓存或缓存失效，走正常验证流程：先拉取脱敏提示
       try {
         const hint = await getParentAccessHint(studentId)
         if (cancelled) return
@@ -78,6 +113,8 @@ export function ParentH5({ appName }: { appName: string }) {
       const result = await verifyParentAccess(studentId, phoneSuffix)
       setData(result)
       setStudentName(result.student.name)
+      // 验证通过：缓存手机尾号，下次打开链接免验证
+      cacheSuffix(studentId, phoneSuffix)
       setPhase('verified')
     } catch (e) {
       setErrorMsg((e as Error).message || '校验失败')
@@ -177,13 +214,8 @@ export function ParentH5({ appName }: { appName: string }) {
   }
 
   // ===== 已验证：学员信息主页 =====
-  // 学员概览信息（姓名/年级/家长/课时余额/总排课）统一收纳到页眉，
+  // 学员概览信息（姓名/年级 + 课时余额 + 总排课）统一收纳到页眉，
   // 避免日历顶部重复展示学员信息；电脑端页眉较宽，信息左对齐连续展示而非一左一右割裂
-  const studentMeta = [
-    data.student.grade,
-    data.student.parentName,
-  ].filter(Boolean).join(' · ')
-
   return (
     <div className="min-h-screen bg-background">
       <header className="bg-background border-b border-border sticky top-0 z-10">
@@ -195,8 +227,8 @@ export function ParentH5({ appName }: { appName: string }) {
             </div>
             <div className="flex-shrink-0">
               <div className="font-semibold text-foreground text-sm">{data.student.name}</div>
-              {studentMeta && (
-                <div className="text-xs text-muted-foreground/70">{studentMeta}</div>
+              {data.student.grade && (
+                <div className="text-xs text-muted-foreground/70">{data.student.grade}</div>
               )}
             </div>
             {/* 统计信息：电脑端跟在姓名后面，手机端靠右 */}
