@@ -3,7 +3,7 @@ import type { Schedule } from '@/types'
 import { cn } from '@/utils/cn'
 import { getCourseDotClass } from '@/utils/courseColors'
 import { todayLocal } from '@/utils/date'
-import { Button, EmptyState, SubPageHeader } from '@/components/ui'
+import { Button, EmptyState, SubPageHeader, Modal, ModalFooter } from '@/components/ui'
 
 interface AttendanceAdminProps {
   busy: boolean
@@ -27,6 +27,10 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
   const [loadedDate, setLoadedDate] = useState('')
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
+  // 点名失败弹窗：保存后若存在 errors，弹窗展示详细信息
+  const [failModalOpen, setFailModalOpen] = useState(false)
+  const [failErrors, setFailErrors] = useState<string[]>([])
+  const [failSummary, setFailSummary] = useState({ updated: 0, enrollments: 0 })
   // 当前编辑的 attended 状态：scheduleId -> attended (true/false/undefined)
   const [editMap, setEditMap] = useState<Record<string, boolean | undefined>>({})
   const [saving, setSaving] = useState(false)
@@ -69,13 +73,15 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
     setSuccessMsg('')
   }
 
-  // 按课程分组，便于分班级/分课程点名；课程内再按时间段二级分组
-  const groupedByCourse = useMemo(() => {
+  // 按「班级(课程) 年级」分组，便于分班级点名；班级内再按时间段二级分组
+  // 分组键：classId（有班级）或 courseId（无班级的旧数据），标题格式「班级名(课程名) 年级」
+  const groupedByClass = useMemo(() => {
     const map = new Map<
       string,
       {
         key: string
-        courseName: string
+        title: string
+        subTitle: string
         teacher?: string
         location?: string
         color?: string
@@ -89,12 +95,20 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
       }
     >()
     for (const s of schedules) {
-      const key = s.courseId || s.courseName
+      const key = s.classId || s.courseId || s.courseName
       let g = map.get(key)
       if (!g) {
+        const className = s.className || ''
+        const courseName = s.courseName || ''
+        const grade = s.grade || ''
+        // 标题：班级名(课程名)，无班级时仅显示课程名
+        const title = className ? `${className}(${courseName})` : courseName
+        // 副标题：年级
+        const subTitle = grade || ''
         g = {
           key,
-          courseName: s.courseName,
+          title,
+          subTitle,
           teacher: s.teacher,
           location: s.location,
           color: s.color,
@@ -107,7 +121,7 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
     }
     const groups = Array.from(map.values())
     for (const g of groups) {
-      // 课程内按时间段聚合
+      // 班级内按时间段聚合
       const tgMap = new Map<
         string,
         { timeKey: string; startTime: string; endTime: string; schedules: Schedule[] }
@@ -130,7 +144,6 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
         tg.schedules.sort((a, b) => (a.studentName || '').localeCompare(b.studentName || ''))
       }
       g.timeGroups = tgs
-      // 保留 schedules 整体排序，供组间排序与课程级批量操作使用
       g.schedules.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''))
     }
     // 组间按首节课时间升序
@@ -191,11 +204,18 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
     try {
       const result = await onSave(loadedDate, changedItems)
       if (result.errors && result.errors.length > 0) {
-        setError(`保存部分失败：${result.errors.join('; ')}`)
+        // 点名部分失败：弹窗展示详细信息
+        setFailErrors(result.errors)
+        setFailSummary({
+          updated: result.updatedSchedules || 0,
+          enrollments: result.updatedEnrollments || 0,
+        })
+        setFailModalOpen(true)
+      } else {
+        setSuccessMsg(
+          `已更新 ${result.updatedSchedules} 条排课出勤、${result.updatedEnrollments} 条报名记录课时`,
+        )
       }
-      setSuccessMsg(
-        `已更新 ${result.updatedSchedules} 条排课出勤、${result.updatedEnrollments} 条报名记录课时`,
-      )
       // 保存后重新加载以同步 attended 状态
       const r = await onLoad(loadedDate)
       setSchedules(r.schedules)
@@ -293,8 +313,8 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
               </div>
             </div>
 
-            {/* 按课程分组渲染 */}
-            {groupedByCourse.map((group) => {
+            {/* 按班级(课程)年级分组渲染 */}
+            {groupedByClass.map((group) => {
               let gp = 0
               let ga = 0
               let gu = 0
@@ -306,7 +326,7 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
               }
               return (
                 <div key={group.key} className="card p-4 sm:p-5">
-                  {/* 课程标题 */}
+                  {/* 班级(课程)年级标题 */}
                   <div className="flex items-start sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-100">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -317,8 +337,13 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
                           )}
                         />
                         <h3 className="font-semibold text-slate-800 text-sm sm:text-base truncate">
-                          {group.courseName}
+                          {group.title}
                         </h3>
+                        {group.subTitle && (
+                          <span className="text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded flex-shrink-0">
+                            {group.subTitle}
+                          </span>
+                        )}
                         <span className="text-xs text-slate-400 flex-shrink-0">
                           {group.schedules.length} 人
                         </span>
@@ -392,9 +417,6 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
                                   <div className="text-sm text-slate-800 font-medium truncate">
                                     {s.studentName}
                                   </div>
-                                  <span className="text-xs text-slate-400 font-mono flex-shrink-0">
-                                    {s.id}
-                                  </span>
                                 </div>
 
                                 {/* 三态按钮：移动端占满宽度均分，桌面端右对齐 */}
@@ -465,6 +487,43 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
           <EmptyState title={'该日期无排课记录'} />
         )}
       </main>
+
+      {/* 点名部分失败弹窗 */}
+      {failModalOpen && (
+        <Modal
+          title={'点名部分失败'}
+          onClose={() => setFailModalOpen(false)}
+          size="md"
+          footer={
+            <ModalFooter
+              onCancel={() => setFailModalOpen(false)}
+              onConfirm={() => setFailModalOpen(false)}
+              cancelText={'关闭'}
+              confirmText={'知道了'}
+            />
+          }
+        >
+          <div className="space-y-3">
+            <div className="text-sm text-slate-600">
+              成功更新 <span className="font-medium text-green-600">{failSummary.updated}</span> 条排课出勤、
+              <span className="font-medium text-green-600">{failSummary.enrollments}</span> 条报名记录课时。
+            </div>
+            <div className="text-sm text-rose-600 font-medium">
+              以下 {failErrors.length} 项处理失败：
+            </div>
+            <div className="bg-rose-50 border border-rose-200 rounded-md p-3 space-y-1 max-h-60 overflow-y-auto">
+              {failErrors.map((err, idx) => (
+                <div key={idx} className="text-xs text-rose-700">
+                  {idx + 1}. {err}
+                </div>
+              ))}
+            </div>
+            <div className="text-xs text-slate-400">
+              常见原因：学员未报名该课程、剩余课时不足、排课未关联课程等。请检查学员报名状态后重试。
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

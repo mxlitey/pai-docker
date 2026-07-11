@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Course, Schedule, Student, ClassInfo, Grade } from '@/types'
+import type { Course, Schedule, Student, ClassInfo, Grade, CurrentAdmin } from '@/types'
 import { getSchedules } from '@/api'
 import { deleteSchedule, searchSchedules, listClasses } from '@/api/admin'
 import { SearchBar } from '@/components/SearchBar'
 import { cn } from '@/utils/cn'
+import { hasPermission } from '@/utils/permission'
+import { currentMonthRangeLocal } from '@/utils/date'
 import {
   Button,
   EmptyState,
@@ -22,23 +24,29 @@ interface ScheduleAdminProps {
   grades: Grade[]
   onBack: () => void
   onToast: (type: 'success' | 'error' | 'info', message: string) => void
+  currentAdmin?: CurrentAdmin | null
 }
 
 type SearchMode = 'student' | 'filter'
 
-export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: ScheduleAdminProps) {
+export function ScheduleAdmin({ students, courses, grades, onBack, onToast, currentAdmin }: ScheduleAdminProps) {
+  // 按权限控制按钮显隐
+  const canCreate = hasPermission(currentAdmin ?? null, 'schedules:create')
+  const canUpdate = hasPermission(currentAdmin ?? null, 'schedules:update')
+  const canDelete = hasPermission(currentAdmin ?? null, 'schedules:delete')
+  const canReschedule = hasPermission(currentAdmin ?? null, 'schedules:reschedule')
+
   const [mode, setMode] = useState<SearchMode>('filter')
 
   // 按学员模式
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
 
   // 按日期/课程/年级筛选模式
-  const [filterStartDate, setFilterStartDate] = useState('')
-  const [filterEndDate, setFilterEndDate] = useState('')
+  const initMonth = currentMonthRangeLocal()
+  const [filterStartDate, setFilterStartDate] = useState(initMonth.startDate)
+  const [filterEndDate, setFilterEndDate] = useState(initMonth.endDate)
   const [filterCourseId, setFilterCourseId] = useState('')
   const [filterGrade, setFilterGrade] = useState('')
-  // 标记是否已发起过搜索（用于区分"未搜索"与"搜索后无结果"）
-  const [filterSubmitted, setFilterSubmitted] = useState(false)
 
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [loadingSchedules, setLoadingSchedules] = useState(false)
@@ -106,10 +114,15 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
       onToast('error', '搜索排课失败：' + (e as Error).message)
       setSchedules([])
     } finally {
-      setFilterSubmitted(true)
       setLoadingSchedules(false)
     }
   }, [filterStartDate, filterEndDate, filterCourseId, filterGrade, onToast])
+
+  // 进入页面时自动按默认当月日期搜索一次
+  useEffect(() => {
+    runFilterSearch()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 学员模式：选中学员后自动加载
   useEffect(() => {
@@ -124,7 +137,6 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
     if (next === mode) return
     setMode(next)
     setSchedules([])
-    setFilterSubmitted(false)
     if (next === 'student') {
       // 进入学员模式时不自动选中学员，等用户搜索
       setSelectedStudent(null)
@@ -180,20 +192,22 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
         onBack={onBack}
         count={schedules.length > 0 ? schedules.length : undefined}
       >
-        <Button
-          variant="primary"
-          onClick={() => setAddingSchedule(true)}
-          disabled={busy || students.length === 0 || courses.length === 0}
-          title={
-            students.length === 0
-              ? '请先添加学员数据'
-              : courses.length === 0
-                ? '请先在课程管理中添加课程'
-                : '按课程为多个学员批量排课'
-          }
-        >
-          + {'新增排课'}
-        </Button>
+        {canCreate && (
+          <Button
+            variant="primary"
+            onClick={() => setAddingSchedule(true)}
+            disabled={busy || students.length === 0 || courses.length === 0}
+            title={
+              students.length === 0
+                ? '请先添加学员数据'
+                : courses.length === 0
+                  ? '请先在课程管理中添加课程'
+                  : '按课程为多个学员批量排课'
+            }
+          >
+            + {'新增排课'}
+          </Button>
+        )}
       </SubPageHeader>
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-4">
@@ -210,7 +224,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
                   : 'border-transparent text-slate-500 hover:text-slate-700')
               }
             >
-              按日期 / 课程筛选
+              条件筛选
             </button>
             <button
               onClick={() => switchMode('student')}
@@ -221,7 +235,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
                   : 'border-transparent text-slate-500 hover:text-slate-700')
               }
             >
-              按学员搜索
+              学员查询
             </button>
           </div>
 
@@ -242,24 +256,6 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">{'开始日期'}</label>
-                  <input
-                    type="date"
-                    value={filterStartDate}
-                    onChange={(e) => setFilterStartDate(e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">{'结束日期'}</label>
-                  <input
-                    type="date"
-                    value={filterEndDate}
-                    onChange={(e) => setFilterEndDate(e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
                   <label className="block text-xs text-slate-500 mb-1">{'课程'}</label>
                   <select
                     value={filterCourseId}
@@ -274,6 +270,27 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
                     ))}
                   </select>
                 </div>
+                {/* 日期范围：两个输入框成组，手机端保持在同一行 */}
+                <div className="flex items-end gap-3 w-full sm:w-auto">
+                  <div className="flex-1 sm:flex-none">
+                    <label className="block text-xs text-slate-500 mb-1">{'开始日期'}</label>
+                    <input
+                      type="date"
+                      value={filterStartDate}
+                      onChange={(e) => setFilterStartDate(e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+                  <div className="flex-1 sm:flex-none">
+                    <label className="block text-xs text-slate-500 mb-1">{'结束日期'}</label>
+                    <input
+                      type="date"
+                      value={filterEndDate}
+                      onChange={(e) => setFilterEndDate(e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
                 <Button variant="primary" loading={loadingSchedules} onClick={runFilterSearch}>
                   {'搜索'}
                 </Button>
@@ -286,7 +303,6 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
                       setFilterCourseId('')
                       setFilterGrade('')
                       setSchedules([])
-                      setFilterSubmitted(false)
                     }}
                   >
                     {'清空条件'}
@@ -317,11 +333,6 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
           <EmptyState
             title="请搜索并选择学员"
             description="选择学员后即可查看其排课列表"
-          />
-        ) : mode === 'filter' && !filterSubmitted ? (
-          <EmptyState
-            title="请设置筛选条件"
-            description="设置日期范围或课程后点击「搜索」查看排课"
           />
         ) : loadingSchedules ? (
           <LoadingBlock />
@@ -413,7 +424,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
                       <td className="py-2.5 px-2 text-slate-600">{s.teacher}</td>
                       <td className="py-2.5 px-2 text-slate-600">{s.location}</td>
                       <td className="py-2.5 px-2 text-right whitespace-nowrap">
-                        {canModify && (
+                        {canModify && canUpdate && (
                           <button
                             onClick={() => setEditingSchedule(s)}
                             disabled={busy}
@@ -422,7 +433,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
                             {'编辑'}
                           </button>
                         )}
-                        {s.status !== 'cancelled' && s.attended === false && (
+                        {s.status !== 'cancelled' && s.attended === false && canReschedule && (
                           <button
                             onClick={() => setReschedulingSchedule(s)}
                             disabled={busy}
@@ -431,7 +442,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
                             {'补课'}
                           </button>
                         )}
-                        {s.status !== 'cancelled' && s.attended !== true && s.attended !== false && !s.makeupFor && !s.rescheduledFrom && (
+                        {s.status !== 'cancelled' && s.attended !== true && s.attended !== false && !s.makeupFor && !s.rescheduledFrom && canReschedule && (
                           <button
                             onClick={() => setReschedulingSchedule(s)}
                             disabled={busy}
@@ -440,7 +451,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast }: Sc
                             {'调课'}
                           </button>
                         )}
-                        {canModify && (
+                        {canModify && canDelete && (
                           <button
                             onClick={() => handleDeleteSchedule(s)}
                             disabled={busy}

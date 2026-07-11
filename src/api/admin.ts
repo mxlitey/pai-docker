@@ -7,6 +7,7 @@ import type {
   Feedback, TeacherPerformance,
   PermissionModule, Grade, ClassInfo, ClassMember,
   ScheduleChange, AccountTransaction,
+  AuditArchiveInfo, AuditArchiveContent,
 } from '@/types'
 
 const API_BASE = '/api'
@@ -801,6 +802,35 @@ export async function listAuditLogs(params: {
   if (params.pageSize) qs.set('pageSize', String(params.pageSize))
   const query = qs.toString()
   return request(`${API_BASE}/audit-logs${query ? '?' + query : ''}`, { method: 'GET' })
+}
+
+// ========== 审计日志归档 ==========
+
+// 列出所有已归档月份
+export async function listAuditArchives(): Promise<ApiResult<{ archives: AuditArchiveInfo[] }>> {
+  return request(`${API_BASE}/audit-archives`, { method: 'GET' })
+}
+
+// 查看指定月份归档内容
+export async function readAuditArchive(month: string): Promise<ApiResult<AuditArchiveContent>> {
+  const qs = new URLSearchParams({ month })
+  return request(`${API_BASE}/audit-archives?${qs.toString()}`, { method: 'GET' })
+}
+
+// 手动触发归档指定月份
+export async function createAuditArchive(
+  month: string,
+): Promise<ApiResult<{ archived: number; filename: string; size: number }>> {
+  return request(`${API_BASE}/audit-archives`, {
+    method: 'POST',
+    body: JSON.stringify({ month }),
+  })
+}
+
+// 删除指定月份归档
+export async function deleteAuditArchive(month: string): Promise<ApiResult<{ deleted: boolean }>> {
+  const qs = new URLSearchParams({ month })
+  return request(`${API_BASE}/audit-archives?${qs.toString()}`, { method: 'DELETE' })
 }
 
 // ========== 报表 ==========

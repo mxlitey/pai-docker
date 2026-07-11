@@ -3,7 +3,7 @@
 // POST   /api/feedback  body: fb                                     -> 新增反馈，需 feedback:create
 // PUT    /api/feedback  body: { id, ...patch }                       -> 更新反馈(content/rating)，需 feedback:update
 // DELETE /api/feedback?id=                                            -> 删除反馈，需 feedback:delete
-import { getFeedback, addFeedback, updateFeedback, deleteFeedback, json } from '../_lib/store.js'
+import { getFeedback, addFeedback, updateFeedback, deleteFeedback, getScheduleById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -25,6 +25,10 @@ async function handleGet(context) {
     studentId: url.searchParams.get('studentId') || undefined,
     courseId: url.searchParams.get('courseId') || undefined,
   }
+  // 教师角色仅返回自己的反馈（按 teacher_id = 当前用户 id 过滤）
+  if (context.admin.role === 'teacher') {
+    params.teacherId = context.admin.id
+  }
   try {
     const list = await getFeedback(params)
     return json({ code: 0, data: list })
@@ -42,7 +46,38 @@ async function handlePost(context) {
     return json({ code: 1, message: '反馈数据不能为空', data: null }, 400)
   }
 
+  // 强制以当前登录用户为反馈提交人
+  fb.teacherId = context.admin.id
+  fb.teacherName = context.admin.realName || context.admin.username
+
+  // 字段校验
+  if (!fb.content || typeof fb.content !== 'string' || !fb.content.trim()) {
+    return json({ code: 1, message: '反馈内容不能为空', data: null }, 400)
+  }
+  if (fb.content.length > 2000) {
+    return json({ code: 1, message: '反馈内容不能超过2000字', data: null }, 400)
+  }
+
   try {
+    // 校验排课归属并自动补全关联字段
+    if (fb.scheduleId) {
+      const schedule = await getScheduleById(fb.scheduleId)
+      if (!schedule) {
+        return json({ code: 1, message: '排课记录不存在', data: null }, 400)
+      }
+      if (context.admin.role === 'teacher') {
+        const teacherName = context.admin.realName || context.admin.username
+        if (schedule.teacher !== teacherName) {
+          return json({ code: 1, message: '无权为其他教师的排课添加反馈', data: null }, 403)
+        }
+      }
+      // 自动补全 studentId/studentName/courseId/date 从排课记录
+      fb.studentId = fb.studentId || schedule.studentId
+      fb.studentName = fb.studentName || schedule.studentName
+      fb.courseId = fb.courseId || schedule.courseId
+      fb.date = fb.date || schedule.date
+    }
+
     const result = await addFeedback(fb)
     await writeAudit(context, {
       action: 'create',

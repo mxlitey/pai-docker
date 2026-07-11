@@ -46,6 +46,11 @@ export async function onRequestGet(context) {
   } else {
     schedules = await getAllSchedulesByStudent(targetId)
   }
+  // 教师角色仅返回自己的排课
+  if (context.admin.role === 'teacher') {
+    const teacherName = context.admin.realName || context.admin.username
+    schedules = schedules.filter((s) => s.teacher === teacherName)
+  }
   // 过滤已取消的排课（调课后原记录标记为 cancelled）
   schedules = schedules.filter((s) => s.status !== 'cancelled')
 

@@ -16,11 +16,11 @@ async function readBody(request) {
 }
 
 export default async function onRequestPost(context) {
-  const authFail = await requirePermission(context, 'schedules:update')
+  const authFail = await requirePermission(context, 'schedules:reschedule')
   if (authFail) return authFail
   const { request } = context
   const body = await readBody(request)
-  const {
+  let {
     scheduleId, newDate, newStartTime, newEndTime, reason,
     newTeacher, newCourseId, newCourseName, newClassId, newLocation, newColor,
   } = body
@@ -43,6 +43,15 @@ export default async function onRequestPost(context) {
     const original = await getScheduleById(scheduleId)
     if (!original) {
       return json({ code: 1, message: '排课记录不存在', data: null }, 404)
+    }
+    // 教师角色校验排课归属
+    if (context.admin.role === 'teacher') {
+      const teacherName = context.admin.realName || context.admin.username
+      if (original.teacher !== teacherName) {
+        return json({ code: 1, message: '无权操作其他教师的排课', data: null }, 403)
+      }
+      // 禁止教师覆盖教师字段，强制使用原排课教师
+      newTeacher = original.teacher
     }
     // 已取消的排课不允许补课
     if (original.status === 'cancelled') {
@@ -108,6 +117,6 @@ export default async function onRequestPost(context) {
     })
   } catch (e) {
     console.error('[schedule-makeup] 补课异常:', e?.message || String(e))
-    return json({ code: 1, message: e.message || '补课失败，请稍后重试', data: null }, 500)
+    return json({ code: 1, message: '操作失败，请稍后重试', data: null }, 500)
   }
 }

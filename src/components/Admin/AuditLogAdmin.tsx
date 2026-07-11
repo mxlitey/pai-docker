@@ -1,7 +1,9 @@
 // 审计日志查看页（仅超管使用）—— 按模块/动作/操作者/日期筛选，服务端分页，行内展开查看 before/after
+// 顶部「归档」标签页可查看/下载/删除按月归档的历史审计日志
 import { useEffect, useState } from 'react'
-import type { AuditLog } from '@/types'
-import { listAuditLogs } from '@/api/admin'
+import type { ReactNode } from 'react'
+import type { AuditLog, AuditArchiveInfo } from '@/types'
+import { listAuditLogs, listAuditArchives, readAuditArchive, deleteAuditArchive } from '@/api/admin'
 import { fmtDateTimeFull } from '@/utils/tz'
 import {
   Button,
@@ -9,6 +11,7 @@ import {
   LoadingBlock,
   Pagination,
   SubPageHeader,
+  confirmDialog,
   inputClass,
   toast,
 } from '@/components/ui'
@@ -154,7 +157,7 @@ const FIELD_LABELS: Record<string, Record<string, string>> = {
     name: '年级名', sortOrder: '排序', status: '状态', description: '描述',
   },
   transfers: {
-    studentId: '学员', fromEnrollmentId: '源报名', toEnrollmentId: '目标报名',
+    studentId: '学员', fromEnrollmentId: '源报名',
     refundAmount: '退课金额', giftMode: '赠课处理', note: '备注', reason: '原因',
   },
   accounts: {
@@ -311,6 +314,8 @@ function ChangeDetail({ log }: { log: AuditLog }) {
 }
 
 export function AuditLogAdmin({ onBack }: AuditLogAdminProps) {
+  // 顶部标签页：审计日志 / 归档
+  const [tab, setTab] = useState<'logs' | 'archives'>('logs')
   // 草稿筛选（绑定输入控件）
   const [form, setForm] = useState<LogFilters>(EMPTY_FILTERS)
   // 已应用筛选（实际用于请求）
@@ -391,6 +396,18 @@ export function AuditLogAdmin({ onBack }: AuditLogAdminProps) {
       <SubPageHeader title={'审计日志'} onBack={onBack} />
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-4">
+        {/* 标签切换：审计日志 / 归档 */}
+        <div className="flex gap-1 border-b border-slate-200">
+          <TabButton active={tab === 'logs'} onClick={() => setTab('logs')}>
+            {'审计日志'}
+          </TabButton>
+          <TabButton active={tab === 'archives'} onClick={() => setTab('archives')}>
+            {'归档'}
+          </TabButton>
+        </div>
+
+        {tab === 'logs' && (
+        <>
         {/* 筛选条 */}
         <section className="card p-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
@@ -510,6 +527,10 @@ export function AuditLogAdmin({ onBack }: AuditLogAdminProps) {
             />
           </section>
         )}
+        </>
+        )}
+
+        {tab === 'archives' && <ArchivePanel />}
       </main>
     </div>
   )
@@ -631,5 +652,256 @@ function LogRow({
         </tr>
       )}
     </>
+  )
+}
+
+// 标签按钮
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+        active
+          ? 'border-brand-500 text-brand-600'
+          : 'border-transparent text-slate-500 hover:text-slate-700'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+// 文件大小可读化
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+// 归档列表 + 展开查看当月日志
+function ArchivePanel() {
+  const [archives, setArchives] = useState<AuditArchiveInfo[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedMonth, setExpandedMonth] = useState<string | null>(null)
+  const [expandedLogs, setExpandedLogs] = useState<AuditLog[]>([])
+  const [loadingMonth, setLoadingMonth] = useState(false)
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
+
+  async function loadArchives() {
+    setLoading(true)
+    try {
+      const result = await listAuditArchives()
+      if (result.code === 0) {
+        setArchives(result.data.archives)
+      } else {
+        toast.error(result.message)
+      }
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadArchives()
+  }, [])
+
+  async function toggleView(month: string) {
+    if (expandedMonth === month) {
+      setExpandedMonth(null)
+      setExpandedLogs([])
+      setExpandedRowId(null)
+      return
+    }
+    setExpandedMonth(month)
+    setExpandedLogs([])
+    setExpandedRowId(null)
+    setLoadingMonth(true)
+    try {
+      const result = await readAuditArchive(month)
+      if (result.code === 0) {
+        setExpandedLogs(result.data.logs)
+      } else {
+        toast.error(result.message)
+        setExpandedMonth(null)
+      }
+    } catch (e) {
+      toast.error((e as Error).message)
+      setExpandedMonth(null)
+    } finally {
+      setLoadingMonth(false)
+    }
+  }
+
+  async function onDownload(month: string) {
+    try {
+      const result = await readAuditArchive(month)
+      if (result.code !== 0) {
+        toast.error(result.message)
+        return
+      }
+      const blob = new Blob([JSON.stringify(result.data, null, 2)], {
+        type: 'application/json',
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `audit-${month}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+
+  async function onDelete(month: string) {
+    const ok = await confirmDialog({
+      title: '删除归档？',
+      message: `将永久删除 ${month} 的审计日志归档文件，此操作不可恢复。`,
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      const result = await deleteAuditArchive(month)
+      if (result.code === 0) {
+        toast.success('已删除')
+        if (expandedMonth === month) {
+          setExpandedMonth(null)
+          setExpandedLogs([])
+        }
+        loadArchives()
+      } else {
+        toast.error(result.message)
+      }
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+
+  if (loading) return <LoadingBlock />
+  if (archives.length === 0) {
+    return (
+      <EmptyState
+        title={'暂无归档'}
+        description="月末将自动归档上月审计日志，也可在需要时手动归档"
+      />
+    )
+  }
+
+  return (
+    <section className="card p-5 space-y-4">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-slate-500 text-xs">
+              <th className="text-left py-2 px-2 font-medium">{'月份'}</th>
+              <th className="text-left py-2 px-2 font-medium">{'记录数'}</th>
+              <th className="text-left py-2 px-2 font-medium">{'文件大小'}</th>
+              <th className="text-left py-2 px-2 font-medium">{'归档时间'}</th>
+              <th className="text-left py-2 px-2 font-medium">{'操作'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {archives.map((a) => {
+              const expanded = expandedMonth === a.month
+              return (
+                <tr
+                  key={a.month}
+                  className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                >
+                  <td className="py-2.5 px-2 font-mono text-slate-700">{a.month}</td>
+                  <td className="py-2.5 px-2 text-slate-600">{a.count}</td>
+                  <td className="py-2.5 px-2 text-slate-600">{formatSize(a.size)}</td>
+                  <td className="py-2.5 px-2 text-slate-600 whitespace-nowrap">
+                    {fmtDate(a.createdAt)}
+                  </td>
+                  <td className="py-2.5 px-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleView(a.month)}
+                        className="text-brand-600 hover:text-brand-700 text-xs font-medium"
+                      >
+                        {expanded ? '收起' : '查看'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDownload(a.month)}
+                        className="text-slate-500 hover:text-slate-700 text-xs"
+                      >
+                        {'下载'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(a.month)}
+                        className="text-rose-500 hover:text-rose-700 text-xs"
+                      >
+                        {'删除'}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 展开当月归档日志列表（复用 LogRow） */}
+      {expandedMonth && (
+        <div className="border-t border-slate-200 pt-4">
+          <div className="text-xs font-medium text-slate-500 mb-2">
+            {expandedMonth} 归档日志
+            {loadingMonth ? '（加载中…）' : `（共 ${expandedLogs.length} 条）`}
+          </div>
+          {loadingMonth ? (
+            <LoadingBlock />
+          ) : expandedLogs.length === 0 ? (
+            <EmptyState title={'无记录'} description="该月份归档为空" />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500 text-xs">
+                    <th className="text-left py-2 px-2 font-medium">{'时间'}</th>
+                    <th className="text-left py-2 px-2 font-medium">{'操作者'}</th>
+                    <th className="text-left py-2 px-2 font-medium">{'模块'}</th>
+                    <th className="text-left py-2 px-2 font-medium">{'动作'}</th>
+                    <th className="text-left py-2 px-2 font-medium">{'目标'}</th>
+                    <th className="text-left py-2 px-2 font-medium">{'摘要'}</th>
+                    <th className="text-left py-2 px-2 font-medium">IP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expandedLogs.map((log) => {
+                    const expanded = expandedRowId === log.id
+                    return (
+                      <LogRow
+                        key={log.id}
+                        log={log}
+                        expanded={expanded}
+                        onToggle={() => setExpandedRowId(expanded ? null : log.id)}
+                      />
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   )
 }

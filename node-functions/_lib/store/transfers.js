@@ -1,6 +1,6 @@
 import { getDb, validateStorageId } from './core.js'
 import { genTransferId } from '../id.js'
-import { now } from '../time.js'
+import { now, today } from '../time.js'
 import { adjustBalanceTx } from './accounts.js'
 
 // ========== 退课/结转流水 ==========
@@ -56,6 +56,14 @@ export async function refundEnrollment({ transfer }) {
     db.prepare(`UPDATE enrollments SET remaining_paid_hours=0, remaining_gift_hours=0, status='settled' WHERE id=?`)
       .run(from.id)
 
+    // 退课后取消该学员该课程未来未点名的排课（date >= 今天 且 attended IS NULL）
+    // 已点名的历史排课保留，未来排课取消避免点名时找不到 active 报名记录
+    const todayStr = today()
+    const cancelInfo = db.prepare(
+      `UPDATE schedules SET status='cancelled' 
+       WHERE student_id=? AND course_id=? AND date>=? AND attended IS NULL AND status='scheduled'`
+    ).run(transfer.studentId, from.course_id, todayStr)
+
     // 金额进学员账户余额（仅当金额 > 0）
     let balanceAfter = Number(db.prepare('SELECT balance FROM students WHERE id=?').get(transfer.studentId)?.balance || 0)
     if (refundAmount > 0) {
@@ -94,6 +102,7 @@ export async function refundEnrollment({ transfer }) {
       giftMode,
       settledEnrollmentId: from.id,
       balanceAfter,
+      cancelledSchedules: cancelInfo.changes || 0,
     }
   })
 

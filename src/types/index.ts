@@ -98,6 +98,8 @@ export interface Schedule {
   studentId: string
   studentName: string
   classId?: string
+  className?: string
+  grade?: string
   courseId?: string
   courseName: string
   teacher: string
@@ -245,6 +247,22 @@ export interface AuditLog {
   ip?: string
   userAgent?: string
   createdAt?: string
+}
+
+// 审计日志归档文件信息（列表项）
+export interface AuditArchiveInfo {
+  month: string
+  filename: string
+  size: number
+  count: number
+  createdAt: string
+}
+
+// 审计日志归档内容（读取单个月份返回）
+export interface AuditArchiveContent {
+  month: string
+  logs: AuditLog[]
+  count: number
 }
 
 // 学员报名汇总（前端展示用）

@@ -665,6 +665,25 @@ function EnrollmentEditModal({
     setError('')
   }
 
+  // 勾选/取消余额抵扣：实付金额自动减去/恢复账户余额
+  // 勾选时：实付 = max(0, 应付总价 - 余额)，并标记实付已触碰
+  // 取消时：实付恢复等于应付总价，清除触碰标记
+  const handleUseBalanceChange = (checked: boolean) => {
+    setForm((f) => {
+      const next: EnrollmentForm = { ...f, useBalance: checked }
+      const ta = Number(f.totalAmount) || 0
+      if (checked) {
+        const deduct = Math.min(studentBalance, ta)
+        next.paidAmount = String(Math.round(Math.max(0, ta - deduct) * 100) / 100)
+      } else {
+        next.paidAmount = String(Math.round(ta * 100) / 100)
+      }
+      return next
+    })
+    setPaidTouched(checked)
+    setError('')
+  }
+
   const handleSave = async () => {
     setError('')
 
@@ -698,7 +717,7 @@ function EnrollmentEditModal({
       return
     }
 
-    // 注意：允许购课=0 且 赠课=0，用于创建结转目标报名记录
+    // 购课课时必须大于 0（后端校验）
 
     // 单价：必填，必须大于 0
     const upNum = Number(form.unitPrice)
@@ -983,7 +1002,22 @@ function EnrollmentEditModal({
           </div>
         </div>
 
-        {/* 实付金额 */}
+        {/* 应付总价（三方联动：购课课时 × 单价） */}
+        <Field
+          label={'应付总价'}
+          required
+          hint={totalAmountTouched ? '已手动设定，修改购课/单价会重新计算' : '默认 = 购课课时 × 单价'}
+        >
+          <input
+            type="number"
+            value={form.totalAmount}
+            onChange={(e) => handleTotalAmountChange(e.target.value)}
+            className={inputClass}
+            placeholder="购课课时 × 单价"
+          />
+        </Field>
+
+        {/* 实付金额（= 应付总价 - 账户余额抵扣） */}
         <div className="flex items-start gap-4">
           <span className="text-sm text-slate-400 w-20 flex-shrink-0 pt-2">{'实付金额'}</span>
           <div className="flex-1 space-y-1">
@@ -1000,25 +1034,12 @@ function EnrollmentEditModal({
               />
             </div>
             <div className="text-xs text-slate-400">
-              默认等于应付金额；如折扣或欠款可在此修改
+              {form.useBalance && studentBalance > 0
+                ? `实付 = 应付总价 - 余额抵扣 ${formatMoney(balanceDeductPreview)} = ${formatMoney(cashPaidPreview)}`
+                : '默认等于应付金额；勾选余额抵扣后自动减去账户余额'}
             </div>
           </div>
         </div>
-
-        {/* 应付总价（三方联动：购课课时 × 单价） */}
-        <Field
-          label={'应付总价'}
-          required
-          hint={totalAmountTouched ? '已手动设定，修改购课/单价会重新计算' : '默认 = 购课课时 × 单价'}
-        >
-          <input
-            type="number"
-            value={form.totalAmount}
-            onChange={(e) => handleTotalAmountChange(e.target.value)}
-            className={inputClass}
-            placeholder="购课课时 × 单价"
-          />
-        </Field>
 
         {/* 余额抵扣（仅新增模式 + 学员有余额时展示） */}
         {!isEdit && studentBalance > 0 && (
@@ -1029,7 +1050,7 @@ function EnrollmentEditModal({
                 <input
                   type="checkbox"
                   checked={form.useBalance}
-                  onChange={(e) => setField('useBalance', e.target.checked)}
+                  onChange={(e) => handleUseBalanceChange(e.target.checked)}
                   className="w-4 h-4"
                 />
                 <span className="text-sm text-slate-700">

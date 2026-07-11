@@ -49,6 +49,9 @@ export default async function onRequestPost(context) {
   if (!Array.isArray(dates) || dates.length === 0) {
     return json({ code: 1, message: '请至少选择一个日期', data: null }, 400)
   }
+  if (dates.length > 100) {
+    return json({ code: 1, message: 'dates 数量不能超过 100 个', data: null }, 400)
+  }
   for (const d of dates) {
     if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) {
       return json({ code: 1, message: `日期格式应为 yyyy-MM-dd，当前为 "${d}"`, data: null }, 400)
@@ -62,6 +65,9 @@ export default async function onRequestPost(context) {
   }
   if (!Array.isArray(studentIds) || studentIds.length === 0) {
     return json({ code: 1, message: '请至少选择一名学员', data: null }, 400)
+  }
+  if (studentIds.length > 500) {
+    return json({ code: 1, message: 'studentIds 数量不能超过 500 条', data: null }, 400)
   }
   // 班级必填：排课以班级为单位
   if (!classId) {

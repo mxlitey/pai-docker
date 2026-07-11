@@ -36,7 +36,6 @@ import { AdminUserAdmin } from './AdminUserAdmin'
 import { AuditLogAdmin } from './AuditLogAdmin'
 import { ReportsAdmin } from './ReportsAdmin'
 import { TeacherAdmin } from './TeacherAdmin'
-import { DashboardAdmin } from './DashboardAdmin'
 import { AdminLogin } from './AdminLogin'
 import { Bootstrap } from './Bootstrap'
 import { toast, confirmDialog } from '@/components/ui'
@@ -62,7 +61,6 @@ type SubPage =
   | 'auditLogs'
   | 'reports'
   | 'teachers'
-  | 'dashboard'
   | null
 
 // 从 URL hash 解析当前子页面：#admin/students → 'students'
@@ -89,7 +87,6 @@ function readSubPageFromHash(): SubPage {
       'auditLogs',
       'reports',
       'teachers',
-      'dashboard',
     ]
     return valid.includes(sub as SubPage) ? (sub as SubPage) : null
   } catch {
@@ -131,8 +128,8 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
   const [activeSubPage, setActiveSubPage] = useState<SubPage>(() =>
     readSubPageFromHash(),
   )
-  // 主页分类选项卡：教务 / 数据 / 系统
-  const [activeTab, setActiveTab] = useState<'teaching' | 'data' | 'system'>('teaching')
+  // 主页分类选项卡：基础教务 / 教学运营 / 报表中心 / 系统管理
+  const [activeTab, setActiveTab] = useState<'basic' | 'operation' | 'data' | 'system'>('basic')
   // 当前登录用户（用于按权限隐藏模块入口）
   const currentAdmin = getCurrentAdmin()
 
@@ -641,6 +638,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
           grades={grades}
           onBack={() => goSubPage(null)}
           onToast={showToast}
+          currentAdmin={currentAdmin}
         />
       </>
     )
@@ -685,29 +683,26 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     return <ReportsAdmin onBack={() => goSubPage(null)} />
   }
 
-  if (activeSubPage === 'dashboard') {
-    return <DashboardAdmin onBack={() => goSubPage(null)} />
-  }
   if (activeSubPage === 'teachers') {
     return <TeacherAdmin onBack={() => goSubPage(null)} />
   }
 
-  // 模块入口定义：按日常使用顺序排列（先建档 → 后续业务 → 数据/系统）
+  // 模块入口定义：按日常使用顺序排列（基础建档 → 教学运营 → 报表 → 系统）
   // 每个入口含权限点、标题、描述、图标、跳转目标，按当前用户权限过滤后再渲染
   const moduleEntries = [
-    // ===== 教务管理（按使用顺序：建档 → 课程 → 教师 → 报名 → 结转 → 排课 → 点名）=====
-    { tab: 'teaching', perm: 'students:view', sub: 'students', title: '学员管理', desc: '学员档案、报名汇总、续费预警', icon: 'students' },
-    { tab: 'teaching', perm: 'grades:view', sub: 'grades', title: '年级管理', desc: '年级维护、批量升班、课程关联', icon: 'grades' },
-    { tab: 'teaching', perm: 'courses:view', sub: 'courses', title: '课程管理', desc: '课程信息、单价、计费方式、关联年级', icon: 'courses' },
-    { tab: 'teaching', perm: 'classes:view', sub: 'classes', title: '班级管理', desc: '班级建档、关联课程、固定学员名单', icon: 'classes' },
-    { tab: 'teaching', perm: 'teachers:view', sub: 'teachers', title: '教师管理', desc: '课后反馈、教师绩效、评分', icon: 'teachers' },
-    { tab: 'teaching', perm: 'enrollments:view', sub: 'enrollments', title: '报名管理', desc: '报名、购课赠课、课时余额', icon: 'enrollments' },
-    { tab: 'teaching', perm: 'transfers:view', sub: 'transfers', title: '结转退课', desc: '结转退课，按金额或课时', icon: 'transfers' },
-    { tab: 'teaching', perm: 'schedules:view', sub: 'schedules', title: '排课管理', desc: '排课、批量排课、点名扣减', icon: 'schedules' },
-    { tab: 'teaching', perm: 'attendance:view', sub: 'attendance', title: '点名管理', desc: '按日期点名、批量点名、到课统计', icon: 'attendance' },
-    // ===== 数据分析（先看大盘 → 再看明细）=====
-    { tab: 'data', perm: 'dashboard:view', sub: 'dashboard', title: '数据看板', desc: '经营关键指标实时大屏', icon: 'dashboard' },
-    { tab: 'data', perm: 'reports:view', sub: 'reports', title: '报表中心', desc: '营收、课时、出勤、结转统计', icon: 'reports' },
+    // ===== 基础教务（建档类：学员 → 年级 → 课程 → 班级 → 教师）=====
+    { tab: 'basic', perm: 'students:view', sub: 'students', title: '学员管理', desc: '学员档案、报名汇总、续费预警', icon: 'students' },
+    { tab: 'basic', perm: 'grades:view', sub: 'grades', title: '年级管理', desc: '年级维护、批量升班、课程关联', icon: 'grades' },
+    { tab: 'basic', perm: 'courses:view', sub: 'courses', title: '课程管理', desc: '课程信息、单价、计费方式、关联年级', icon: 'courses' },
+    { tab: 'basic', perm: 'classes:view', sub: 'classes', title: '班级管理', desc: '班级建档、关联课程、固定学员名单', icon: 'classes' },
+    { tab: 'basic', perm: 'teachers:view', sub: 'teachers', title: '教师管理', desc: '课后反馈、教师绩效、评分', icon: 'teachers' },
+    // ===== 教学运营（业务流转：报名 → 结转退课 → 排课 → 点名）=====
+    { tab: 'operation', perm: 'enrollments:view', sub: 'enrollments', title: '报名管理', desc: '报名、购课赠课、课时余额', icon: 'enrollments' },
+    { tab: 'operation', perm: 'transfers:view', sub: 'transfers', title: '结转退课', desc: '退课折算入账户余额', icon: 'transfers' },
+    { tab: 'operation', perm: 'schedules:view', sub: 'schedules', title: '排课管理', desc: '排课、批量排课、点名扣减', icon: 'schedules' },
+    { tab: 'operation', perm: 'attendance:view', sub: 'attendance', title: '点名管理', desc: '按日期点名、批量点名、到课统计', icon: 'attendance' },
+    // ===== 报表中心（概览 + 明细报表，合并原数据看板）=====
+    { tab: 'data', perm: 'reports:view', sub: 'reports', title: '报表中心', desc: '经营概览、营收、课时、出勤、结转统计', icon: 'reports' },
     // ===== 系统管理（配置 → 公告 → 账号 → 家长端链接 → 日志）=====
     { tab: 'system', perm: 'settings:manage', sub: 'settings', title: '系统设置', desc: '项目名称、备份恢复、有效期', icon: 'settings' },
     { tab: 'system', perm: 'announcement:view', sub: 'announcement', title: '公告管理', desc: '首页/家长端公告内容', icon: 'announcement' },
@@ -729,7 +724,6 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     teachers: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />,
     announcement: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />,
     reports: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />,
-    dashboard: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />,
     shareLinks: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />,
     settings: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z" />,
     admins: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />,
@@ -737,8 +731,9 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
   }
 
   const tabs = [
-    { key: 'teaching', label: '教务管理' },
-    { key: 'data', label: '数据分析' },
+    { key: 'basic', label: '基础教务' },
+    { key: 'operation', label: '教学运营' },
+    { key: 'data', label: '报表中心' },
     { key: 'system', label: '系统管理' },
   ] as const
 

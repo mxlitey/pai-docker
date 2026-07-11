@@ -92,6 +92,7 @@ export default async function onRequestPut(context) {
       data: { ...result, schedule: newSchedule },
     })
   } catch (e) {
-    return json({ code: 1, message: e.message, data: null }, 500)
+    console.error('[schedule-update] 更新异常:', e?.message || String(e))
+    return json({ code: 1, message: '操作失败，请稍后重试', data: null }, 500)
   }
 }

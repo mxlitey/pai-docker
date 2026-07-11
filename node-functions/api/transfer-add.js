@@ -48,6 +48,7 @@ export default async function onRequestPost(context) {
       giftMode: transfer.giftMode || 'discard',
       note: transfer.note ? String(transfer.note).slice(0, 500) : '',
       reason: transfer.reason || '',
+      operatorId: context.admin?.id || '',
     }
     const result = await refundEnrollment({ transfer: finalTransfer })
     let studentName = finalTransfer.studentId
@@ -69,13 +70,19 @@ export default async function onRequestPost(context) {
         balanceAfter: result.balanceAfter,
       },
     })
+    const cancelNote = result.cancelledSchedules > 0
+      ? `，已取消 ${result.cancelledSchedules} 节未来排课`
+      : ''
     return json({
       code: 0,
-      message: `已退课：折算 ¥${result.refundAmount} 入账户余额，当前余额 ¥${result.balanceAfter}`,
+      message: `已退课：折算 ¥${result.refundAmount} 入账户余额，当前余额 ¥${result.balanceAfter}${cancelNote}`,
       data: result,
     })
   } catch (e) {
     console.error('[transfer-add] 退课异常:', e?.message || String(e))
-    return json({ code: 1, message: e.message || '退课失败，请稍后重试', data: null }, 500)
+    // 业务异常（中文 message）返回给用户，系统异常脱敏
+    const msg = e?.message || ''
+    const message = /[\u4e00-\u9fa5]/.test(msg) ? msg : '操作失败，请稍后重试'
+    return json({ code: 1, message, data: null }, 500)
   }
 }

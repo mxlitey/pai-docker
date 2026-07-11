@@ -10,6 +10,8 @@ function rowToSchedule(r) {
     studentId: r.student_id,
     studentName: r.student_name,
     classId: r.class_id || '',
+    className: r.class_name || '',
+    grade: r.grade || '',
     courseId: r.course_id || '',
     courseName: r.course_name,
     teacher: r.teacher || '',
@@ -71,15 +73,20 @@ export async function getSchedulesByDateRange(studentId, startDate, endDate) {
 
 export async function searchSchedules({ startDate, endDate, courseId, grade, teacher, classId } = {}) {
   const db = getDb()
-  let sql = 'SELECT * FROM schedules WHERE 1=1'
+  // LEFT JOIN classes/courses 取班级名和年级，供点名页按「班级(课程)年级」分组展示
+  let sql = `SELECT s.*, c.name AS class_name, COALESCE(c.grade, co.grade) AS grade
+    FROM schedules s
+    LEFT JOIN classes c ON c.id = s.class_id
+    LEFT JOIN courses co ON co.id = s.course_id
+    WHERE 1=1`
   const params = []
-  if (startDate) { sql += ' AND date>=?'; params.push(startDate) }
-  if (endDate) { sql += ' AND date<=?'; params.push(endDate) }
-  if (courseId) { sql += ' AND course_id=?'; params.push(courseId) }
-  if (grade) { sql += ' AND student_id IN (SELECT id FROM students WHERE grade=?)'; params.push(grade) }
-  if (teacher) { sql += ' AND teacher=?'; params.push(teacher) }
-  if (classId) { sql += ' AND class_id=?'; params.push(classId) }
-  sql += ' ORDER BY date, start_time'
+  if (startDate) { sql += ' AND s.date>=?'; params.push(startDate) }
+  if (endDate) { sql += ' AND s.date<=?'; params.push(endDate) }
+  if (courseId) { sql += ' AND s.course_id=?'; params.push(courseId) }
+  if (grade) { sql += ' AND s.student_id IN (SELECT id FROM students WHERE grade=?)'; params.push(grade) }
+  if (teacher) { sql += ' AND s.teacher=?'; params.push(teacher) }
+  if (classId) { sql += ' AND s.class_id=?'; params.push(classId) }
+  sql += ' ORDER BY s.date, s.start_time'
   const rows = db.prepare(sql).all(...params)
   return rows.map(rowToSchedule)
 }

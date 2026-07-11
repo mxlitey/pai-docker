@@ -29,6 +29,19 @@ export function todayLocal(): string {
   return `${y}-${m}-${day}`
 }
 
+// 返回当月第一天到最后一天的本地日期字符串
+// 用于报表/绩效/排课等页面的默认日期范围
+export function currentMonthRangeLocal(): { startDate: string; endDate: string } {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = now.getMonth() // 0-based
+  const start = new Date(y, m, 1)
+  const end = new Date(y, m + 1, 0) // 当月最后一天
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return { startDate: fmt(start), endDate: fmt(end) }
+}
+
 // 格式化日期为 yyyy-MM-dd
 export function formatDate(date: Date): string {
   return format(date, 'yyyy-MM-dd')

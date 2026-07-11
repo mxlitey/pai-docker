@@ -1,4 +1,4 @@
-// 报表中心：按报表类型 / 时间范围 / 分组维度查询，展示汇总卡片 + 数据表格
+// 报表中心：概览 + 按报表类型 / 时间范围 / 分组维度查询，展示汇总卡片 + 数据表格
 import { useState, useEffect } from 'react'
 import type { ReportType, ReportQuery } from '@/types'
 import { getReport } from '@/api/admin'
@@ -11,6 +11,7 @@ import {
   toast,
 } from '@/components/ui'
 import { cn } from '@/utils/cn'
+import { currentMonthRangeLocal } from '@/utils/date'
 
 // 分组维度：比 ReportQuery.groupBy 更宽，enrollment-stats 支持 status
 type GroupBy = 'day' | 'month' | 'course' | 'teacher' | 'status'
@@ -34,6 +35,22 @@ interface ReportTypeConfig {
   columns: ColumnDef[]
   summaryKeys: SummaryKeyDef[]
 }
+
+// 概览卡片定义：并发拉取多个报表的汇总值
+interface OverviewCardDef {
+  type: ReportType
+  summaryKey: string
+  label: string
+  format?: (v: number) => string
+}
+
+const OVERVIEW_CARDS: OverviewCardDef[] = [
+  { type: 'revenue', summaryKey: 'revenue', label: '总营收', format: v => '¥' + (v || 0).toFixed(2) },
+  { type: 'hours-consumption', summaryKey: 'consumed', label: '课时消耗' },
+  { type: 'enrollment-stats', summaryKey: 'count', label: '报名数' },
+  { type: 'attendance-rate', summaryKey: 'rate', label: '出勤率', format: v => (v || 0) + '%' },
+  { type: 'transfers', summaryKey: 'amount', label: '结转金额', format: v => '¥' + (v || 0).toFixed(2) },
+]
 
 // 分组维度中文标签
 const GROUP_BY_LABELS: Record<GroupBy, string> = {
@@ -110,12 +127,10 @@ const REPORT_TYPES: ReportTypeConfig[] = [
     columns: [
       { key: 'key', label: '分组' },
       { key: 'amount', label: '结转金额(¥)', format: v => '¥' + (Number(v) || 0).toFixed(2) },
-      { key: 'hours', label: '结转课时' },
       { key: 'count', label: '笔数' },
     ],
     summaryKeys: [
       { key: 'amount', label: '总金额', format: v => '¥' + (v || 0).toFixed(2) },
-      { key: 'hours', label: '总课时' },
       { key: 'count', label: '总笔数' },
     ],
   },
@@ -144,36 +159,74 @@ interface ReportsAdminProps {
 }
 
 export function ReportsAdmin({ onBack }: ReportsAdminProps) {
-  const [activeType, setActiveType] = useState<ReportType>(REPORT_TYPES[0].type)
+  // 概览为首个 Tab，其后为各明细报表
+  const [activeTab, setActiveTab] = useState<'overview' | ReportType>('overview')
   const [groupBy, setGroupBy] = useState<GroupBy>(REPORT_TYPES[0].groupBy[0])
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
+  const initMonth = currentMonthRangeLocal()
+  const [startDate, setStartDate] = useState(initMonth.startDate)
+  const [endDate, setEndDate] = useState(initMonth.endDate)
   const [rows, setRows] = useState<Record<string, unknown>[]>([])
   const [summary, setSummary] = useState<Record<string, number> | undefined>(undefined)
+  // 概览汇总：cardKey -> 数值
+  const [overview, setOverview] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(false)
   // 查询触发器：点「查询」按钮自增；改日期不自动查，仅靠此 tick 触发
   const [queryTick, setQueryTick] = useState(0)
 
-  const currentConfig = findConfig(activeType)
+  const isOverview = activeTab === 'overview'
+  const currentConfig = !isOverview ? findConfig(activeTab) : null
 
   // 切换报表类型：若当前分组维度不被支持，重置为该类型的第一个选项
-  const switchTab = (type: ReportType) => {
-    if (type === activeType) return
-    setActiveType(type)
-    const cfg = findConfig(type)
-    if (!cfg.groupBy.includes(groupBy)) {
-      setGroupBy(cfg.groupBy[0])
+  const switchTab = (tab: 'overview' | ReportType) => {
+    if (tab === activeTab) return
+    setActiveTab(tab)
+    if (tab !== 'overview') {
+      const cfg = findConfig(tab)
+      if (!cfg.groupBy.includes(groupBy)) {
+        setGroupBy(cfg.groupBy[0])
+      }
     }
   }
 
   // 自动查询：挂载、切换 Tab、改分组维度时触发；日期不在此依赖中
   useEffect(() => {
     let cancelled = false
-    async function load() {
+    async function loadOverview() {
+      setLoading(true)
+      try {
+        const baseQuery = { startDate: startDate || undefined, endDate: endDate || undefined }
+        const results = await Promise.all(
+          OVERVIEW_CARDS.map(card =>
+            getReport({ type: card.type, ...baseQuery } as ReportQuery).then(res => ({
+              card,
+              res,
+            })),
+          ),
+        )
+        if (cancelled) return
+        const map: Record<string, number> = {}
+        for (const { card, res } of results) {
+          if (res.code === 0) {
+            const val = Number(res.data.summary?.[card.summaryKey] ?? 0)
+            map[card.label] = Number.isFinite(val) ? val : 0
+          } else {
+            map[card.label] = 0
+          }
+        }
+        setOverview(map)
+      } catch (e) {
+        if (cancelled) return
+        toast.error((e as Error).message || '加载概览失败')
+        setOverview({})
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    async function loadReport() {
       setLoading(true)
       try {
         const result = await getReport({
-          type: activeType,
+          type: activeTab as ReportType,
           startDate: startDate || undefined,
           endDate: endDate || undefined,
           // 后端实际支持 status，类型声明较窄，此处收窄断言
@@ -194,13 +247,17 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
         if (!cancelled) setLoading(false)
       }
     }
-    load()
+    if (isOverview) {
+      loadOverview()
+    } else {
+      loadReport()
+    }
     return () => {
       cancelled = true
     }
     // startDate/endDate 故意不列入依赖：改日期不自动查询
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeType, groupBy, queryTick])
+  }, [activeTab, groupBy, queryTick])
 
   const handleQuery = () => setQueryTick(t => t + 1)
 
@@ -209,10 +266,21 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
       <SubPageHeader title={'报表中心'} onBack={onBack} />
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-4">
-        {/* 报表类型 Tab（横向滚动） */}
+        {/* Tab：概览 + 各报表类型（横向滚动） */}
         <div className="flex gap-1 overflow-x-auto pb-1">
+          <button
+            onClick={() => switchTab('overview')}
+            className={cn(
+              'flex-shrink-0 px-4 py-2 text-sm rounded-md whitespace-nowrap transition-colors',
+              isOverview
+                ? 'bg-brand-500 text-white'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50',
+            )}
+          >
+            概览
+          </button>
           {REPORT_TYPES.map(rt => {
-            const active = rt.type === activeType
+            const active = rt.type === activeTab
             return (
               <button
                 key={rt.type}
@@ -251,20 +319,22 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
                 className={inputClass}
               />
             </label>
-            <label className="flex flex-col gap-1 w-32">
-              <span className="text-xs text-slate-500">{'分组'}</span>
-              <select
-                value={groupBy}
-                onChange={e => setGroupBy(e.target.value as GroupBy)}
-                className={inputClass}
-              >
-                {currentConfig.groupBy.map(g => (
-                  <option key={g} value={g}>
-                    {GROUP_BY_LABELS[g]}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {!isOverview && currentConfig && (
+              <label className="flex flex-col gap-1 w-32">
+                <span className="text-xs text-slate-500">{'分组'}</span>
+                <select
+                  value={groupBy}
+                  onChange={e => setGroupBy(e.target.value as GroupBy)}
+                  className={inputClass}
+                >
+                  {currentConfig.groupBy.map(g => (
+                    <option key={g} value={g}>
+                      {GROUP_BY_LABELS[g]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <Button variant="primary" loading={loading} onClick={handleQuery}>
               {'查询'}
             </Button>
@@ -274,10 +344,24 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
         {/* 结果区 */}
         {loading ? (
           <LoadingBlock />
+        ) : isOverview ? (
+          // 概览：展示各关键指标卡片
+          <section className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+            {OVERVIEW_CARDS.map(card => {
+              const raw = overview[card.label] ?? 0
+              const val = card.format ? card.format(raw) : String(raw)
+              return (
+                <div key={card.label} className="card p-5">
+                  <div className="text-2xl font-semibold text-slate-800">{val}</div>
+                  <div className="text-xs text-slate-400 mt-1">{card.label}</div>
+                </div>
+              )
+            })}
+          </section>
         ) : (
           <>
             {/* 汇总卡片 */}
-            {summary && currentConfig.summaryKeys.length > 0 && (
+            {summary && currentConfig && currentConfig.summaryKeys.length > 0 && (
               <section className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {currentConfig.summaryKeys.map(sk => {
                   const raw = summary[sk.key]
@@ -306,7 +390,7 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-slate-50 text-slate-500 text-xs">
-                        {currentConfig.columns.map(c => (
+                        {currentConfig!.columns.map(c => (
                           <th
                             key={c.key}
                             className="text-left font-medium px-4 py-2.5 whitespace-nowrap"
@@ -319,7 +403,7 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
                     <tbody>
                       {rows.map((row, i) => (
                         <tr key={i} className="border-t border-slate-100">
-                          {currentConfig.columns.map(c => {
+                          {currentConfig!.columns.map(c => {
                             const raw = row[c.key]
                             const cell = c.format
                               ? c.format(raw)

@@ -1,7 +1,7 @@
 // 新增排课 API
 // POST /api/schedule-add  body: { schedule: Schedule }
 // 用于后台少量新增排课，无需走完整的 JSON 导入流程
-import { addSchedule, getStudentById, json } from '../_lib/store.js'
+import { addSchedule, getStudentById, getEnrollments, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -58,6 +58,21 @@ export default async function onRequestPost(context) {
         { code: 1, message: `studentId="${schedule.studentId}" 在学员表中不存在`, data: null },
         400,
       )
+    }
+
+    // 报名校验（补课除外）：学员须有该课程的有效报名
+    if (!schedule.makeupFor && schedule.courseId) {
+      const enrollments = await getEnrollments({
+        studentId: schedule.studentId,
+        courseId: schedule.courseId,
+        status: 'active',
+      })
+      if (enrollments.length === 0) {
+        return json(
+          { code: 1, message: '该学员未报名此课程，无法排课', data: null },
+          400,
+        )
+      }
     }
 
     // 自动补全 studentName

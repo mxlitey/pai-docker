@@ -42,6 +42,9 @@ export async function onRequestPost(context) {
   if (!Array.isArray(studentIds) || studentIds.length === 0) {
     return json({ code: 1, message: '请至少选择一名学员', data: null }, 400)
   }
+  if (studentIds.length > 500) {
+    return json({ code: 1, message: 'studentIds 数量不能超过 500 条', data: null }, 400)
+  }
   try {
     const result = await addClassMembers(classId, studentIds)
     if (result.notFound) {
@@ -72,6 +75,9 @@ export async function onRequestDelete(context) {
   if (!classId) return json({ code: 1, message: '缺少 classId', data: null }, 400)
   if (!Array.isArray(studentIds) || studentIds.length === 0) {
     return json({ code: 1, message: '请至少选择一名学员', data: null }, 400)
+  }
+  if (studentIds.length > 500) {
+    return json({ code: 1, message: 'studentIds 数量不能超过 500 条', data: null }, 400)
   }
   try {
     const result = await removeClassMembers(classId, studentIds)

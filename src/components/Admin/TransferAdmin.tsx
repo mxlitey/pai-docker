@@ -219,7 +219,7 @@ export function TransferAdmin({
           <LoadingBlock />
         ) : (
           <>
-            {/* 退课（结转第一步） */}
+            {/* 退课表单 */}
             <section className="card p-5">
               <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
                 <span className="w-1 h-4 bg-amber-500 rounded"></span>

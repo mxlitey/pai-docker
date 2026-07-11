@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, extname, normalize } from 'node:path'
 import {
   getDb, countAdmins, createBackup, purgeOldBackups,
-  expireOverdueEnrollments,
+  expireOverdueEnrollments, archiveAuditLogs,
 } from './node-functions/_lib/store.js'
 import { loadConfig, getConfigPath, getBackupKeepDays, getBackupCron, getBackupMaxCount } from './node-functions/_lib/config-file.js'
 import { nextCronTime, describeCron } from './node-functions/_lib/cron.js'
@@ -330,6 +330,20 @@ function runDailyMaintenance() {
     if (r.affected > 0) console.log(`[定时] 课时过期处理：${r.affected} 条报名置为 expired`)
   } catch (e) {
     console.error('[定时] 课时过期处理失败:', e?.message || String(e))
+  }
+  // 月末自动归档上个月审计日志：若明天是下月第 1 天，说明今天是月末
+  try {
+    const now = new Date()
+    const tomorrow = new Date(now)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    if (tomorrow.getDate() === 1) {
+      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      const monthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`
+      const result = archiveAuditLogs(monthStr)
+      console.log(`[定时] 审计日志归档完成：${monthStr}，${result.archived} 条，文件 ${result.filename}`)
+    }
+  } catch (e) {
+    console.error('[定时] 审计日志归档失败:', e?.message || String(e))
   }
 }
 

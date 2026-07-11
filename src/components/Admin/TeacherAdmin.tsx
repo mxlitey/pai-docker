@@ -11,7 +11,7 @@ import {
   listClasses,
   getCurrentAdmin,
 } from '@/api/admin'
-import { todayLocal } from '@/utils/date'
+import { todayLocal, currentMonthRangeLocal } from '@/utils/date'
 import {
   Button,
   EmptyState,
@@ -551,8 +551,9 @@ function AddFeedbackModal({
 function PerformancePanel() {
   const [rows, setRows] = useState<TeacherPerformance[]>([])
   const [loading, setLoading] = useState(true)
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
+  const initMonth = currentMonthRangeLocal()
+  const [startDate, setStartDate] = useState(initMonth.startDate)
+  const [endDate, setEndDate] = useState(initMonth.endDate)
   // 查询触发器：点「查询」按钮自增；改日期不自动查
   const [queryTick, setQueryTick] = useState(0)
 
