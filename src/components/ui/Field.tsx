@@ -15,8 +15,9 @@ interface FieldProps {
 }
 
 // 统一的输入框样式常量，映射 shadcn/ui Input 样式
+// 不用 py-1：h-9 已固定高度，py 会压缩 date input 的 calendar indicator 导致溢出
 export const inputClass =
-  'w-full h-9 px-3 py-1 text-sm border border-input bg-transparent rounded-md shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50'
+  'w-full h-9 px-3 text-sm border border-input bg-transparent rounded-md shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50'
 
 export function Field({ label, required, hint, error, labelWidth = 'w-20', children, className }: FieldProps) {
   return (

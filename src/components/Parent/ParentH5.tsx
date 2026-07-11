@@ -20,6 +20,26 @@ import { AlertTriangle, Lock, Loader2, Star } from 'lucide-react'
 
 type Phase = 'loading' | 'verify' | 'verified' | 'error'
 
+// 家长端免验证缓存：验证通过后将手机尾号存入 localStorage，下次打开链接自动登录
+// key 按学员 ID 隔离，避免不同学员串数据；仅存手机尾号（4位），无敏感信息
+function parentTokenKey(studentId: string) {
+  return `parent_access_${studentId}`
+}
+function loadCachedSuffix(studentId: string): string {
+  try {
+    return localStorage.getItem(parentTokenKey(studentId)) || ''
+  } catch {
+    return ''
+  }
+}
+function cacheSuffix(studentId: string, suffix: string) {
+  try {
+    localStorage.setItem(parentTokenKey(studentId), suffix)
+  } catch {
+    // 忽略写入失败
+  }
+}
+
 function renderStars(rating: number): string {
   const r = Math.max(0, Math.min(5, Math.round(rating)))
   return '★'.repeat(r) + '☆'.repeat(5 - r)
@@ -48,6 +68,21 @@ export function ParentH5({ appName }: { appName: string }) {
         }
         return
       }
+      // 1) 优先尝试 localStorage 缓存的手机尾号，命中则直接免验证登录
+      const cached = loadCachedSuffix(studentId)
+      if (cached.length === 4) {
+        try {
+          const result = await verifyParentAccess(studentId, cached)
+          if (cancelled) return
+          setData(result)
+          setStudentName(result.student.name)
+          setPhase('verified')
+          return
+        } catch {
+          // 缓存失效（手机号已变更等），回退到手动验证流程
+        }
+      }
+      // 2) 无缓存或缓存失效，走正常验证流程：先拉取脱敏提示
       try {
         const hint = await getParentAccessHint(studentId)
         if (cancelled) return
@@ -78,6 +113,8 @@ export function ParentH5({ appName }: { appName: string }) {
       const result = await verifyParentAccess(studentId, phoneSuffix)
       setData(result)
       setStudentName(result.student.name)
+      // 验证通过：缓存手机尾号，下次打开链接免验证
+      cacheSuffix(studentId, phoneSuffix)
       setPhase('verified')
     } catch (e) {
       setErrorMsg((e as Error).message || '校验失败')
@@ -177,62 +214,54 @@ export function ParentH5({ appName }: { appName: string }) {
   }
 
   // ===== 已验证：学员信息主页 =====
+  // 学员概览信息（姓名/年级 + 课时余额 + 总排课）统一收纳到页眉，
+  // 避免日历顶部重复展示学员信息；电脑端页眉较宽，信息左对齐连续展示而非一左一右割裂
   return (
     <div className="min-h-screen bg-background">
       <header className="bg-background border-b border-border sticky top-0 z-10">
-        <div className="px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-full bg-brand-100 text-primary flex items-center justify-center font-semibold">
+        <div className="max-w-5xl mx-auto px-4 py-3">
+          {/* 第一行：头像 + 姓名 + 关键统计 */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="w-10 h-10 rounded-full bg-brand-100 text-primary flex items-center justify-center font-semibold text-base flex-shrink-0">
               {data.student.name.charAt(0)}
             </div>
-            <div>
+            <div className="flex-shrink-0">
               <div className="font-semibold text-foreground text-sm">{data.student.name}</div>
               {data.student.grade && (
                 <div className="text-xs text-muted-foreground/70">{data.student.grade}</div>
               )}
             </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-md mx-auto px-4 py-4 space-y-4">
-        {/* 学员信息概览 */}
-        <section className="card p-4 bg-gradient-to-r from-brand-50 to-transparent">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-full bg-brand-100 text-primary flex items-center justify-center font-semibold text-base">
-                {data.student.name.charAt(0)}
+            {/* 统计信息：电脑端跟在姓名后面，手机端靠右 */}
+            <div className="flex items-center gap-4 ml-auto">
+              <div className="text-right">
+                <div className="text-xs text-muted-foreground/70">总排课</div>
+                <div className="text-sm font-semibold text-primary">{data.schedules.length}</div>
               </div>
-              <div>
-                <div className="font-semibold text-foreground">{data.student.name}</div>
-                <div className="text-xs text-muted-foreground/70">
-                  {[
-                    data.student.grade,
-                    data.student.parentName,
-                  ].filter(Boolean).join(' · ') || '学员'}
+              {data.enrollments.length > 0 && (
+                <div className="text-right">
+                  <div className="text-xs text-muted-foreground/70">课程数</div>
+                  <div className="text-sm font-semibold text-primary">{data.enrollments.length}</div>
                 </div>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-xs text-muted-foreground/70">总排课</div>
-              <div className="text-lg font-semibold text-primary">{data.schedules.length}</div>
+              )}
             </div>
           </div>
-          {/* 课时余额速览 */}
+          {/* 第二行：课时余额（横向滚动，手机端不拥挤） */}
           {data.enrollments.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-brand-100/60 space-y-1.5">
+            <div className="mt-2 pt-2 border-t border-border/60 flex items-center gap-4 overflow-x-auto no-scrollbar">
               {data.enrollments.map((e, i) => (
-                <div key={`${e.courseId}-${i}`} className="flex items-center justify-between text-xs">
+                <div key={`${e.courseId}-${i}`} className="flex items-center gap-1.5 text-xs whitespace-nowrap flex-shrink-0">
                   <span className="text-muted-foreground">{e.courseName || `课程 ${e.courseId.slice(-6)}`}</span>
                   <span className={`font-medium ${e.remainingHours > 0 ? 'text-primary' : 'text-muted-foreground/70'}`}>
-                    剩余 {e.remainingHours} 课时
+                    剩 {e.remainingHours} 课时
                   </span>
                 </div>
               ))}
             </div>
           )}
-        </section>
+        </div>
+      </header>
 
+      <main className="max-w-5xl mx-auto px-4 py-4 space-y-4">
         {/* 日历视图 */}
         <ParentCalendar schedules={data.schedules} />
 

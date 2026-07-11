@@ -10,6 +10,7 @@ import {
   getAllSchedulesByStudent,
   getEnrollments,
   getFeedback,
+  getCourseById,
 } from '../_lib/store.js'
 import { getClientIp } from '../_lib/auth.js'
 import { checkParentAccessRateLimit } from '../_lib/rate-limit.js'
@@ -113,17 +114,28 @@ export async function onRequestPost(context) {
   let enrollments = []
   try {
     const all = await getEnrollments({ studentId, status: 'active' })
-    enrollments = all.map((e) => ({
-      courseId: e.courseId,
-      courseName: '',
-      status: e.status,
-      purchasedHours: e.purchasedHours,
-      giftHours: e.giftHours,
-      remainingHours: (e.remainingPaidHours || 0) + (e.remainingGiftHours || 0),
-      remainingPaidHours: e.remainingPaidHours,
-      remainingGiftHours: e.remainingGiftHours,
-      expiredAt: e.expiredAt || '',
-    }))
+    enrollments = await Promise.all(
+      all.map(async (e) => {
+        let courseName = ''
+        try {
+          const c = await getCourseById(e.courseId)
+          if (c) courseName = c.name
+        } catch {
+          // 课程不存在则留空
+        }
+        return {
+          courseId: e.courseId,
+          courseName,
+          status: e.status,
+          purchasedHours: e.purchasedHours,
+          giftHours: e.giftHours,
+          remainingHours: (e.remainingPaidHours || 0) + (e.remainingGiftHours || 0),
+          remainingPaidHours: e.remainingPaidHours,
+          remainingGiftHours: e.remainingGiftHours,
+          expiredAt: e.expiredAt || '',
+        }
+      }),
+    )
   } catch (e) {
     console.error('[parent-access] 加载报名失败:', e?.message || String(e))
   }

@@ -301,7 +301,7 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
         {/* 筛选区 */}
         <section className="card p-4">
           <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1 w-36">
+            <label className="flex flex-col gap-1 w-40">
               <span className="text-xs text-muted-foreground">{'开始日期'}</span>
               <input
                 type="date"
@@ -310,7 +310,7 @@ export function ReportsAdmin({ onBack }: ReportsAdminProps) {
                 className={inputClass}
               />
             </label>
-            <label className="flex flex-col gap-1 w-36">
+            <label className="flex flex-col gap-1 w-40">
               <span className="text-xs text-muted-foreground">{'结束日期'}</span>
               <input
                 type="date"

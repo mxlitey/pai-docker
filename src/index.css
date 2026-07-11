@@ -108,6 +108,20 @@
   }
 }
 
+/* 统一原生控件高度：date/select 与 h-9 按钮对齐 */
+input[type="date"],
+input[type="datetime-local"],
+select {
+  height: 2.25rem; /* h-9 = 36px，避免原生控件高度溢出 */
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.6;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
 /* 自定义滚动条 */
 ::-webkit-scrollbar {
   width: 6px;

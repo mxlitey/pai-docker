@@ -1,6 +1,8 @@
-import { addDays, addMonths } from 'date-fns'
+import { addDays, addMonths, addWeeks, format, getISOWeek } from 'date-fns'
+import { zhCN } from 'date-fns/locale'
 import type { ViewMode } from '@/types'
 import { cn } from '@/utils/cn'
+import { ChevronLeft, ChevronRight, CalendarCheck } from 'lucide-react'
 
 interface CalendarToolbarProps {
   currentDate: Date
@@ -15,29 +17,56 @@ const VIEW_OPTIONS: { labelKey: string; value: ViewMode }[] = [
   { labelKey: '日', value: 'day' },
 ]
 
-// 计算左右导航按钮的文案
-function getNavLabels(
+// 判断当前展示的日期是否就是「本月/本周/今天」
+function isCurrentPeriod(view: ViewMode, currentDate: Date): boolean {
+  const now = new Date()
+  if (view === 'month') {
+    return (
+      currentDate.getFullYear() === now.getFullYear() &&
+      currentDate.getMonth() === now.getMonth()
+    )
+  }
+  if (view === 'week') {
+    const oneWeek = 7 * 24 * 60 * 60 * 1000
+    const startOfCurWeek = new Date(now)
+    const day = (now.getDay() + 6) % 7 // 周一为 0
+    startOfCurWeek.setDate(now.getDate() - day)
+    const diff = Math.abs(currentDate.getTime() - startOfCurWeek.getTime())
+    return diff < oneWeek
+  }
+  return currentDate.toDateString() === now.toDateString()
+}
+
+// 计算「回到本月/本周/今天」按钮文案 + 当前视图标题
+function getNavInfo(
   view: ViewMode,
   currentDate: Date,
 ): {
   prev: string
-  today: string
   next: string
+  todayLabel: string
+  title: string
 } {
   if (view === 'month') {
     const prev = addMonths(currentDate, -1)
     const next = addMonths(currentDate, 1)
     return {
       prev: `${prev.getMonth() + 1}月`,
-      today: '本月',
       next: `${next.getMonth() + 1}月`,
+      todayLabel: '本月',
+      title: `${currentDate.getFullYear()}年${currentDate.getMonth() + 1}月`,
     }
   }
   if (view === 'week') {
+    const prev = addWeeks(currentDate, -1)
+    const next = addWeeks(currentDate, 1)
+    const weekNum = getISOWeek(currentDate)
+    const monthLabel = format(currentDate, 'M月', { locale: zhCN })
     return {
-      prev: '上一周',
-      today: '本周',
-      next: '下一周',
+      prev: `第${getISOWeek(prev)}周`,
+      next: `第${getISOWeek(next)}周`,
+      todayLabel: '本周',
+      title: `${monthLabel} 第${weekNum}周`,
     }
   }
   // 日视图
@@ -45,8 +74,9 @@ function getNavLabels(
   const next = addDays(currentDate, 1)
   return {
     prev: `${prev.getMonth() + 1}-${prev.getDate()}`,
-    today: '今天',
     next: `${next.getMonth() + 1}-${next.getDate()}`,
+    todayLabel: '今天',
+    title: format(currentDate, 'M月d日 EEEE', { locale: zhCN }),
   }
 }
 
@@ -56,36 +86,56 @@ export function CalendarToolbar({
   onNavigate,
   onViewChange,
 }: CalendarToolbarProps) {
-  const labels = getNavLabels(view, currentDate)
-  // 月/周视图：左右按钮使用文字（显示具体月份/周）；日视图：保持紧凑文字
+  const info = getNavInfo(view, currentDate)
+  const isCurrent = isCurrentPeriod(view, currentDate)
   const navBtnClass =
-    'px-2.5 py-1 text-xs font-medium rounded-md border border-border bg-background text-muted-foreground hover:bg-muted transition-colors whitespace-nowrap'
+    'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border bg-background text-muted-foreground hover:bg-muted transition-colors whitespace-nowrap'
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-      {/* 导航按钮 */}
-      <div className="flex items-center gap-2">
+    <div className="flex flex-col sm:flex-row sm:items-center gap-2 px-1">
+      {/* 当前视图标题（年份/月份/周次） */}
+      <div className="text-sm font-semibold text-foreground whitespace-nowrap">
+        {info.title}
+      </div>
+
+      {/* 导航按钮组 */}
+      <div className="flex items-center gap-1.5 sm:ml-auto">
         <button
           onClick={() => onNavigate('prev')}
           className={navBtnClass}
-          aria-label={'上月'}
+          aria-label={view === 'month' ? '上个月' : view === 'week' ? '上一周' : '前一天'}
         >
-          {labels.prev}
+          <ChevronLeft className="w-3.5 h-3.5" />
+          {info.prev}
         </button>
-        <button onClick={() => onNavigate('today')} className="btn-primary">
-          {labels.today}
+
+        {/* 回到本月/本周/今天：当前已在该周期时禁用 */}
+        <button
+          onClick={() => onNavigate('today')}
+          disabled={isCurrent}
+          className={cn(
+            'inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap',
+            isCurrent
+              ? 'bg-muted text-muted-foreground/50 cursor-not-allowed'
+              : 'bg-primary text-primary-foreground hover:bg-brand-600',
+          )}
+        >
+          <CalendarCheck className="w-3.5 h-3.5" />
+          {info.todayLabel}
         </button>
+
         <button
           onClick={() => onNavigate('next')}
           className={navBtnClass}
-          aria-label={'下月'}
+          aria-label={view === 'month' ? '下个月' : view === 'week' ? '下一周' : '后一天'}
         >
-          {labels.next}
+          {info.next}
+          <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </div>
 
       {/* 视图切换 */}
-      <div className="inline-flex rounded-lg border border-border bg-background p-0.5">
+      <div className="inline-flex rounded-lg border border-border bg-background p-0.5 sm:ml-2">
         {VIEW_OPTIONS.map((opt) => (
           <button
             key={opt.value}

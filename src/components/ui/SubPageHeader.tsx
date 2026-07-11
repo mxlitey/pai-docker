@@ -22,13 +22,13 @@ export function SubPageHeader({
   if (count === undefined && !children) return null
 
   return (
-    <div className={`${className} flex items-center justify-between gap-3`}>
+    <div className={`${className} flex items-center gap-3`}>
       {count !== undefined && (
         <span className="text-xs text-muted-foreground">
           共 {count} {countLabel ?? '条'}
         </span>
       )}
-      {children && <div className="flex items-center gap-3 flex-shrink-0">{children}</div>}
+      {children && <div className="flex items-center gap-3 flex-shrink-0 ml-auto">{children}</div>}
     </div>
   )
 }

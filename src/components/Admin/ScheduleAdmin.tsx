@@ -272,7 +272,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
                 </div>
                 {/* 日期范围：两个输入框成组，手机端保持在同一行 */}
                 <div className="flex items-end gap-3 w-full sm:w-auto">
-                  <div className="flex-1 sm:flex-none">
+                  <div className="w-40 sm:w-auto">
                     <label className="block text-xs text-muted-foreground mb-1">{'开始日期'}</label>
                     <input
                       type="date"
@@ -281,7 +281,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
                       className={inputClass}
                     />
                   </div>
-                  <div className="flex-1 sm:flex-none">
+                  <div className="w-40 sm:w-auto">
                     <label className="block text-xs text-muted-foreground mb-1">{'结束日期'}</label>
                     <input
                       type="date"

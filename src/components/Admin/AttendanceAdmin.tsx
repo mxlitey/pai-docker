@@ -3,7 +3,7 @@ import type { Schedule } from '@/types'
 import { cn } from '@/utils/cn'
 import { getCourseDotClass } from '@/utils/courseColors'
 import { todayLocal } from '@/utils/date'
-import { Button, EmptyState, SubPageHeader, Modal, ModalFooter } from '@/components/ui'
+import { Button, EmptyState, SubPageHeader, Modal, ModalFooter, inputClass } from '@/components/ui'
 
 interface AttendanceAdminProps {
   busy: boolean
@@ -241,12 +241,12 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
         <section className="card p-4">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex items-center gap-2">
-              <label className="text-sm text-muted-foreground">点名日期</label>
+              <label className="text-sm text-muted-foreground whitespace-nowrap">点名日期</label>
               <input
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus-visible:ring-ring"
+                className={inputClass}
               />
             </div>
             <Button
