@@ -1,7 +1,7 @@
 // 新增学员 API
 // POST /api/student-add  body: { student }
 // 用于后台学员管理页面新增单个学员
-import { addStudent, json } from '../_lib/store.js'
+import { addStudent, getDb, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -30,6 +30,12 @@ function validateStudent(s) {
   }
   if (typeof s.grade !== 'string') {
     throw new Error('grade 需为字符串')
+  }
+  // 年级必须存在于 grades 表中（与前端 select 下拉约束一致）
+  const db = getDb()
+  const gradeRow = db.prepare("SELECT 1 FROM grades WHERE name=? AND status='active'").get(s.grade.trim())
+  if (!gradeRow) {
+    throw new Error(`年级「${s.grade.trim()}」不存在或已停用，请先在年级管理中创建`)
   }
   // 课时不再由学员维护（改为报名记录 enrollment 维护），忽略前端可能传入的 hours 字段
 }

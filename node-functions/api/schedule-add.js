@@ -1,7 +1,7 @@
 // 新增排课 API
 // POST /api/schedule-add  body: { schedule: Schedule }
 // 用于后台少量新增排课，无需走完整的 JSON 导入流程
-import { addSchedule, getStudentById, getEnrollments, json } from '../_lib/store.js'
+import { addSchedule, getStudentById, getEnrollments, getCourseById, getClassById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -17,7 +17,9 @@ async function readBody(request) {
 function validateSchedule(s) {
   if (!s) throw new Error('排课数据不能为空')
   if (!s.studentId) throw new Error('缺少 studentId')
+  if (!s.courseId) throw new Error('缺少 courseId')
   if (!s.courseName) throw new Error('缺少 courseName')
+  if (!s.classId) throw new Error('缺少 classId（班级为必填项）')
   if (!s.date) throw new Error('缺少 date')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s.date)) {
     throw new Error('date 格式应为 yyyy-MM-dd')
@@ -50,7 +52,7 @@ export default async function onRequestPost(context) {
     return json({ code: 1, message: e.message, data: null }, 400)
   }
 
-  // 跨表关联校验：studentId 必须在学员表中存在
+  // 跨表关联校验：studentId / courseId / classId 必须在对应表中存在
   try {
     const student = await getStudentById(schedule.studentId)
     if (!student) {
@@ -60,8 +62,33 @@ export default async function onRequestPost(context) {
       )
     }
 
+    // 课程存在性校验
+    const course = await getCourseById(schedule.courseId)
+    if (!course) {
+      return json(
+        { code: 1, message: `courseId="${schedule.courseId}" 在课程表中不存在`, data: null },
+        400,
+      )
+    }
+
+    // 班级存在性校验
+    const cls = await getClassById(schedule.classId)
+    if (!cls) {
+      return json(
+        { code: 1, message: `classId="${schedule.classId}" 在班级表中不存在`, data: null },
+        400,
+      )
+    }
+    // 班级与课程须一致
+    if (cls.courseId && cls.courseId !== schedule.courseId) {
+      return json(
+        { code: 1, message: `班级「${cls.name}」关联的课程与排课课程不一致`, data: null },
+        400,
+      )
+    }
+
     // 报名校验（补课除外）：学员须有该课程的有效报名
-    if (!schedule.makeupFor && schedule.courseId) {
+    if (!schedule.makeupFor) {
       const enrollments = await getEnrollments({
         studentId: schedule.studentId,
         courseId: schedule.courseId,

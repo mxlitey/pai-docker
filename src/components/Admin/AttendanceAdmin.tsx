@@ -67,6 +67,11 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
   const setAll = (attended: boolean | undefined) => {
     const next: Record<string, boolean | undefined> = {}
     for (const s of schedules) {
+      // 标记为未点名时，跳过已点名项（已点名状态不能改回未点名）
+      if (attended === undefined && s.attended !== undefined) {
+        next[s.id] = s.attended
+        continue
+      }
       next[s.id] = attended
     }
     setEditMap(next)
@@ -158,6 +163,11 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
     setEditMap((m) => {
       const next = { ...m }
       for (const s of group.schedules) {
+        // 标记为未点名时，跳过已点名项（已点名状态不能改回未点名）
+        if (attended === undefined && s.attended !== undefined) {
+          next[s.id] = s.attended
+          continue
+        }
         next[s.id] = attended
       }
       return next
@@ -445,13 +455,16 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
                                   </button>
                                   <button
                                     onClick={() => setItem(s.id, undefined)}
+                                    disabled={s.attended !== undefined}
                                     className={cn(
                                       'flex-1 sm:flex-initial px-2.5 py-1 text-xs rounded transition-colors',
-                                      cur === undefined
-                                        ? 'bg-slate-400 text-white'
-                                        : 'bg-muted text-muted-foreground hover:bg-muted',
+                                      s.attended !== undefined
+                                        ? 'bg-muted/50 text-muted-foreground/40 cursor-not-allowed'
+                                        : cur === undefined
+                                          ? 'bg-slate-400 text-white'
+                                          : 'bg-muted text-muted-foreground hover:bg-muted',
                                     )}
-                                    title="标记为未点名"
+                                    title={s.attended !== undefined ? '已点名状态不能改回未点名' : '标记为未点名'}
                                   >
                                     {'未点名'}
                                   </button>

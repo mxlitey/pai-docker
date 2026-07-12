@@ -393,6 +393,14 @@ function AddFeedbackModal({
       toast.error('请先选择一条排课记录')
       return
     }
+    if (!content.trim()) {
+      toast.error('反馈内容不能为空')
+      return
+    }
+    if (content.length > 2000) {
+      toast.error('反馈内容不能超过 2000 字')
+      return
+    }
     setSaving(true)
     try {
       const result = await addFeedback({
@@ -515,7 +523,7 @@ function AddFeedbackModal({
           </div>
         )}
 
-        <Field label={'反馈内容'}>
+        <Field label={'反馈内容'} required>
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
