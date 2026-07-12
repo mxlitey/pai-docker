@@ -12,14 +12,8 @@ export async function onRequestGet(context) {
   const url = new URL(request.url)
   const q = (url.searchParams.get('q') || '').trim()
 
-  let students = await getStudents()
-
-  if (q) {
-    // 精确匹配优先（仅 name），模糊匹配其次
-    const exact = students.filter((s) => s.name === q)
-    const fuzzy = students.filter((s) => s.name !== q && s.name.includes(q))
-    students = [...exact, ...fuzzy]
-  }
+  // 搜索条件直接下推到 SQL（利用 idx_students_name 索引），避免全量加载后 JS 遍历
+  const students = await getStudents(q)
 
   return json({ code: 0, message: 'ok', data: { students } })
 }

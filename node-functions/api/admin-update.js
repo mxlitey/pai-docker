@@ -2,7 +2,7 @@
 // PUT /api/admin-update  body: { admin: { id, role?, realName?, phone?, status?, password? } }
 // 约束：不可降级/删除最后一个超管；不可禁用自己；姓名必填
 import { updateAdmin, getAdminById, countSuperAdmins, json } from '../_lib/store.js'
-import { requirePermission, hashPassword, validatePasswordPolicy } from '../_lib/auth.js'
+import { requirePermission, hashPassword, validatePasswordPolicy, invalidateAdminCache } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
 async function readBody(request) {
@@ -98,6 +98,8 @@ export default async function onRequestPut(context) {
       summary: `更新账号 ${target.username}${parts.length ? '（' + parts.join('、') + '）' : ''}`,
       before: { role: target.role, status: target.status, permissions: target.permissions },
     })
+    // 失效该账号的权限缓存，保证后续请求拿到最新角色/权限/状态
+    invalidateAdminCache(admin.id)
     return json({ code: 0, message: '账号已更新', data: null })
   } catch (e) {
     console.error('[admin-update] 异常:', e?.message || String(e))
