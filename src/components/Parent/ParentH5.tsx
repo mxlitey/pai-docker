@@ -3,11 +3,12 @@
 // - 仅展示该学员的排课、课时余额、教师课后反馈
 // - 支持列表/日历两种查看方式
 // - 无返回首页、无搜索学员功能
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   getParentAccessHint,
   verifyParentAccess,
   type ParentAccessData,
+  type ParentAnnouncement,
 } from '@/api'
 import { inputClass } from '@/components/ui'
 import { CalendarToolbar } from '../Calendar/CalendarToolbar'
@@ -16,7 +17,7 @@ import { WeekView } from '../Calendar/WeekView'
 import { DayView } from '../Calendar/DayView'
 import { ScheduleDetail } from '../ScheduleDetail'
 import type { Schedule, Feedback, ViewMode } from '@/types'
-import { AlertTriangle, Lock, Loader2, Star } from 'lucide-react'
+import { AlertTriangle, Lock, Loader2, Star, Megaphone } from 'lucide-react'
 
 type Phase = 'loading' | 'verify' | 'verified' | 'error'
 
@@ -40,6 +41,26 @@ function cacheSuffix(studentId: string, suffix: string) {
   }
 }
 
+// 公告已读记录：按学员 ID 隔离，缓存最近一次已读公告的 updatedAt
+// 后台更新公告后 updatedAt 变化，家长再次进入会重新弹出公告板
+function parentAnnouncementReadKey(studentId: string) {
+  return `parent_announcement_read_${studentId}`
+}
+function loadReadAnnouncementUpdatedAt(studentId: string): string {
+  try {
+    return localStorage.getItem(parentAnnouncementReadKey(studentId)) || ''
+  } catch {
+    return ''
+  }
+}
+function cacheReadAnnouncementUpdatedAt(studentId: string, updatedAt: string) {
+  try {
+    localStorage.setItem(parentAnnouncementReadKey(studentId), updatedAt)
+  } catch {
+    // 忽略写入失败
+  }
+}
+
 function renderStars(rating: number): string {
   const r = Math.max(0, Math.min(5, Math.round(rating)))
   return '★'.repeat(r) + '☆'.repeat(5 - r)
@@ -53,6 +74,8 @@ export function ParentH5({ appName }: { appName: string }) {
   const [phoneSuffix, setPhoneSuffix] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [data, setData] = useState<ParentAccessData | null>(null)
+  // 公告板弹窗：验证通过后若有未读公告则弹出
+  const [showAnnouncement, setShowAnnouncement] = useState(false)
 
   // 从 URL 读取 s 参数（学员 ID）
   const params = new URLSearchParams(window.location.search)
@@ -100,6 +123,24 @@ export function ParentH5({ appName }: { appName: string }) {
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 验证通过后：若公告有内容且 updatedAt 与本地缓存不一致，弹出公告板
+  useEffect(() => {
+    if (phase !== 'verified' || !data) return
+    const ann = data.announcement
+    if (!ann || !ann.content || !ann.content.trim()) return
+    const readUpdatedAt = loadReadAnnouncementUpdatedAt(studentId)
+    if (ann.updatedAt && ann.updatedAt === readUpdatedAt) return
+    setShowAnnouncement(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, data])
+
+  const handleCloseAnnouncement = () => {
+    if (data?.announcement?.updatedAt) {
+      cacheReadAnnouncementUpdatedAt(studentId, data.announcement.updatedAt)
+    }
+    setShowAnnouncement(false)
+  }
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -218,6 +259,12 @@ export function ParentH5({ appName }: { appName: string }) {
   // 避免日历顶部重复展示学员信息；电脑端页眉较宽，信息左对齐连续展示而非一左一右割裂
   return (
     <div className="min-h-screen bg-background">
+      {showAnnouncement && data?.announcement && (
+        <AnnouncementPopup
+          announcement={data.announcement}
+          onClose={handleCloseAnnouncement}
+        />
+      )}
       <header className="bg-background border-b border-border sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-3">
           {/* 第一行：头像 + 姓名 + 关键统计 */}
@@ -356,6 +403,119 @@ function ParentCalendar({ schedules }: { schedules: Schedule[] }) {
         schedule={selectedSchedule}
         onClose={() => setSelectedSchedule(null)}
       />
+    </div>
+  )
+}
+
+// ============ 公告板弹窗 ============
+// 后台更新公告后，家长再次进入家长端弹出公告板
+// 需滚动阅读完全部内容后才可关闭，关闭后缓存 updatedAt，下次不再弹出（除非再次更新）
+function AnnouncementPopup({
+  announcement,
+  onClose,
+}: {
+  announcement: ParentAnnouncement
+  onClose: () => void
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [hasRead, setHasRead] = useState(false)
+
+  // 检查是否已滚动到底部（或内容本身不超出则视为已读）
+  const checkRead = () => {
+    const el = scrollRef.current
+    if (!el) {
+      setHasRead(true)
+      return
+    }
+    // 内容未溢出：无需滚动即可阅读完
+    if (el.scrollHeight - el.clientHeight <= 4) {
+      setHasRead(true)
+      return
+    }
+    // 滚动到底部（容差 8px）视为阅读完
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 8) {
+      setHasRead(true)
+    }
+  }
+
+  useEffect(() => {
+    // 初始挂载时检查一次（内容短则直接可关闭）
+    checkRead()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 格式化更新时间
+  const formatUpdatedAt = (ts: string) => {
+    if (!ts) return ''
+    try {
+      const d = new Date(ts)
+      if (isNaN(d.getTime())) return ts
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      const hh = String(d.getHours()).padStart(2, '0')
+      const mm = String(d.getMinutes()).padStart(2, '0')
+      return `${y}-${m}-${day} ${hh}:${mm}`
+    } catch {
+      return ts
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 animate-in fade-in-0 duration-150"
+      role="dialog"
+      aria-modal="true"
+      aria-label="公告板"
+    >
+      <div className="bg-background rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col animate-in fade-in-0 zoom-in-95 duration-150">
+        {/* 头部：禁止关闭，需阅读完后从底部按钮关闭 */}
+        <div className="flex items-center gap-2.5 px-5 py-4 border-b border-border flex-shrink-0">
+          <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+            <Megaphone className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-base text-foreground">公告板</h3>
+            {announcement.updatedAt && (
+              <p className="text-xs text-muted-foreground/70 mt-0.5">
+                更新于 {formatUpdatedAt(announcement.updatedAt)}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* 内容区：可滚动，需滚动到底部才视为已读 */}
+        <div
+          ref={scrollRef}
+          onScroll={checkRead}
+          className="px-5 py-4 overflow-y-auto flex-1"
+        >
+          <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+            {announcement.content}
+          </div>
+        </div>
+
+        {/* 底部：阅读完后才可关闭 */}
+        <div className="px-5 py-3 bg-muted/40 border-t border-border flex flex-col items-center gap-1.5 flex-shrink-0">
+          {!hasRead && (
+            <p className="text-xs text-muted-foreground/70">
+              请向下滚动阅读完整公告内容后关闭
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={!hasRead}
+            className={
+              hasRead
+                ? 'btn-primary w-full'
+                : 'btn-primary w-full opacity-50 cursor-not-allowed'
+            }
+          >
+            {hasRead ? '我已阅读，关闭公告' : '请先阅读完整公告'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

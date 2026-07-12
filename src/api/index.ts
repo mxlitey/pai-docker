@@ -137,11 +137,17 @@ export interface ParentEnrollmentSummary {
   expiredAt: string
 }
 
+export interface ParentAnnouncement {
+  content: string
+  updatedAt: string
+}
+
 export interface ParentAccessData {
   student: { id: string; name: string; grade: string; parentName: string }
   schedules: Schedule[]
   enrollments: ParentEnrollmentSummary[]
   feedback: import('@/types').Feedback[]
+  announcement: ParentAnnouncement
 }
 
 // GET：返回脱敏提示信息（家长进入 H5 时先调）

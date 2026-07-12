@@ -11,6 +11,7 @@ import {
   getEnrollments,
   getFeedback,
   getCourseById,
+  getAnnouncement,
 } from '../_lib/store.js'
 import { getClientIp } from '../_lib/auth.js'
 import { checkParentAccessRateLimit } from '../_lib/rate-limit.js'
@@ -148,6 +149,15 @@ export async function onRequestPost(context) {
     console.error('[parent-access] 加载反馈失败:', e?.message || String(e))
   }
 
+  // 公告：家长端进入时弹出公告板，后台更新后再次进入需重新阅读
+  // 仅返回内容与更新时间，由前端按 updatedAt 判断是否已读
+  let announcement = { content: '', updatedAt: '' }
+  try {
+    announcement = await getAnnouncement()
+  } catch (e) {
+    console.error('[parent-access] 加载公告失败:', e?.message || String(e))
+  }
+
   return json({
     code: 0,
     message: 'ok',
@@ -161,6 +171,7 @@ export async function onRequestPost(context) {
       schedules,
       enrollments,
       feedback,
+      announcement,
     },
   })
 }
