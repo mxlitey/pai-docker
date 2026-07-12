@@ -199,13 +199,6 @@ function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalP
     }
   }
 
-  // 状态：从 select 字符串收敛到联合类型
-  const setStatus = (value: string) => {
-    if (value === 'active' || value === 'inactive') {
-      update({ status: value })
-    }
-  }
-
   const validate = (): boolean => {
     const e: Record<string, string> = {}
     if (!form.name.trim()) {
@@ -262,6 +255,7 @@ function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalP
             value={form.name}
             onChange={(e) => update({ name: e.target.value })}
             placeholder="如：数学提高班"
+            disabled={isEdit}
             autoFocus
           />
         </Field>
@@ -294,45 +288,12 @@ function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalP
             className={inputClass}
             value={form.billingType || 'per_lesson'}
             onChange={(e) => setBillingType(e.target.value)}
+            disabled={isEdit}
           >
             <option value="per_lesson">按课时（点名扣减）</option>
             <option value="per_term">按期（整期收费）</option>
             <option value="per_month">按月（包月收费）</option>
           </select>
-        </Field>
-
-        {/* 学期 */}
-        <Field label={'学期'} hint="如：2024春季">
-          <input
-            type="text"
-            className={inputClass}
-            value={form.term || ''}
-            onChange={(e) => update({ term: e.target.value })}
-            placeholder="如：2024春季"
-          />
-        </Field>
-
-        {/* 状态 */}
-        <Field label={'状态'}>
-          <select
-            className={inputClass}
-            value={form.status || 'active'}
-            onChange={(e) => setStatus(e.target.value)}
-          >
-            <option value="active">{'启用'}</option>
-            <option value="inactive">{'停用'}</option>
-          </select>
-        </Field>
-
-        {/* 分类 */}
-        <Field label={'分类'} hint="如：数学/英语/物理">
-          <input
-            type="text"
-            className={inputClass}
-            value={form.category || ''}
-            onChange={(e) => update({ category: e.target.value })}
-            placeholder="如：数学"
-          />
         </Field>
 
         {/* 关联年级：报名时按学员年级过滤可选课程 */}
@@ -341,6 +302,7 @@ function CourseEditModal({ course, grades, onClose, onSubmit }: CourseEditModalP
             className={inputClass}
             value={form.grade || ''}
             onChange={(e) => update({ grade: e.target.value })}
+            disabled={isEdit}
           >
             <option value="">{'请选择年级'}</option>
             {grades.map((g) => (

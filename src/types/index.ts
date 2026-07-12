@@ -111,9 +111,11 @@ export interface Schedule {
   color?: string
   attended?: boolean
   status?: ScheduleStatus
-  room?: string
   makeupFor?: string
   rescheduledFrom?: string
+  deductedEnrollmentId?: string
+  deductedType?: 'paid' | 'gift' | ''
+  hasMakeup?: boolean
 }
 
 // 调课记录
@@ -149,8 +151,6 @@ export interface Enrollment {
   totalAmount: number
   paidAmount: number
   discountAmount?: number
-  channel?: string
-  salesId?: string
   paymentMethod?: string
   paymentStatus?: string
   contractNo?: string
@@ -192,7 +192,7 @@ export interface AccountTransaction {
   createdAt?: string
 }
 
-// 管理员账号
+// 账号中心
 export interface AdminUser {
   id: string
   username: string
@@ -200,7 +200,6 @@ export interface AdminUser {
   realName?: string
   phone?: string
   status?: 'active' | 'disabled'
-  teacherId?: string
   // 自定义权限点（逗号分隔串，非空时覆盖角色默认权限；空串表示用角色默认）
   permissions?: string
   lastLoginAt?: string

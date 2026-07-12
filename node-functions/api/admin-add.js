@@ -1,4 +1,4 @@
-// 新增管理员 API（仅超管）
+// 新增账户 API（仅超管）
 // POST /api/admin-add  body: { admin: { username, password, role, realName, phone } }
 import { createAdmin, getAdminByUsername, json } from '../_lib/store.js'
 import { requirePermission, hashPassword, validatePasswordPolicy } from '../_lib/auth.js'
@@ -27,6 +27,10 @@ export default async function onRequestPost(context) {
   if (pwdErr) {
     return json({ code: 1, message: pwdErr, data: null }, 400)
   }
+  const realName = String(admin.realName || '').trim()
+  if (!realName) {
+    return json({ code: 1, message: '姓名为必填项', data: null }, 400)
+  }
   const role = ['admin', 'teacher'].includes(admin.role) ? admin.role : 'admin'
   if (await getAdminByUsername(username)) {
     return json({ code: 1, message: '用户名已存在', data: null }, 409)
@@ -40,7 +44,7 @@ export default async function onRequestPost(context) {
       : []
     const created = await createAdmin({
       username, passwordHash, role,
-      realName: String(admin.realName || '').trim(),
+      realName,
       phone: String(admin.phone || '').trim(),
       createdBy: context.admin.id,
       permissions,

@@ -719,14 +719,14 @@ export async function listAccountTransactions(params: {
   return request(`${API_BASE}/account-transactions${query ? '?' + query : ''}`, { method: 'GET' })
 }
 
-// ========== 管理员账号管理（RBAC） ==========
+// ========== 账号中心管理（RBAC） ==========
 
-// 管理员列表（仅超管）
+// 账号列表（仅超管）
 export async function listAdmins(): Promise<ApiResult<{ admins: AdminUser[] }>> {
   return request(`${API_BASE}/admins`, { method: 'GET' })
 }
 
-// 新增管理员（仅超管，role 仅允许 admin/teacher）
+// 新增账户（仅超管，role 仅允许 admin/teacher）
 export async function addAdmin(admin: {
   username: string
   password: string
@@ -764,7 +764,7 @@ export async function getPermissionDefinitions(): Promise<
   return request(`${API_BASE}/permission-definitions`, { method: 'GET' })
 }
 
-// 删除管理员（不可删自己、不可删最后一个超管）
+// 删除账户（不可删自己、不可删最后一个超管）
 export async function deleteAdmin(id: string): Promise<ApiResult<null>> {
   return request(`${API_BASE}/admin-delete`, {
     method: 'DELETE',

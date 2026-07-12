@@ -142,23 +142,23 @@ function writeSubPageToHash(sub: SubPage) {
 // 模块入口定义：按日常使用顺序排列（基础建档 → 教学运营 → 报表 → 系统）
 // 每个入口含权限点、标题、描述、图标、跳转目标，按当前用户权限过滤后再渲染
 const moduleEntries = [
-  // ===== 基础教务（建档类：学员 → 年级 → 课程 → 班级 → 教师）=====
-  { tab: 'basic', perm: 'students:view', sub: 'students', title: '学员管理', desc: '学员档案、报名汇总、续费预警', icon: 'students' },
+  // ===== 基础教务（按建档依赖关系：年级 → 课程 → 班级 → 学员 → 教师）=====
   { tab: 'basic', perm: 'grades:view', sub: 'grades', title: '年级管理', desc: '年级维护、批量升班、课程关联', icon: 'grades' },
   { tab: 'basic', perm: 'courses:view', sub: 'courses', title: '课程管理', desc: '课程信息、单价、计费方式、关联年级', icon: 'courses' },
   { tab: 'basic', perm: 'classes:view', sub: 'classes', title: '班级管理', desc: '班级建档、关联课程、固定学员名单', icon: 'classes' },
+  { tab: 'basic', perm: 'students:view', sub: 'students', title: '学员管理', desc: '学员档案、报名汇总、续费预警', icon: 'students' },
   { tab: 'basic', perm: 'teachers:view', sub: 'teachers', title: '教师管理', desc: '课后反馈、教师绩效、评分', icon: 'teachers' },
-  // ===== 教学运营（业务流转：报名 → 结转退课 → 排课 → 点名）=====
+  // ===== 教学运营（按业务流程：报名 → 排课 → 点名 → 结转退课）=====
   { tab: 'operation', perm: 'enrollments:view', sub: 'enrollments', title: '报名管理', desc: '报名、购课赠课、课时余额', icon: 'enrollments' },
-  { tab: 'operation', perm: 'transfers:view', sub: 'transfers', title: '结转退课', desc: '退课折算入账户余额', icon: 'transfers' },
   { tab: 'operation', perm: 'schedules:view', sub: 'schedules', title: '排课管理', desc: '排课、批量排课、点名扣减', icon: 'schedules' },
   { tab: 'operation', perm: 'attendance:view', sub: 'attendance', title: '点名管理', desc: '按日期点名、批量点名、到课统计', icon: 'attendance' },
+  { tab: 'operation', perm: 'transfers:view', sub: 'transfers', title: '结转退课', desc: '退课折算入账户余额', icon: 'transfers' },
   // ===== 报表中心（概览 + 明细报表，合并原数据看板）=====
   { tab: 'data', perm: 'reports:view', sub: 'reports', title: '报表中心', desc: '经营概览、营收、课时、出勤、结转统计', icon: 'reports' },
-  // ===== 系统管理（配置 → 公告 → 账号 → 家长端链接 → 日志）=====
+  // ===== 系统管理（账号优先 → 配置 → 内容 → 工具 → 日志）=====
+  { tab: 'system', perm: 'admins:view', sub: 'admins', title: '账号中心', desc: '账号增删、权限分配、启停', icon: 'admins' },
   { tab: 'system', perm: 'settings:manage', sub: 'settings', title: '系统设置', desc: '项目名称、备份恢复、有效期', icon: 'settings' },
   { tab: 'system', perm: 'announcement:view', sub: 'announcement', title: '公告管理', desc: '首页/家长端公告内容', icon: 'announcement' },
-  { tab: 'system', perm: 'admins:view', sub: 'admins', title: '管理员账号', desc: '账号增删、权限分配、启停', icon: 'admins' },
   { tab: 'system', perm: 'students:view', sub: 'shareLinks', title: '分享链接', desc: '生成家长端专属访问链接', icon: 'shareLinks' },
   { tab: 'system', perm: 'audit:view', sub: 'auditLogs', title: '审计日志', desc: '写操作留痕，按模块/人筛选', icon: 'auditLogs' },
 ] as const
@@ -487,11 +487,34 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
     }
   }
 
-  // 删除学员及其所有排课
+  // 删除学员：先检查课时剩余，有则禁止；无则弹确认（提示余额退费）
   const handleDeleteStudent = async (student: Student) => {
+    // 先查该学员的 active 报名，检查是否有剩余课时
+    let hasRemainingHours = false
+    let totalRemaining = 0
+    try {
+      const enrResult = await listEnrollments({ studentId: student.id, status: 'active' })
+      if (enrResult.code === 0) {
+        for (const e of enrResult.data.enrollments) {
+          totalRemaining += (e.remainingPaidHours || 0) + (e.remainingGiftHours || 0)
+        }
+        if (totalRemaining > 0) hasRemainingHours = true
+      }
+    } catch {
+      // 查询失败不阻塞，交给后端 deleteStudent 兜底校验
+    }
+    if (hasRemainingHours) {
+      toast.error(`该学员有 ${totalRemaining} 课时剩余，请先走退课流程后再删除`)
+      return
+    }
+    // 无剩余课时，弹确认框（提示余额退费）
+    const balance = student.balance || 0
+    const balanceHint = balance > 0
+      ? `\n⚠️ 账户余额 ¥${balance.toFixed(2)} 需退费`
+      : ''
     const ok = await confirmDialog({
       title: '删除学员',
-      message: `确认删除学员「${student.name}」(${student.id})？该操作将同时删除该学员的所有排课数据，且不可恢复。`,
+      message: `确认删除学员「${student.name}」(${student.id})？\n该操作将删除该学员的未点名排课与班级成员关系，保留已点名排课、报名记录、退课记录用于报表统计，且不可恢复。${balanceHint}`,
       danger: true,
       requireText: student.name,
       confirmText: '确认删除',
@@ -502,7 +525,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
       const result = await deleteStudent(student.id)
       if (result.code === 0) {
         const msg = result.data.studentRemoved
-          ? `已删除学员及 ${result.data.deletedScheduleFiles} 个排课文件`
+          ? `已删除学员${result.data.deletedScheduleFiles ? `及 ${result.data.deletedScheduleFiles} 个排课文件` : ''}`
           : '学员不存在（已清理残留排课文件）'
         toast.success(msg)
         await loadStudents()
@@ -854,7 +877,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
       )
     }
 
-    // 管理员账号管理二级页面（仅超管）
+    // 账号中心二级页面（仅超管）
     if (activeSubPage === 'admins') {
       return <AdminUserAdmin onBack={() => goSubPage(null)} />
     }
@@ -885,7 +908,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
         onSelect={handleSelect}
         onLogout={() => {
           clearToken()
-          setAuthed(false)
+          onExit()
         }}
       />
       <SidebarInset>

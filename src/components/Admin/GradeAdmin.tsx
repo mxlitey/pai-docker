@@ -132,7 +132,6 @@ export function GradeAdmin({
                   <tr className="border-b border-border text-muted-foreground text-xs">
                     <th className="text-left py-2 px-2 font-medium">{'年级名称'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'排序'}</th>
-                    <th className="text-left py-2 px-2 font-medium">{'状态'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'学员数'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'课程数'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'描述'}</th>
@@ -147,15 +146,6 @@ export function GradeAdmin({
                       <tr key={g.id} className="border-b border-border hover:bg-muted/50 transition-colors">
                         <td className="py-2.5 px-2 font-medium text-foreground">{g.name}</td>
                         <td className="py-2.5 px-2 text-muted-foreground">{g.sortOrder ?? 0}</td>
-                        <td className="py-2.5 px-2">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            g.status === 'inactive'
-                              ? 'bg-muted text-muted-foreground'
-                              : 'bg-green-50 text-green-700'
-                          }`}>
-                            {g.status === 'inactive' ? '停用' : '启用'}
-                          </span>
-                        </td>
                         <td className="py-2.5 px-2 text-muted-foreground">{studentCount}</td>
                         <td className="py-2.5 px-2 text-muted-foreground">{courseCount}</td>
                         <td className="py-2.5 px-2 text-muted-foreground max-w-xs truncate">
@@ -220,7 +210,6 @@ interface GradeFormState {
   id: string
   name: string
   sortOrder: string
-  status: GradeStatus
   description: string
 }
 
@@ -232,10 +221,9 @@ function GradeEditModal({ grade, onClose, onSaved, showToast }: GradeEditModalPr
           id: grade.id,
           name: grade.name,
           sortOrder: String(grade.sortOrder ?? 0),
-          status: grade.status || 'active',
           description: grade.description || '',
         }
-      : { id: '', name: '', sortOrder: '0', status: 'active', description: '' },
+      : { id: '', name: '', sortOrder: '0', description: '' },
   )
   const [saving, setSaving] = useState(false)
   const [nameError, setNameError] = useState('')
@@ -256,7 +244,7 @@ function GradeEditModal({ grade, onClose, onSaved, showToast }: GradeEditModalPr
         id: form.id,
         name: form.name.trim(),
         sortOrder: Number(form.sortOrder || 0),
-        status: form.status,
+        status: 'active' as GradeStatus,
         description: form.description.trim(),
       }
       const result = isEdit ? await updateGrade(payload) : await addGrade(payload)
@@ -309,16 +297,6 @@ function GradeEditModal({ grade, onClose, onSaved, showToast }: GradeEditModalPr
             placeholder="0"
           />
         </Field>
-        <Field label={'状态'}>
-          <select
-            className={inputClass}
-            value={form.status}
-            onChange={(e) => update({ status: e.target.value as GradeStatus })}
-          >
-            <option value="active">{'启用'}</option>
-            <option value="inactive">{'停用'}</option>
-          </select>
-        </Field>
         <Field label={'描述'}>
           <textarea
             className={inputClass}
@@ -342,8 +320,7 @@ interface PromoteModalProps {
 }
 
 function PromoteModal({ grades, onClose, onDone, showToast }: PromoteModalProps) {
-  const activeGrades = grades.filter((g) => g.status !== 'inactive')
-  const [fromGradeName, setFromGradeName] = useState(activeGrades[0]?.name || '')
+  const [fromGradeName, setFromGradeName] = useState(grades[0]?.name || '')
   const [toGradeName, setToGradeName] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -399,7 +376,7 @@ function PromoteModal({ grades, onClose, onDone, showToast }: PromoteModalProps)
             onChange={(e) => { setFromGradeName(e.target.value); setError('') }}
           >
             <option value="">{'选择年级'}</option>
-            {activeGrades.map((g) => (
+            {grades.map((g) => (
               <option key={g.id} value={g.name}>{g.name}</option>
             ))}
           </select>
@@ -411,7 +388,7 @@ function PromoteModal({ grades, onClose, onDone, showToast }: PromoteModalProps)
             onChange={(e) => { setToGradeName(e.target.value); setError('') }}
           >
             <option value="">{'选择年级'}</option>
-            {activeGrades.map((g) => (
+            {grades.map((g) => (
               <option key={g.id} value={g.name}>{g.name}</option>
             ))}
           </select>

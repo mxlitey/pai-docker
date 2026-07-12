@@ -6,6 +6,7 @@ import {
   getStudents,
   getAllSchedulesByStudent,
   getSchedulesByDateRange,
+  getScheduleIdsWithMakeup,
   json,
 } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
@@ -59,6 +60,10 @@ export async function onRequestGet(context) {
     if (a.date !== b.date) return a.date.localeCompare(b.date)
     return a.startTime.localeCompare(b.startTime)
   })
+
+  // 批量标记哪些缺勤排课已安排补课（补课按钮隐藏依据）
+  const idsWithMakeup = await getScheduleIdsWithMakeup(schedules.map((s) => s.id))
+  schedules = schedules.map((s) => ({ ...s, hasMakeup: idsWithMakeup.has(s.id) }))
 
   return json({ code: 0, message: 'ok', data: { schedules } })
 }

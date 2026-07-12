@@ -29,6 +29,9 @@ export default async function onRequestDelete(context) {
 
   try {
     const result = await deleteCourseWithSchedules(courseId)
+    if (result.blocked) {
+      return json({ code: 1, message: result.message, data: null }, 400)
+    }
     if (!result.courseRemoved) {
       return json(
         { code: 1, message: `课程 id="${courseId}" 不存在`, data: null },

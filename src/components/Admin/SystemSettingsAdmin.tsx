@@ -11,7 +11,6 @@ import {
   createBackup,
   deleteBackup,
   restoreBackup,
-  expireOverdue,
 } from '@/api/admin'
 import { setAppName as setAppNameConfig } from '@/config'
 import {
@@ -77,8 +76,6 @@ export function SystemSettingsAdmin({
   const [savingKeepDays, setSavingKeepDays] = useState(false)
   const [restoring, setRestoring] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
-  // 课时过期处理
-  const [expiring, setExpiring] = useState(false)
 
   // 加载备份列表
   const loadBackups = useCallback(async () => {
@@ -173,23 +170,6 @@ export function SystemSettingsAdmin({
   const handleReset = () => {
     setAppName(originalAppName)
     setRenewalThreshold(originalThreshold)
-  }
-
-  // 手动处理过期课时
-  const handleExpire = async () => {
-    setExpiring(true)
-    try {
-      const result = await expireOverdue()
-      if (result.code === 0) {
-        toast.success(`已处理 ${result.data.affected} 条过期记录`)
-      } else {
-        toast.error(result.message || '处理失败')
-      }
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setExpiring(false)
-    }
   }
 
   // cron 表达式实时校验与描述预览
@@ -368,14 +348,14 @@ export function SystemSettingsAdmin({
               </div>
             </section>
 
-            {/* 续费预警与有效期 */}
+            {/* 续费预警 */}
             <section className="card p-5">
               <h2 className="text-base font-semibold text-foreground flex items-center gap-2 mb-1">
                 <span className="w-1 h-4 bg-primary rounded"></span>
-                {'续费预警与有效期'}
+                {'续费预警'}
               </h2>
               <p className="text-xs text-muted-foreground mb-4 ml-3">
-                设置学员课时不足时的预警阈值，并可手动处理已过期的课时记录。修改阈值后点击顶部「保存」生效。
+                设置学员课时不足时的预警阈值。修改阈值后点击顶部「保存」生效。
               </p>
               <div className="ml-3 space-y-4">
                 <div>
@@ -390,12 +370,6 @@ export function SystemSettingsAdmin({
                     className={inputClass}
                   />
                   <p className="text-xs text-muted-foreground/70 mt-1.5">{'剩余课时 ≤ 此值时在学员列表标红提醒'}</p>
-                </div>
-                <div className="flex items-center gap-3 pt-3 border-t border-border">
-                  <Button variant="outline" loading={expiring} onClick={handleExpire}>
-                    {'立即处理过期课时'}
-                  </Button>
-                  <span className="text-xs text-muted-foreground/70">手动触发已过期课时的结算处理</span>
                 </div>
               </div>
             </section>

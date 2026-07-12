@@ -127,9 +127,10 @@ export function getDb() {
       color        TEXT DEFAULT '',
       attended     INTEGER,
       status       TEXT DEFAULT 'scheduled',
-      room         TEXT DEFAULT '',
       makeup_for   TEXT DEFAULT '',
       rescheduled_from TEXT DEFAULT '',
+      deducted_enrollment_id TEXT DEFAULT '',
+      deducted_type TEXT DEFAULT '',
       created_at   TEXT DEFAULT (datetime('now', 'localtime'))
     );
     CREATE INDEX IF NOT EXISTS idx_schedules_student_date ON schedules(student_id, date);
@@ -206,7 +207,6 @@ export function getDb() {
       real_name     TEXT DEFAULT '',
       phone         TEXT DEFAULT '',
       status        TEXT NOT NULL DEFAULT 'active',
-      teacher_id    TEXT DEFAULT '',
       permissions   TEXT DEFAULT '',
       last_login_at TEXT DEFAULT '',
       last_login_ip TEXT DEFAULT '',
@@ -304,10 +304,12 @@ export function getDb() {
   // schedules 补齐新增列
   for (const [col, def] of [
     ['status', "TEXT DEFAULT 'scheduled'"],
-    ['room', "TEXT DEFAULT ''"],
     ['makeup_for', "TEXT DEFAULT ''"],
     ['class_id', "TEXT DEFAULT ''"],
     ['rescheduled_from', "TEXT DEFAULT ''"],
+    // 点名扣课时记录扣的是哪条报名、扣的付费还是赠课，回退时精准回退（修复回退到错误报名/错误课时类型）
+    ['deducted_enrollment_id', "TEXT DEFAULT ''"],
+    ['deducted_type', "TEXT DEFAULT ''"],
   ]) ensureColumn(db, 'schedules', col, def)
   // enrollments 补齐新增列
   for (const [col, def] of [
@@ -326,6 +328,9 @@ export function getDb() {
   ensureColumn(db, 'classes', 'grade', "TEXT DEFAULT ''")
   // admins 补齐 permissions 列（细粒度权限点）
   ensureColumn(db, 'admins', 'permissions', "TEXT DEFAULT ''")
+  // 清理已废弃的预留字段（旧库可能存在，新库不再创建）
+  dropColumnIfExists(db, 'schedules', 'room')
+  dropColumnIfExists(db, 'admins', 'teacher_id')
 
   dbInstance = db
   return db
@@ -336,6 +341,14 @@ function ensureColumn(db, table, column, def) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all()
   if (!cols.some((c) => c.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`)
+  }
+}
+
+// 幂等删列：列存在才 DROP（SQLite 3.35+ 支持 DROP COLUMN，用于清理废弃的预留字段）
+function dropColumnIfExists(db, table, column) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all()
+  if (cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`)
   }
 }
 

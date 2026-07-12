@@ -433,7 +433,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
                             {'编辑'}
                           </button>
                         )}
-                        {s.status !== 'cancelled' && s.attended === false && canReschedule && (
+                        {s.status !== 'cancelled' && s.attended === false && !s.hasMakeup && canReschedule && (
                           <button
                             onClick={() => setReschedulingSchedule(s)}
                             disabled={busy}

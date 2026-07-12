@@ -74,8 +74,8 @@ export default async function onRequestPost(context) {
       totalAmount: Number(enrollment.totalAmount ?? (purchased * unitPrice)),
       paidAmount: Number(enrollment.paidAmount ?? (purchased * unitPrice)),
       useBalance: !!enrollment.useBalance,
-      // 有效期：空串表示无有效期（永不过期）；格式 yyyy-MM-dd
-      expiredAt: enrollment.expiredAt ? String(enrollment.expiredAt).slice(0, 10) : '',
+      // 报名不再设置有效期（永不过期），过期课时须手动走退课流程
+      expiredAt: '',
       enrolledAt: enrollment.enrolledAt || now(),
       note: enrollment.note ? String(enrollment.note).slice(0, 500) : '',
     }

@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, extname, normalize } from 'node:path'
 import {
   getDb, countAdmins, createBackup, purgeOldBackups,
-  expireOverdueEnrollments, archiveAuditLogs,
+  expireOverdueEnrollments, archiveAuditLogs, isRestoring,
 } from './node-functions/_lib/store.js'
 import { loadConfig, getConfigPath, getBackupKeepDays, getBackupCron, getBackupMaxCount } from './node-functions/_lib/config-file.js'
 import { nextCronTime, describeCron } from './node-functions/_lib/cron.js'
@@ -161,6 +161,17 @@ function toWebRequest(req) {
 async function writeWebResponse(webResp, res) {
   res.statusCode = webResp.status
   webResp.headers.forEach((v, k) => res.setHeader(k, v))
+  // 安全响应头：防止点击劫持、MIME 嗅探、降级中间人等基础攻击
+  // CSP 允许内联样式/脚本（Vite 构建产物需要）与同源资源
+  const securityHeaders = {
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
+  }
+  for (const [k, v] of Object.entries(securityHeaders)) {
+    if (!res.hasHeader(k)) res.setHeader(k, v)
+  }
   if (!webResp.body) {
     res.end()
     return
@@ -194,6 +205,22 @@ async function handleRequest(req, res) {
 
   // API 路由
   if (pathname.startsWith('/api/')) {
+    // 请求体大小限制：防止超大 JSON body 拖垮内存（DoS 防护）
+    const MAX_BODY = 2 * 1024 * 1024 // 2MB
+    const contentLength = Number(req.headers['content-length'] || 0)
+    if (contentLength > MAX_BODY) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8')
+      res.statusCode = 413
+      res.end(JSON.stringify({ code: 1, message: '请求体过大', data: null }))
+      return
+    }
+    // 恢复期间阻塞所有写操作，防止并发写导致数据库损坏
+    if (req.method !== 'GET' && req.method !== 'HEAD' && isRestoring()) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8')
+      res.statusCode = 503
+      res.end(JSON.stringify({ code: 1, message: '系统正在恢复数据，请稍后再试', data: null }))
+      return
+    }
     // 日志仅记录 method + pathname，不记录 query（避免泄露学员ID/搜索词等敏感参数）
     console.log(`[api] ${req.method} ${pathname}`)
     const matched = matchApiRoute(pathname)
@@ -206,7 +233,8 @@ async function handleRequest(req, res) {
     try {
       const webReq = toWebRequest(req)
       const env = { ...process.env }
-      const context = { request: webReq, env }
+      // 传递 TCP 连接的真实远端地址（不可被客户端伪造），用于限流与审计
+      const context = { request: webReq, env, remoteAddress: req.socket.remoteAddress }
       // 兼容 Edge Function 的多种导出形式
       const mod = matched.module
       let webResp

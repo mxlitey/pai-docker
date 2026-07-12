@@ -152,7 +152,7 @@ const FIELD_LABELS: Record<string, Record<string, string>> = {
   schedules: {
     studentName: '学员', courseName: '课程', teacher: '教师', location: '地点',
     date: '日期', startTime: '开始时间', endTime: '结束时间', note: '备注',
-    status: '状态', room: '教室', makeupFor: '补课标记', color: '颜色',
+    status: '状态', makeupFor: '补课标记', color: '颜色',
   },
   grades: {
     name: '年级名', sortOrder: '排序', status: '状态', description: '描述',

@@ -3,7 +3,7 @@
 // 支持按日期范围 + 可选课程 ID 过滤；任一参数可单独使用，也可组合使用
 // 全部参数缺省时返回全量排课（按日期+时间升序）
 // 该接口为后台管理端使用，需登录鉴权
-import { searchSchedules, json } from '../_lib/store.js'
+import { searchSchedules, getScheduleIdsWithMakeup, json } from '../_lib/store.js'
 import { requireAuth, requirePermission } from '../_lib/auth.js'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -43,7 +43,7 @@ export default async function onRequestGet(context) {
   }
 
   try {
-    const schedules = await searchSchedules({
+    let schedules = await searchSchedules({
       startDate,
       endDate,
       courseId,
@@ -51,6 +51,9 @@ export default async function onRequestGet(context) {
       teacher,
       classId,
     })
+    // 批量标记哪些缺勤排课已安排补课（补课按钮隐藏依据）
+    const idsWithMakeup = await getScheduleIdsWithMakeup(schedules.map((s) => s.id))
+    schedules = schedules.map((s) => ({ ...s, hasMakeup: idsWithMakeup.has(s.id) }))
     return json({ code: 0, message: 'ok', data: { schedules, total: schedules.length } })
   } catch (e) {
     console.error('[schedules-search] 查询异常:', e?.message || String(e))

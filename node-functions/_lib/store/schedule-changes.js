@@ -62,8 +62,8 @@ export async function rescheduleSchedule(original, opts) {
       color: newColor !== undefined ? newColor : (original.color || ''),
     }
     db.prepare(`INSERT INTO schedules
-      (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, room, makeup_for, rescheduled_from, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, makeup_for, rescheduled_from, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       newId,
       newSchedule.studentId,
       newSchedule.studentName,
@@ -79,7 +79,6 @@ export async function rescheduleSchedule(original, opts) {
       newSchedule.color || '',
       null,
       'scheduled',
-      newSchedule.room || '',
       newSchedule.makeupFor || '',
       newSchedule.rescheduledFrom || '',
       now(),
@@ -149,8 +148,8 @@ export async function makeupSchedule(original, opts) {
       color: newColor !== undefined ? newColor : (original.color || ''),
     }
     db.prepare(`INSERT INTO schedules
-      (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, room, makeup_for, rescheduled_from, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, makeup_for, rescheduled_from, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       newId,
       newSchedule.studentId,
       newSchedule.studentName,
@@ -166,7 +165,6 @@ export async function makeupSchedule(original, opts) {
       newSchedule.color || '',
       null,
       'scheduled',
-      newSchedule.room || '',
       newSchedule.makeupFor || '',
       newSchedule.rescheduledFrom || '',
       now(),

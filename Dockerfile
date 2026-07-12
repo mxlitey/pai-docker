@@ -39,6 +39,19 @@ RUN rm -rf node_modules/better-sqlite3/build/Release/obj \
 FROM node:20-alpine AS runtime
 WORKDIR /app
 
+# 环境变量默认值
+ENV NODE_ENV=production
+ENV PORT=8788
+ENV DATA_DIR=/app/data
+# 默认时区 Asia/Shanghai（可通过 docker run -e TZ=xxx 覆盖）
+ENV TZ=Asia/Shanghai
+
+# 时区配置必须在 root 权限下执行（apk add 与修改 /etc/localtime 需要系统权限）
+# 放在 USER node 切换之前，避免非 root 用户执行时权限不足
+RUN apk add --no-cache tzdata \
+    && cp /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo "$TZ" > /etc/timezone
+
 # 复制 package.json（运行时不需要 package-lock.json）
 COPY package.json ./
 
@@ -51,18 +64,12 @@ COPY node-functions ./node-functions
 COPY --from=builder /build/dist ./dist
 
 # 数据持久化目录
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data \
+    && chown -R node:node /app
 VOLUME /app/data
 
-# 环境变量默认值
-ENV NODE_ENV=production
-ENV PORT=8788
-ENV DATA_DIR=/app/data
-# 默认时区 Asia/Shanghai（可通过 docker run -e TZ=xxx 覆盖）
-ENV TZ=Asia/Shanghai
-RUN apk add --no-cache tzdata \
-    && cp /usr/share/zoneinfo/$TZ /etc/localtime \
-    && echo "$TZ" > /etc/timezone
+# 安全：以非 root 用户运行应用，降低容器逃逸/RCE 的影响面
+USER node
 
 EXPOSE 8788
 

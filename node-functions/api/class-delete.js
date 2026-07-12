@@ -29,6 +29,13 @@ export default async function onRequestDelete(context) {
     if (result.notFound) {
       return json({ code: 1, message: '班级不存在', data: null }, 404)
     }
+    if (result.blocked) {
+      return json({
+        code: 1,
+        message: result.message,
+        data: result,
+      }, 400)
+    }
     if (result.inUse) {
       return json({
         code: 1,

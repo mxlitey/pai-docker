@@ -105,11 +105,13 @@ export async function deleteStudentWithSchedules(studentId) {
   const tx = db.transaction(() => {
     const oldRow = db.prepare('SELECT * FROM students WHERE id=?').get(studentId)
     const before = oldRow ? rowToStudent(oldRow) : null
-    const del = db.prepare('DELETE FROM schedules WHERE student_id=?').run(studentId)
-    db.prepare('DELETE FROM enrollments WHERE student_id=?').run(studentId)
-    db.prepare('DELETE FROM transfers WHERE student_id=?').run(studentId)
-    db.prepare('DELETE FROM account_transactions WHERE student_id=?').run(studentId)
-    // 补齐级联：避免删除学员后产生孤儿反馈/班级成员/调课记录数据
+    // 保留历史数据用于报表统计（营收/报名/结转/课时消耗/出勤率）：
+    //   - enrollments（报名记录）：营收报表、报名统计报表的数据源
+    //   - transfers（退课记录）：结转统计报表的数据源
+    //   - schedules WHERE attended IS NOT NULL（已点名排课）：课时消耗、出勤率报表的数据源
+    //   - account_transactions（账户流水）：保留以备审计追溯
+    // 仅删除未点名排课（避免幽灵排课）和业务关联记录（班级成员/反馈/调课记录）
+    const del = db.prepare('DELETE FROM schedules WHERE student_id=? AND attended IS NULL').run(studentId)
     db.prepare('DELETE FROM feedback WHERE student_id=?').run(studentId)
     db.prepare('DELETE FROM class_members WHERE student_id=?').run(studentId)
     db.prepare('DELETE FROM schedule_changes WHERE student_id=?').run(studentId)

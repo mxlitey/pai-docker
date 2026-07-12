@@ -1,6 +1,6 @@
-// 更新管理员 API（仅超管）
+// 更新账户 API（仅超管）
 // PUT /api/admin-update  body: { admin: { id, role?, realName?, phone?, status?, password? } }
-// 约束：不可降级/删除最后一个超管；不可禁用自己
+// 约束：不可降级/删除最后一个超管；不可禁用自己；姓名必填
 import { updateAdmin, getAdminById, countSuperAdmins, json } from '../_lib/store.js'
 import { requirePermission, hashPassword, validatePasswordPolicy } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
@@ -25,27 +25,36 @@ export default async function onRequestPut(context) {
   const target = await getAdminById(admin.id)
   if (!target) return json({ code: 1, message: '账号不存在', data: null }, 404)
 
-  // 角色变更约束：最后一个超管不可降级
+  // 姓名必填：显式传入时不可为空
+  if (admin.realName !== undefined && !String(admin.realName).trim()) {
+    return json({ code: 1, message: '姓名为必填项', data: null }, 400)
+  }
+
+  // 角色变更约束：超管不可降级（系统有且仅有一名超管，始终持完整权限）
   if (admin.role && admin.role !== target.role) {
-    if (target.role === 'superadmin' && admin.role !== 'superadmin') {
-      if (await countSuperAdmins() <= 1) {
-        return json({ code: 1, message: '系统至少保留一个超管，不可降级最后一个超管', data: null }, 400)
-      }
+    if (target.role === 'superadmin') {
+      return json({ code: 1, message: '超管不可降级，系统须始终保留唯一超管', data: null }, 400)
     }
-    if (!['superadmin', 'admin', 'teacher'].includes(admin.role)) {
+    if (admin.role === 'superadmin') {
+      return json({ code: 1, message: '不可将其他账号提升为超管', data: null }, 400)
+    }
+    if (!['admin', 'teacher'].includes(admin.role)) {
       return json({ code: 1, message: '角色非法', data: null }, 400)
     }
   }
 
-  // 禁用约束：不可禁用自己；不可禁用最后一个活跃超管（否则系统锁死）
+  // 超管权限不可修改：始终持完整权限（通配），忽略传入的 permissions
+  if (target.role === 'superadmin' && admin.permissions !== undefined) {
+    admin.permissions = undefined // 强制忽略，不改超管权限
+  }
+
+  // 禁用约束：不可禁用自己；超管账户一律不可禁用（始终持完整权限，须保持活跃）
   if (admin.status === 'disabled') {
     if (admin.id === context.admin.id) {
       return json({ code: 1, message: '不可禁用自己的账号', data: null }, 400)
     }
-    if (target.role === 'superadmin' && target.status === 'active') {
-      if (await countSuperAdmins() <= 1) {
-        return json({ code: 1, message: '系统至少保留一个活跃超管，不可禁用最后一个超管', data: null }, 400)
-      }
+    if (target.role === 'superadmin') {
+      return json({ code: 1, message: '超管账户不可禁用', data: null }, 400)
     }
   }
 

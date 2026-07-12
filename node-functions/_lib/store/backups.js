@@ -11,6 +11,13 @@ import { now, formatInShanghai } from '../time.js'
 // 备份目录
 const BACKUP_DIR = join(STORE_DATA_DIR, 'backups')
 
+// 恢复进行中标志：恢复期间阻塞所有写操作，防止并发导致数据库损坏
+let restoring = false
+
+export function isRestoring() {
+  return restoring
+}
+
 function ensureBackupDir() {
   mkdirSyncFs(BACKUP_DIR, { recursive: true })
 }
@@ -99,24 +106,31 @@ export function purgeOldBackups(keepDays, maxCount) {
 
 // 从指定备份文件恢复：覆盖当前主库
 // 恢复前自动创建一份「恢复前快照」防止误操作
+// 恢复期间设置全局标志，阻塞所有写操作（需在各写 API 中检查 isRestoring）
 export function restoreBackup(filename) {
   if (typeof filename !== 'string' || !/^backup-[\d_T-]+\.db$/.test(filename)) {
     throw new Error('非法的备份文件名')
   }
   const src = join(BACKUP_DIR, filename)
   if (!existsSync(src)) throw new Error('备份文件不存在')
-  // 恢复前快照
-  const preSnapshot = createBackup()
-  // 关闭当前连接，覆盖文件
-  closeDbInstance()
-  // WAL 模式下需同时清理 -wal/-shm
-  for (const suffix of ['', '-wal', '-shm']) {
-    try { unlinkSync(STORE_DB_PATH + suffix) } catch { /* 忽略 */ }
+  if (restoring) throw new Error('已有恢复操作正在进行，请稍后再试')
+  restoring = true
+  try {
+    // 恢复前快照
+    const preSnapshot = createBackup()
+    // 关闭当前连接，覆盖文件
+    closeDbInstance()
+    // WAL 模式下需同时清理 -wal/-shm
+    for (const suffix of ['', '-wal', '-shm']) {
+      try { unlinkSync(STORE_DB_PATH + suffix) } catch { /* 忽略 */ }
+    }
+    copyFileSync(src, STORE_DB_PATH)
+    // 重新打开并校验
+    const db = getDb()
+    const valid = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='students'").get()
+    if (!valid) throw new Error('备份文件无效：缺少 students 表')
+    return { ok: true, preSnapshot: preSnapshot.filename }
+  } finally {
+    restoring = false
   }
-  copyFileSync(src, STORE_DB_PATH)
-  // 重新打开并校验
-  const db = getDb()
-  const valid = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='students'").get()
-  if (!valid) throw new Error('备份文件无效：缺少 students 表')
-  return { ok: true, preSnapshot: preSnapshot.filename }
 }

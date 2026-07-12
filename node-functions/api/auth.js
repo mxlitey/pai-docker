@@ -43,7 +43,7 @@ function publicAdminInfo(admin) {
 async function handleLogin(context) {
   try {
     const { request } = context
-    const ip = getClientIp(request)
+    const ip = getClientIp(context)
     // 速率限制：防暴力破解（每 IP 每分钟 10 次）
     const rl = checkLoginRateLimit(ip)
     if (!rl.ok) {
@@ -74,7 +74,7 @@ async function handleLogin(context) {
           actorId: '', actorName: username, actorRole: '',
           action: 'login', module: 'auth',
           targetType: 'admin', targetId: '', targetName: username,
-          summary: `登录失败：${result.message}`, ip: getClientIp(request),
+          summary: `登录失败：${result.message}`, ip: getClientIp(context),
         })
       } catch { /* 审计失败不影响登录流程 */ }
       return json({ code: 1, message: result.message || '用户名或密码错误', data: null }, 401)
@@ -89,14 +89,14 @@ async function handleLogin(context) {
       realName: admin.real_name || '',
     })
     // 记录登录时间/IP
-    await recordLogin(admin.id, getClientIp(request))
+    await recordLogin(admin.id, getClientIp(context))
     // 审计：登录成功
     try {
       await addAuditLog({
         actorId: admin.id, actorName: admin.username, actorRole: admin.role,
         action: 'login', module: 'auth',
         targetType: 'admin', targetId: admin.id, targetName: admin.username,
-        summary: `${admin.username} 登录成功`, ip: getClientIp(request),
+        summary: `${admin.username} 登录成功`, ip: getClientIp(context),
       })
     } catch { /* ignore */ }
 
@@ -176,7 +176,7 @@ async function handleBootstrap(context) {
         actorId: created.id, actorName: username, actorRole: 'superadmin',
         action: 'bootstrap', module: 'auth',
         targetType: 'admin', targetId: created.id, targetName: username,
-        summary: `引导创建超管账号 ${username}`, ip: getClientIp(request),
+        summary: `引导创建超管账号 ${username}`, ip: getClientIp(context),
       })
     } catch { /* ignore */ }
     return json({

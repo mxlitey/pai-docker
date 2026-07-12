@@ -55,6 +55,34 @@ export default async function onRequestPut(context) {
     return json({ code: 1, message: e.message, data: null }, 400)
   }
 
+  // Bug10 修复：改为 settled 状态时，剩余课时必须为 0
+  // 否则课时会凭空消失，须先走退课流程消耗或退回课时
+  if (enrollment.status === 'settled') {
+    try {
+      const current = await getEnrollment(enrollment.id.trim())
+      if (current) {
+        // 计算更新后的剩余课时（若同时传了 purchasedHours/giftHours 则按新值计算）
+        const newPurchased = enrollment.purchasedHours !== undefined
+          ? Number(enrollment.purchasedHours) : current.purchasedHours
+        const newGift = enrollment.giftHours !== undefined
+          ? Number(enrollment.giftHours) : current.giftHours
+        const purchasedDelta = newPurchased - current.purchasedHours
+        const giftDelta = newGift - current.giftHours
+        const remainPaid = Math.max(0, current.remainingPaidHours + purchasedDelta)
+        const remainGift = Math.max(0, current.remainingGiftHours + giftDelta)
+        if (remainPaid > 0 || remainGift > 0) {
+          return json({
+            code: 1,
+            message: `剩余课时不为 0（付费 ${remainPaid} + 赠课 ${remainGift}），不可直接结转，请先走退课流程消耗或退回课时`,
+            data: { remainingPaidHours: remainPaid, remainingGiftHours: remainGift },
+          }, 400)
+        }
+      }
+    } catch {
+      // 查询失败不阻塞，让后续 updateEnrollment 处理 notFound
+    }
+  }
+
   try {
     const finalEnrollment = {
       id: enrollment.id.trim(),
@@ -63,8 +91,8 @@ export default async function onRequestPut(context) {
       ...(enrollment.unitPrice !== undefined ? { unitPrice: Number(enrollment.unitPrice) } : {}),
       ...(enrollment.totalAmount !== undefined ? { totalAmount: Number(enrollment.totalAmount) } : {}),
       ...(enrollment.paidAmount !== undefined ? { paidAmount: Number(enrollment.paidAmount) } : {}),
-      // 有效期：透传给 store（空串表示清除有效期）；store 用 ?? 兜底保留旧值
-      ...(enrollment.expiredAt !== undefined ? { expiredAt: String(enrollment.expiredAt).slice(0, 10) } : {}),
+      // 报名不再设置有效期，强制清空（忽略前端传入）
+      expiredAt: '',
       ...(enrollment.status ? { status: enrollment.status } : {}),
       ...(enrollment.note !== undefined ? { note: String(enrollment.note).slice(0, 500) } : {}),
     }

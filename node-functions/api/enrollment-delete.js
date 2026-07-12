@@ -1,8 +1,9 @@
 // 删除报名 API
 // DELETE /api/enrollment-delete  body: { id }
-import { deleteEnrollment, getStudentById, getCourseById, json } from '../_lib/store.js'
+// 业务约束：报名记录不可物理删除（保留财务数据完整性），只能走退课流程
+// （通过 enrollment-update 将状态改为 settled）
+import { json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
-import { writeAudit } from '../_lib/audit.js'
 
 async function readBody(request) {
   try {
@@ -23,38 +24,10 @@ export default async function onRequestDelete(context) {
     return json({ code: 1, message: '缺少 id', data: null }, 400)
   }
 
-  try {
-    const result = await deleteEnrollment(id)
-    if (!result.deleted) {
-      return json({ code: 1, message: `报名 id="${id}" 不存在`, data: null }, 404)
-    }
-    const before = result.before || null
-    // 从 before 快照中提取学员名/课程名，让审计能定位到具体对象
-    let studentName = before?.studentId || id
-    let courseName = before?.courseId || ''
-    try {
-      if (before?.studentId) {
-        const s = await getStudentById(before.studentId)
-        if (s) studentName = s.name
-      }
-      if (before?.courseId) {
-        const c = await getCourseById(before.courseId)
-        if (c) courseName = c.name
-      }
-    } catch {}
-    const targetName = `${studentName} ${courseName}`.trim()
-    await writeAudit(context, {
-      action: 'delete',
-      module: 'enrollments',
-      targetType: 'enrollment',
-      targetId: id,
-      targetName,
-      summary: `删除报名「${targetName}」`,
-      before,
-    })
-    return json({ code: 0, message: '报名已删除', data: result })
-  } catch (e) {
-    console.error('[enrollment-delete] 删除异常:', e?.message || String(e))
-    return json({ code: 1, message: '删除失败，请稍后重试', data: null }, 500)
-  }
+  // 报名记录不可删除，只能走退课流程
+  return json({
+    code: 1,
+    message: '报名记录不可删除，请走退课流程（将状态改为「已结转」）',
+    data: null,
+  }, 400)
 }

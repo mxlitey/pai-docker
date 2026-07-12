@@ -1,7 +1,7 @@
 // 新增排课 API
 // POST /api/schedule-add  body: { schedule: Schedule }
 // 用于后台少量新增排课，无需走完整的 JSON 导入流程
-import { addSchedule, getStudentById, getEnrollments, getCourseById, getClassById, json } from '../_lib/store.js'
+import { addSchedule, getStudentById, getEnrollments, getCourseById, getClassById, findScheduleConflicts, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -113,6 +113,22 @@ export default async function onRequestPost(context) {
       note: schedule.note || '',
     }
 
+    // 时间冲突检测：同一学员同一日期时间段重叠的 scheduled 排课
+    if (finalSchedule.startTime && finalSchedule.endTime) {
+      const conflicts = await findScheduleConflicts(
+        finalSchedule.studentId, finalSchedule.date,
+        finalSchedule.startTime, finalSchedule.endTime,
+      )
+      if (conflicts.length > 0) {
+        const c = conflicts[0]
+        return json({
+          code: 1,
+          message: `时间冲突：该学员在 ${finalSchedule.date} ${c.startTime}-${c.endTime} 已有排课「${c.courseName || ''}」`,
+          data: { conflicts },
+        }, 409)
+      }
+    }
+
     const result = await addSchedule(finalSchedule)
     if (result.exists) {
       return json(
@@ -133,7 +149,7 @@ export default async function onRequestPost(context) {
     return json({
       code: 0,
       message: '排课已新增',
-      data: { ...result, schedule: finalSchedule },
+      data: { ...result, schedule: result.schedule || finalSchedule },
     })
   } catch (e) {
     // 仅记录日志，不向客户端回显内部异常

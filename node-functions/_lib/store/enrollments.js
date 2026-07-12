@@ -89,10 +89,11 @@ export async function addEnrollment(enrollment) {
       return { created: false, invalid: '购课课时必须大于 0' }
     }
 
-    // 余额抵扣：从学员账户余额扣除 min(余额, paidAmount)，剩余为现金补差
+    // 余额抵扣：paidAmount 代表总金额（现金+余额），从学员账户余额扣除 min(余额, paidAmount)
+    // 注意：即使 paidAmount 为 0（课程免费）也允许走此分支，由 min(余额, 0)=0 自然跳过抵扣
     let balanceDeduct = 0
     let balanceAfter = 0
-    if (useBalance && paidAmount > 0) {
+    if (useBalance) {
       const stu = db.prepare('SELECT balance FROM students WHERE id=?').get(enrollment.studentId)
       const cur = Number(stu?.balance || 0)
       balanceDeduct = Math.min(cur, paidAmount)
@@ -152,11 +153,10 @@ export async function addEnrollment(enrollment) {
 export async function updateEnrollment(enrollment) {
   validateStorageId(enrollment?.id, 'enrollment.id')
   const db = getDb()
-  const old = db.prepare('SELECT * FROM enrollments WHERE id=?').get(enrollment.id)
-  if (!old) return { updated: false, notFound: true }
-  const before = rowToEnrollment(old)
-
+  // 使用 IMMEDIATE 事务：事务开始即获取写锁，避免并发读-改-写丢更新
   const tx = db.transaction(() => {
+    const old = db.prepare('SELECT * FROM enrollments WHERE id=?').get(enrollment.id)
+    if (!old) return { notFound: true }
     const newPurchased = Number(enrollment.purchasedHours ?? old.purchased_hours)
     const newGift = Number(enrollment.giftHours ?? old.gift_hours)
     const purchasedDelta = newPurchased - old.purchased_hours
@@ -164,7 +164,9 @@ export async function updateEnrollment(enrollment) {
     const newRemainingPaid = Math.max(0, old.remaining_paid_hours + purchasedDelta)
     const newRemainingGift = Math.max(0, old.remaining_gift_hours + giftDelta)
     const unitPrice = Number(enrollment.unitPrice ?? old.unit_price)
-    const totalAmount = Number(enrollment.totalAmount ?? (newPurchased * unitPrice))
+    // 金额默认保留旧值，避免退课把 purchasedHours 改 0 时 totalAmount/paidAmount 被重算清零
+    // 仅当显式传入 totalAmount 时才覆盖；续费时若未传，保留旧总额（不再自动重算）
+    const totalAmount = Number(enrollment.totalAmount ?? old.total_amount)
     const paidAmount = Number(enrollment.paidAmount ?? old.paid_amount)
     const status = enrollment.status || old.status
     db.prepare(`UPDATE enrollments SET
@@ -182,11 +184,18 @@ export async function updateEnrollment(enrollment) {
       enrollment.note ?? old.note,
       enrollment.id,
     )
-    return { purchasedDelta, giftDelta }
+    return {
+      notFound: false,
+      before: rowToEnrollment(old),
+      purchasedDelta,
+      giftDelta,
+    }
   })
   const r = tx()
+  if (r.notFound) return { updated: false, notFound: true }
+  const before = r.before
   const after = rowToEnrollment(db.prepare('SELECT * FROM enrollments WHERE id=?').get(enrollment.id))
-  return { updated: true, notFound: false, before, after, ...r }
+  return { updated: true, notFound: false, before, after, purchasedDelta: r.purchasedDelta, giftDelta: r.giftDelta }
 }
 
 export async function deleteEnrollment(id) {

@@ -1,4 +1,4 @@
-// 管理员账号管理页（仅超管使用）—— 增删改管理员账号、重置密码、启停账号
+// 账号中心管理页（仅超管使用）—— 增删改账户、重置密码、启停账号
 import { useCallback, useEffect, useState } from 'react'
 import type { AdminUser, AdminRole, CurrentAdmin, PermissionModule } from '@/types'
 import { fmtDateTimeFull } from '@/utils/tz'
@@ -86,8 +86,8 @@ export function AdminUserAdmin({ onBack }: AdminUserAdminProps) {
   // 删除账号：需输入用户名确认
   const handleDelete = async (admin: AdminUser) => {
     const ok = await confirmDialog({
-      title: '删除管理员',
-      message: `确认删除管理员「${admin.username}」？此操作不可恢复。`,
+      title: '删除账户',
+      message: `确认删除账户「${admin.username}」？此操作不可恢复。`,
       danger: true,
       requireText: admin.username,
       confirmText: '确认删除',
@@ -108,9 +108,9 @@ export function AdminUserAdmin({ onBack }: AdminUserAdminProps) {
 
   return (
     <div className="min-h-full bg-background">
-      <SubPageHeader title={'管理员账号'} onBack={onBack} count={admins.length} countLabel="个">
+      <SubPageHeader title={'账号中心'} onBack={onBack} count={admins.length} countLabel="个">
         <Button variant="primary" onClick={() => setAdding(true)}>
-          {'+ '}{'新增管理员'}
+          {'+ '}{'新增账户'}
         </Button>
       </SubPageHeader>
 
@@ -119,11 +119,11 @@ export function AdminUserAdmin({ onBack }: AdminUserAdminProps) {
           <LoadingBlock />
         ) : admins.length === 0 ? (
           <EmptyState
-            title="暂无管理员账号"
-            description="点击下方按钮创建第一个管理员账号"
+            title="暂无账号"
+            description="点击下方按钮创建第一个账户"
             action={
               <Button variant="primary" onClick={() => setAdding(true)}>
-                {'+ '}{'新增管理员'}
+                {'+ '}{'新增账户'}
               </Button>
             }
           />
@@ -418,10 +418,11 @@ function AddAdminModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
     if (!/^[A-Za-z0-9_]{3,32}$/.test(form.username)) {
       e.username = '3-32 位字母、数字或下划线'
     }
-    if (form.password.length < 8) {
-      e.password = '密码至少 8 位'
-    } else if (!/[A-Za-z]/.test(form.password) || !/\d/.test(form.password)) {
-      e.password = '密码需同时包含字母和数字'
+    if (form.password.length < 6) {
+      e.password = '密码至少 6 位'
+    }
+    if (!form.realName.trim()) {
+      e.realName = '请填写姓名'
     }
     setErrors(e)
     return Object.keys(e).length === 0
@@ -435,7 +436,7 @@ function AddAdminModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
         username: form.username.trim(),
         password: form.password,
         role: form.role,
-        realName: form.realName.trim() || undefined,
+        realName: form.realName.trim(),
         phone: form.phone.trim() || undefined,
         // 传勾选的权限点；为空时后端回退到角色默认权限
         permissions: Array.from(selectedPerms),
@@ -455,7 +456,7 @@ function AddAdminModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
 
   return (
     <Modal
-      title={'新增管理员'}
+      title={'新增账户'}
       onClose={onClose}
       footer={<ModalFooter onCancel={onClose} onConfirm={submit} loading={saving} confirmText={'创建'} />}
     >
@@ -469,13 +470,13 @@ function AddAdminModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
             autoFocus
           />
         </Field>
-        <Field label={'密码'} required error={errors.password} hint="至少 8 位，需同时包含字母和数字">
+        <Field label={'密码'} required error={errors.password} hint="至少 6 位">
           <input
             type="password"
             className={inputClass}
             value={form.password}
             onChange={(e) => update({ password: e.target.value })}
-            placeholder="至少 8 位，需同时包含字母和数字"
+            placeholder="至少 6 位"
           />
         </Field>
         <Field label={'角色'} required hint="超管仅可通过系统初始化创建">
@@ -495,12 +496,12 @@ function AddAdminModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
             />
           )}
         </Field>
-        <Field label={'姓名'}>
+        <Field label={'姓名'} required error={errors.realName}>
           <input
             className={inputClass}
             value={form.realName}
             onChange={(e) => update({ realName: e.target.value })}
-            placeholder={'选填'}
+            placeholder="请填写姓名"
           />
         </Field>
         <Field label="电话">
@@ -598,11 +599,12 @@ function EditAdminModal({
   const validate = (): boolean => {
     const e: Record<string, string> = {}
     if (form.password) {
-      if (form.password.length < 8) {
-        e.password = '密码至少 8 位'
-      } else if (!/[A-Za-z]/.test(form.password) || !/\d/.test(form.password)) {
-        e.password = '密码需同时包含字母和数字'
+      if (form.password.length < 6) {
+        e.password = '密码至少 6 位'
       }
+    }
+    if (!form.realName.trim()) {
+      e.realName = '请填写姓名'
     }
     setErrors(e)
     return Object.keys(e).length === 0
@@ -623,9 +625,10 @@ function EditAdminModal({
       } = {
         id: admin.id,
         role: form.role,
-        realName: form.realName.trim() || undefined,
+        realName: form.realName.trim(),
         phone: form.phone.trim() || undefined,
-        status: form.status,
+        // 超管始终为 active，不可禁用
+        status: isSuperadmin ? 'active' : form.status,
       }
       if (form.password) payload.password = form.password
       // 权限：超管通配传空数组；否则传勾选的权限点（为空时后端回退到角色默认）
@@ -647,7 +650,7 @@ function EditAdminModal({
 
   return (
     <Modal
-      title={`${'编辑管理员'} · ${admin.username}`}
+      title={`${'编辑账户'} · ${admin.username}`}
       onClose={onClose}
       footer={<ModalFooter onCancel={onClose} onConfirm={submit} loading={saving} confirmText={'保存'} />}
     >
@@ -655,13 +658,16 @@ function EditAdminModal({
         <Field
           label={'角色'}
           required
-          hint={isSuperadmin ? '当前为超管，可降级为管理员或教师' : '不可提升为超管'}
+          hint={isSuperadmin ? '超管不可降级，始终持完整权限' : '不可提升为超管'}
         >
-          <select className={inputClass} value={form.role} onChange={(e) => setRole(e.target.value)}>
+          <select
+            className={inputClass}
+            value={form.role}
+            onChange={(e) => setRole(e.target.value)}
+            disabled={isSuperadmin}
+          >
             {isSuperadmin && (
-              <option value="superadmin" disabled>
-                超管
-              </option>
+              <option value="superadmin">超管</option>
             )}
             <option value="admin">{'管理员'}</option>
             <option value="teacher">{'教师'}</option>
@@ -680,12 +686,12 @@ function EditAdminModal({
             )}
           </Field>
         )}
-        <Field label={'姓名'}>
+        <Field label={'姓名'} required error={errors.realName}>
           <input
             className={inputClass}
             value={form.realName}
             onChange={(e) => update({ realName: e.target.value })}
-            placeholder={'选填'}
+            placeholder="请填写姓名"
           />
         </Field>
         <Field label="电话">
@@ -696,16 +702,18 @@ function EditAdminModal({
             placeholder={'选填'}
           />
         </Field>
-        <Field label={'状态'} required>
-          <select className={inputClass} value={form.status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="active">正常</option>
-            <option value="disabled">已禁用</option>
-          </select>
-        </Field>
+        {!isSuperadmin && (
+          <Field label={'状态'} required>
+            <select className={inputClass} value={form.status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="active">正常</option>
+              <option value="disabled">已禁用</option>
+            </select>
+          </Field>
+        )}
         <Field
           label={'重置密码'}
           error={errors.password}
-          hint="留空则不修改密码；填写则重置为新密码（至少 8 位，需同时包含字母和数字）"
+          hint="留空则不修改密码；填写则重置为新密码（至少 6 位）"
         >
           <input
             type="password"

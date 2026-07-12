@@ -23,9 +23,10 @@ function rowToSchedule(r) {
     color: r.color || '',
     attended: r.attended === null ? undefined : !!r.attended,
     status: r.status || 'scheduled',
-    room: r.room || '',
     makeupFor: r.makeup_for || '',
     rescheduledFrom: r.rescheduled_from || '',
+    deductedEnrollmentId: r.deducted_enrollment_id || '',
+    deductedType: r.deducted_type || '',
   }
 }
 
@@ -100,8 +101,8 @@ export async function getScheduleById(scheduleId) {
 
 function insertSchedule(db, s, id) {
   db.prepare(`INSERT INTO schedules
-    (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, room, makeup_for, rescheduled_from, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, makeup_for, rescheduled_from, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id,
     s.studentId,
     s.studentName,
@@ -117,7 +118,6 @@ function insertSchedule(db, s, id) {
     s.color || '',
     s.attended === undefined ? null : (s.attended ? 1 : 0),
     s.status || 'scheduled',
-    s.room || '',
     s.makeupFor || '',
     s.rescheduledFrom || '',
     now(),
@@ -236,7 +236,7 @@ export async function updateSchedule(oldSchedule, newSchedule) {
     if (!exist) throw new Error('未找到原排课记录')
     const before = rowToSchedule(exist)
     db.prepare(`UPDATE schedules SET
-      student_id=?, student_name=?, class_id=?, course_id=?, course_name=?, teacher=?, location=?, date=?, start_time=?, end_time=?, note=?, color=?, status=?, room=?, makeup_for=?, rescheduled_from=?
+      student_id=?, student_name=?, class_id=?, course_id=?, course_name=?, teacher=?, location=?, date=?, start_time=?, end_time=?, note=?, color=?, status=?, makeup_for=?, rescheduled_from=?
       WHERE id=?`).run(
       newSchedule.studentId,
       newSchedule.studentName,
@@ -251,7 +251,6 @@ export async function updateSchedule(oldSchedule, newSchedule) {
       newSchedule.note || '',
       newSchedule.color || '',
       newSchedule.status || 'scheduled',
-      newSchedule.room || '',
       newSchedule.makeupFor || '',
       newSchedule.rescheduledFrom || '',
       newSchedule.id,
@@ -321,51 +320,119 @@ export async function batchSetAttendance(items) {
         return db.prepare(`SELECT * FROM enrollments WHERE student_id=? AND course_id=? AND status='active'
           ORDER BY datetime(enrolled_at), datetime(created_at) LIMIT 1`).get(row.student_id, courseId)
       }
-      let enr = findEnrollment(row.course_id)
-      let deductedCourseName = row.course_name || row.course_id
-      // 补课且当前课程找不到报名：回退到原排课课程扣课时
-      if (!enr && row.makeup_for) {
-        const originalRow = db.prepare('SELECT * FROM schedules WHERE id=?').get(row.makeup_for)
-        if (originalRow && originalRow.course_id && originalRow.course_id !== row.course_id) {
-          enr = findEnrollment(originalRow.course_id)
-          deductedCourseName = originalRow.course_name || originalRow.course_id
-        }
-      }
-      if (!enr) {
-        errors.push(`学员 ${row.student_id} 未报名课程 ${row.course_name || row.course_id}（含原排课课程），跳过课时扣减`)
-        continue
-      }
-
-      // 到课但剩余课时为 0：不更新 attended，保持状态一致（避免"已到课但未扣课时"）
-      if (newAttended && enr.remaining_paid_hours <= 0 && enr.remaining_gift_hours <= 0) {
-        errors.push(`学员 ${row.student_id} 课程 ${deductedCourseName} 剩余课时不足，无法标记到课`)
-        continue
-      }
-
-      // 课时校验通过，再更新 attended 状态
-      db.prepare('UPDATE schedules SET attended=? WHERE id=?').run(newAttended ? 1 : 0, item.scheduleId)
-      updatedSchedules++
 
       if (newAttended) {
+        // === 到课：扣减课时 ===
+        let enr = findEnrollment(row.course_id)
+        let deductedCourseName = row.course_name || row.course_id
+        // 补课且当前课程找不到报名：回退到原排课课程扣课时
+        if (!enr && row.makeup_for) {
+          const originalRow = db.prepare('SELECT * FROM schedules WHERE id=?').get(row.makeup_for)
+          if (originalRow && originalRow.course_id && originalRow.course_id !== row.course_id) {
+            enr = findEnrollment(originalRow.course_id)
+            deductedCourseName = originalRow.course_name || originalRow.course_id
+          }
+        }
+        if (!enr) {
+          errors.push(`学员 ${row.student_id} 未报名课程 ${row.course_name || row.course_id}（含原排课课程），跳过课时扣减`)
+          continue
+        }
+        // 到课但剩余课时为 0：不更新 attended，保持状态一致（避免"已到课但未扣课时"）
+        if (enr.remaining_paid_hours <= 0 && enr.remaining_gift_hours <= 0) {
+          errors.push(`学员 ${row.student_id} 课程 ${deductedCourseName} 剩余课时不足，无法标记到课`)
+          continue
+        }
+        // 扣减：先扣付费，后扣赠课；记录扣的是哪条报名、哪种类型，回退时精准回退
+        let deductedType
         if (enr.remaining_paid_hours > 0) {
           enr.remaining_paid_hours -= 1
+          deductedType = 'paid'
         } else {
           enr.remaining_gift_hours -= 1
+          deductedType = 'gift'
         }
+        db.prepare('UPDATE enrollments SET remaining_paid_hours=?, remaining_gift_hours=? WHERE id=?')
+          .run(enr.remaining_paid_hours, enr.remaining_gift_hours, enr.id)
+        // 课时校验通过，更新 attended 状态并记录扣减来源
+        db.prepare('UPDATE schedules SET attended=?, deducted_enrollment_id=?, deducted_type=? WHERE id=?')
+          .run(1, enr.id, deductedType, item.scheduleId)
+        updatedSchedules++
+        touchedEnrollmentIds.add(enr.id)
       } else {
-        if (enr.remaining_gift_hours < enr.gift_hours) {
+        // === 改缺勤：回退课时 ===
+        // 优先按当初扣减记录的 enrollment_id 和 type 精准回退（修复回退到错误报名/错误课时类型）
+        const deductedEnrollmentId = row.deducted_enrollment_id
+        const deductedType = row.deducted_type
+        let enr = null
+        if (deductedEnrollmentId) {
+          enr = db.prepare('SELECT * FROM enrollments WHERE id=?').get(deductedEnrollmentId)
+        }
+        if (enr && deductedType === 'paid') {
+          // 当初扣的是付费，回退到付费
+          enr.remaining_paid_hours += 1
+        } else if (enr && deductedType === 'gift') {
+          // 当初扣的是赠课，回退到赠课
           enr.remaining_gift_hours += 1
         } else {
-          enr.remaining_paid_hours += 1
+          // 无扣减记录（旧数据兼容）：回退到启发式查找的报名
+          enr = findEnrollment(row.course_id)
+          let deductedCourseName = row.course_name || row.course_id
+          if (!enr && row.makeup_for) {
+            const originalRow = db.prepare('SELECT * FROM schedules WHERE id=?').get(row.makeup_for)
+            if (originalRow && originalRow.course_id && originalRow.course_id !== row.course_id) {
+              enr = findEnrollment(originalRow.course_id)
+              deductedCourseName = originalRow.course_name || originalRow.course_id
+            }
+          }
+          if (!enr) {
+            errors.push(`学员 ${row.student_id} 回退课时找不到报名记录，跳过`)
+            continue
+          }
+          // 启发式回退：先回赠课（不超过 gift_hours 上限），后回付费
+          if (enr.remaining_gift_hours < enr.gift_hours) {
+            enr.remaining_gift_hours += 1
+          } else {
+            enr.remaining_paid_hours += 1
+          }
         }
+        db.prepare('UPDATE enrollments SET remaining_paid_hours=?, remaining_gift_hours=? WHERE id=?')
+          .run(enr.remaining_paid_hours, enr.remaining_gift_hours, enr.id)
+        db.prepare('UPDATE schedules SET attended=?, deducted_enrollment_id=?, deducted_type=? WHERE id=?')
+          .run(0, '', '', item.scheduleId)
+        updatedSchedules++
+        touchedEnrollmentIds.add(enr.id)
       }
-      db.prepare('UPDATE enrollments SET remaining_paid_hours=?, remaining_gift_hours=? WHERE id=?')
-        .run(enr.remaining_paid_hours, enr.remaining_gift_hours, enr.id)
-      touchedEnrollmentIds.add(enr.id)
     }
     updatedEnrollments = touchedEnrollmentIds.size
     return { updatedSchedules, updatedEnrollments }
   })
   const r = tx()
   return { ...r, errors }
+}
+
+// 批量查询哪些排课已有补课排课（makeup_for 指向）
+// 返回 Set<string>，包含所有已有补课的原排课 id
+export async function getScheduleIdsWithMakeup(scheduleIds) {
+  if (!scheduleIds || scheduleIds.length === 0) return new Set()
+  const db = getDb()
+  const placeholders = scheduleIds.map(() => '?').join(',')
+  const rows = db.prepare(
+    `SELECT DISTINCT makeup_for FROM schedules WHERE makeup_for IN (${placeholders}) AND status != 'cancelled'`,
+  ).all(...scheduleIds)
+  return new Set(rows.map((r) => r.makeup_for).filter(Boolean))
+}
+
+// 排课时间冲突检测：同一学员同一日期，时间段重叠的 scheduled 排课
+// 返回冲突排课列表（不含已取消/已点名历史排课）；excludeId 用于排课更新场景排除自身
+export async function findScheduleConflicts(studentId, date, startTime, endTime, excludeId = '') {
+  const db = getDb()
+  if (!studentId || !date || !startTime || !endTime) return []
+  const rows = db.prepare(
+    `SELECT * FROM schedules
+     WHERE student_id=? AND date=? AND status='scheduled'
+       AND start_time < ? AND end_time > ?
+       AND (? = '' OR id != ?)
+     ORDER BY start_time`,
+  ).all(studentId, date, endTime, startTime, excludeId, excludeId)
+  return rows.map(rowToSchedule)
 }

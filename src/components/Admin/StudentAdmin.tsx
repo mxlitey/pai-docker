@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Student, EnrollmentSummary, GradeStatus, Grade, StudentStatus } from '@/types'
+import type { Student, EnrollmentSummary, GradeStatus, Grade } from '@/types'
 import { cn } from '@/utils/cn'
 import {
   Button,
@@ -255,7 +255,6 @@ interface StudentFormState {
   parentName: string
   gender: string
   birthday: string
-  status: StudentStatus
   tags: string
   remark: string
   source: string
@@ -273,7 +272,6 @@ function StudentEditModal({ student, grades, onGradesChange, onClose, onSubmit }
           parentName: student.parentName || '',
           gender: student.gender || '',
           birthday: student.birthday || '',
-          status: student.status || 'active',
           tags: student.tags || '',
           remark: student.remark || '',
           source: student.source || '',
@@ -287,7 +285,6 @@ function StudentEditModal({ student, grades, onGradesChange, onClose, onSubmit }
           parentName: '',
           gender: '',
           birthday: '',
-          status: 'active',
           tags: '',
           remark: '',
           source: '',
@@ -361,7 +358,7 @@ function StudentEditModal({ student, grades, onGradesChange, onClose, onSubmit }
       parentName: form.parentName.trim(),
       gender: form.gender,
       birthday: form.birthday,
-      status: form.status,
+      status: 'active',
       tags: form.tags.trim(),
       remark: form.remark.trim(),
       source: form.source.trim(),
@@ -499,18 +496,6 @@ function StudentEditModal({ student, grades, onGradesChange, onClose, onSubmit }
             value={form.birthday}
             onChange={(e) => update({ birthday: e.target.value })}
           />
-        </Field>
-
-        <Field label={'状态'} required>
-          <select
-            className={inputClass}
-            value={form.status}
-            onChange={(e) => update({ status: e.target.value as StudentStatus })}
-          >
-            <option value="active">{'在读'}</option>
-            <option value="inactive">{'停课'}</option>
-            <option value="graduated">{'毕业'}</option>
-          </select>
         </Field>
 
         <Field label={'来源'} hint={'如：转介绍 / 地推 / 线上'}>

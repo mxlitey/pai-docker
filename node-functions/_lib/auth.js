@@ -120,7 +120,7 @@ export const PERMISSION_DEFINITIONS = [
   { module: 'settings', label: '系统设置', actions: [
     { key: 'settings:manage', label: '管理' },
   ]},
-  { module: 'admins', label: '管理员账号', actions: [
+  { module: 'admins', label: '账号中心', actions: [
     { key: 'admins:view', label: '查看' },
     { key: 'admins:create', label: '新增' },
     { key: 'admins:update', label: '编辑' },
@@ -218,14 +218,17 @@ function constantTimeEqual(a, b) {
 // OWASP 2023 推荐 PBKDF2-HMAC-SHA256 最小 600000 次迭代
 const PBKDF2_ITERATIONS = 600000
 
-// 密码策略校验：至少 8 位，且包含字母和数字
+// 密码策略校验：至少 8 位，须包含字母和数字（OWASP 2023 建议）
 // 返回 null 表示通过，否则返回错误信息
 export function validatePasswordPolicy(password) {
   if (typeof password !== 'string' || password.length < 8) {
     return '密码至少 8 位'
   }
+  if (password.length > 128) {
+    return '密码长度不能超过 128 位'
+  }
   if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-    return '密码需同时包含字母和数字'
+    return '密码须同时包含字母和数字'
   }
   return null
 }
@@ -389,18 +392,33 @@ export async function requirePermission(context, permission) {
       { status: 403, headers: { 'Content-Type': 'application/json; charset=utf-8' } },
     )
   }
-  // 查库取最新状态与 permissions（superadmin 也需查库，防止被禁用后仍可操作）
+  // 查库取最新状态与 permissions（superadmin 也需查库，防止被降级/禁用后仍可操作）
   const latest = await getAdminById(admin.id)
+  // 账号已被删除：即使 token 未过期也拒绝
+  if (!latest) {
+    return new Response(
+      JSON.stringify({ code: 403, message: '账号不存在，无法执行此操作', data: null }),
+      { status: 403, headers: { 'Content-Type': 'application/json; charset=utf-8' } },
+    )
+  }
   // 账号已被禁用：即使 token 未过期也拒绝
-  if (latest && latest.status === 'disabled') {
+  if (latest.status === 'disabled') {
     return new Response(
       JSON.stringify({ code: 403, message: '账号已被禁用，无法执行此操作', data: null }),
       { status: 403, headers: { 'Content-Type': 'application/json; charset=utf-8' } },
     )
   }
-  // superadmin 放行权限校验（但上面的 status 校验仍生效）
-  if (admin.role === 'superadmin') return null
-  const adminForCheck = latest || { role: admin.role, permissions: '' }
+  // superadmin 放行权限校验（以数据库最新角色为准，防止降级后旧 token 仍持超管权限）
+  if (latest.role === 'superadmin') {
+    // 用 DB 最新角色覆写 context.admin.role，防止下游用 token 陈旧角色做数据范围过滤导致越权读取
+    context.admin.role = latest.role
+    context.admin.permissions = latest.permissions
+    return null
+  }
+  // 用 DB 最新角色/权限覆写 context.admin，防止 admin 被降级为 teacher 后
+  // 下游路由仍用 token 内的陈旧 'admin' 角色做数据范围过滤，导致越权读取全量数据
+  context.admin.role = latest.role
+  const adminForCheck = latest
   if (!hasPermission(adminForCheck, permission)) {
     return new Response(
       JSON.stringify({ code: 403, message: '权限不足，无法执行此操作', data: null }),
@@ -412,8 +430,16 @@ export async function requirePermission(context, permission) {
   return null
 }
 
-// 从请求中提取客户端 IP（审计用）
-export function getClientIp(request) {
+// 从请求中提取客户端 IP（限流与审计用）
+// 安全策略：优先使用 TCP 连接的真实远端地址（不可被客户端伪造），
+// 防止攻击者伪造 X-Forwarded-For 绕过登录限流。
+// 仅在 context.remoteAddress 缺失（如边缘函数环境）时回退到 XFF。
+export function getClientIp(context) {
+  // 支持 context 对象或裸 request（向后兼容）
+  const ctx = context && context.request ? context : { request: context, remoteAddress: undefined }
+  if (ctx.remoteAddress) return ctx.remoteAddress
+  const request = ctx.request
+  if (!request) return ''
   const xff = request.headers.get('x-forwarded-for')
   if (xff) return xff.split(',')[0].trim()
   return request.headers.get('x-real-ip') || ''

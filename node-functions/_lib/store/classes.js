@@ -138,7 +138,12 @@ export async function deleteClass(classId) {
   const db = getDb()
   const cls = db.prepare('SELECT * FROM classes WHERE id=?').get(classId)
   if (!cls) return { deleted: false, notFound: true }
-  const before = rowToClass(cls, db.prepare('SELECT COUNT(*) AS c FROM class_members WHERE class_id=?').get(classId).c)
+  const memberCount = db.prepare('SELECT COUNT(*) AS c FROM class_members WHERE class_id=?').get(classId).c
+  const before = rowToClass(cls, memberCount)
+  // 删除前提：班级内没有成员
+  if (memberCount > 0) {
+    return { deleted: false, blocked: true, memberCount, message: `班级内仍有 ${memberCount} 名成员，请先移除全部成员后再删除` }
+  }
   // 引用检查：仍有排课引用该班级则拒绝删除
   const scheduleCount = db.prepare("SELECT COUNT(*) AS c FROM schedules WHERE class_id=?").get(classId).c
   if (scheduleCount > 0) {
@@ -198,14 +203,22 @@ export async function removeClassMembers(classId, studentIds) {
   validateStorageId(classId, 'classId')
   const db = getDb()
   let removed = 0
+  let deletedSchedules = 0
   const tx = db.transaction(() => {
     const stmt = db.prepare('DELETE FROM class_members WHERE class_id=? AND student_id=?')
+    // 同步删除该班级下这些学员的未点名排课（保留已点名排课用于报表）
+    const delSchedStmt = db.prepare(
+      `DELETE FROM schedules WHERE class_id=? AND student_id=? AND attended IS NULL`
+    )
     for (const sid of studentIds) {
       if (!sid) continue
       const info = stmt.run(classId, sid)
-      if (info.changes > 0) removed++
+      if (info.changes > 0) {
+        removed++
+        deletedSchedules += delSchedStmt.run(classId, sid).changes
+      }
     }
   })
   tx()
-  return { removed }
+  return { removed, deletedSchedules }
 }

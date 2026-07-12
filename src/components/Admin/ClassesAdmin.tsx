@@ -4,7 +4,7 @@
 // - 删除班级：二次确认（要求输入班级名），仍有排课引用时后端拒绝并返回 scheduleCount
 // - 成员管理：加载成员名单，支持批量添加（从学员库排除已是成员，支持搜索）/ 单个移除
 import { useEffect, useMemo, useState } from 'react'
-import type { ClassInfo, ClassMember, ClassStatus, Course, Grade, Student } from '@/types'
+import type { ClassInfo, ClassMember, Course, Grade, Student } from '@/types'
 import {
   addClass,
   addClassMembers,
@@ -149,7 +149,6 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
                     <th className="text-left py-2 px-2 font-medium">{'教师'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'成员数'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'容量'}</th>
-                    <th className="text-left py-2 px-2 font-medium">{'状态'}</th>
                     <th className="text-right py-2 px-2 font-medium">{'操作'}</th>
                   </tr>
                 </thead>
@@ -173,15 +172,6 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
                         </td>
                         <td className="py-2.5 px-2 text-muted-foreground">{c.memberCount ?? 0}</td>
                         <td className="py-2.5 px-2 text-muted-foreground">{c.capacity ?? 0}</td>
-                        <td className="py-2.5 px-2">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            c.status === 'inactive'
-                              ? 'bg-muted text-muted-foreground'
-                              : 'bg-green-50 text-green-700'
-                          }`}>
-                            {c.status === 'inactive' ? '停用' : '启用'}
-                          </span>
-                        </td>
                         <td className="py-2.5 px-2 text-right whitespace-nowrap">
                           <button
                             onClick={() => setEditing(c)}
@@ -259,7 +249,6 @@ interface ClassFormState {
   defaultStartTime: string
   defaultEndTime: string
   capacity: string // 字符串承载输入，保存时转 number
-  status: ClassStatus
   remark: string
 }
 
@@ -277,7 +266,6 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
           defaultStartTime: cls.defaultStartTime || '',
           defaultEndTime: cls.defaultEndTime || '',
           capacity: String(cls.capacity ?? 0),
-          status: cls.status || 'active',
           remark: cls.remark || '',
         }
       : {
@@ -290,7 +278,6 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
           defaultStartTime: '',
           defaultEndTime: '',
           capacity: '0',
-          status: 'active',
           remark: '',
         },
   )
@@ -356,7 +343,7 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
           defaultStartTime: form.defaultStartTime || undefined,
           defaultEndTime: form.defaultEndTime || undefined,
           capacity: Number(form.capacity || 0),
-          status: form.status,
+          status: 'active',
           remark: form.remark.trim(),
         })
         if (result.code === 0) {
@@ -377,7 +364,7 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
           defaultStartTime: form.defaultStartTime || undefined,
           defaultEndTime: form.defaultEndTime || undefined,
           capacity: Number(form.capacity || 0),
-          status: form.status,
+          status: 'active',
           remark: form.remark.trim(),
         })
         if (result.code === 0) {
@@ -430,6 +417,7 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
             className={inputClass}
             value={form.grade}
             onChange={(e) => update({ grade: e.target.value })}
+            disabled={isEdit}
           >
             <option value="">{'请选择年级'}</option>
             {grades.map((g) => (
@@ -447,6 +435,7 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
             className={inputClass}
             value={form.courseId}
             onChange={(e) => handleCourseChange(e.target.value)}
+            disabled={isEdit}
           >
             <option value="">请选择课程…</option>
             {courses
@@ -510,18 +499,6 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
             className={inputClass}
             placeholder={'如 20'}
           />
-        </Field>
-
-        {/* 状态 */}
-        <Field label={'状态'}>
-          <select
-            className={inputClass}
-            value={form.status}
-            onChange={(e) => update({ status: e.target.value as ClassStatus })}
-          >
-            <option value="active">{'启用'}</option>
-            <option value="inactive">{'停用'}</option>
-          </select>
         </Field>
 
         {/* 备注 */}

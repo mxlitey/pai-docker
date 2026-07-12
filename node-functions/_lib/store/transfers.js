@@ -58,11 +58,15 @@ export async function refundEnrollment({ transfer }) {
 
     // 退课后取消该学员该课程未来未点名的排课（date >= 今天 且 attended IS NULL）
     // 已点名的历史排课保留，未来排课取消避免点名时找不到 active 报名记录
+    // 同时取消插班补课生成的排课（其 makeup_for 指向该课程的原排课），避免漏掉孤儿排课
     const todayStr = today()
     const cancelInfo = db.prepare(
-      `UPDATE schedules SET status='cancelled' 
-       WHERE student_id=? AND course_id=? AND date>=? AND attended IS NULL AND status='scheduled'`
-    ).run(transfer.studentId, from.course_id, todayStr)
+      `UPDATE schedules SET status='cancelled'
+       WHERE student_id=? AND date>=? AND attended IS NULL AND status='scheduled'
+         AND (course_id=? OR makeup_for IN (
+           SELECT id FROM schedules WHERE student_id=? AND course_id=?
+         ))`
+    ).run(transfer.studentId, todayStr, from.course_id, transfer.studentId, from.course_id)
 
     // 金额进学员账户余额（仅当金额 > 0）
     let balanceAfter = Number(db.prepare('SELECT balance FROM students WHERE id=?').get(transfer.studentId)?.balance || 0)
