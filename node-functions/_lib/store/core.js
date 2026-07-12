@@ -43,6 +43,9 @@ export function getDb() {
   const db = new Database(DB_PATH)
   // WAL 模式：读不阻塞写，并发友好
   db.pragma('journal_mode = WAL')
+  // 自动 checkpoint：每 500 帧（约 2MB WAL）触发一次，避免 WAL 文件无限增长
+  // 默认值 1000 帧在写密集场景下 WAL 会膨胀到数十 MB，影响启动恢复速度
+  db.pragma('wal_autocheckpoint = 500')
   db.pragma('foreign_keys = ON')
   // 建表（完整新 schema）
   db.exec(`
@@ -61,6 +64,7 @@ export function getDb() {
       balance      REAL NOT NULL DEFAULT 0,
       created_at   TEXT DEFAULT (datetime('now', 'localtime'))
     );
+    CREATE INDEX IF NOT EXISTS idx_students_name ON students(name);
 
     CREATE TABLE IF NOT EXISTS courses (
       id                 TEXT PRIMARY KEY,

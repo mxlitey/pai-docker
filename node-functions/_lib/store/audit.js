@@ -61,11 +61,17 @@ export async function getAuditLogs({
   if (action) { sql += ' AND action=?'; params.push(action) }
   if (startDate) { sql += ' AND created_at>=?'; params.push(startDate) }
   if (endDate) { sql += ' AND created_at<=?'; params.push(endDate + ' 23:59:59') }
-  // 计数
-  const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) AS c')
-  const total = db.prepare(countSql).get(...params)?.c || 0
-  // 分页
-  sql += ' ORDER BY datetime(created_at) DESC, id DESC LIMIT ? OFFSET ?'
+  // 计数：审计日志只增不删，用 max(rowid) 作近似总数，避免全表 COUNT(*)
+  // 有过滤条件时回退到精确 COUNT（过滤后行数通常不大）
+  let total
+  if (actorId || module || targetType || targetId || action || startDate || endDate) {
+    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) AS c')
+    total = db.prepare(countSql).get(...params)?.c || 0
+  } else {
+    total = db.prepare('SELECT MAX(rowid) AS c FROM audit_logs').get()?.c || 0
+  }
+  // 分页：created_at 已是 'YYYY-MM-DD HH:MM:SS' 字典序可比较，直接 ORDER BY 可命中 idx_audit_created
+  sql += ' ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?'
   const rows = db.prepare(sql).all(...params, pageSize, (page - 1) * pageSize)
   return { logs: rows.map(rowToAuditLog), total, page, pageSize }
 }

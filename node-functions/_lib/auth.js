@@ -378,6 +378,29 @@ export async function requireAuth(context) {
   }
 }
 
+// ========== 管理员信息短期缓存 ==========
+// 缓存 adminId -> { data, expireAt }，避免每次 requirePermission 都查库
+// TTL 5 秒：教培场景降级/禁用操作的 5 秒延迟可接受，换取并发鉴权性能大幅提升
+// 命中时仍执行 context.admin 覆写，保留越权防护逻辑（防 token 内陈旧角色）
+const adminCache = new Map()
+const ADMIN_CACHE_TTL_MS = 5000
+
+// 失效指定管理员的缓存（账号更新/降级/禁用时调用，保证下次请求拿到最新数据）
+export function invalidateAdminCache(adminId) {
+  if (adminId) adminCache.delete(adminId)
+  else adminCache.clear()
+}
+
+// 读取管理员最新信息（带 5s 短缓存）
+async function getLatestAdmin(adminId) {
+  const now = Date.now()
+  const hit = adminCache.get(adminId)
+  if (hit && hit.expireAt > now) return hit.data
+  const data = await getAdminById(adminId)
+  adminCache.set(adminId, { data, expireAt: now + ADMIN_CACHE_TTL_MS })
+  return data
+}
+
 // 权限校验中间件：requireAuth 通过后再校验权限，失败返回 403
 // 用法：const fail = await requirePermission(context, 'admins:create')
 // 权限判定：查库取最新 permissions，支持自定义权限覆盖角色默认
@@ -392,8 +415,8 @@ export async function requirePermission(context, permission) {
       { status: 403, headers: { 'Content-Type': 'application/json; charset=utf-8' } },
     )
   }
-  // 查库取最新状态与 permissions（superadmin 也需查库，防止被降级/禁用后仍可操作）
-  const latest = await getAdminById(admin.id)
+  // 查库取最新状态与 permissions（带 5s 短缓存，防止降级/禁用后仍可操作）
+  const latest = await getLatestAdmin(admin.id)
   // 账号已被删除：即使 token 未过期也拒绝
   if (!latest) {
     return new Response(

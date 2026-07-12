@@ -23,9 +23,22 @@ function rowToStudent(r) {
 }
 
 // ========== 学员 ==========
-export async function getStudents() {
+// 无 q 参数：返回全量学员（按创建时间排序）
+// 有 q 参数：精确匹配优先，模糊匹配其次（name LIKE %q%），结果按「精确在前」排序
+// SQL 下推到 DB 利用 idx_students_name 索引，避免 JS 全量遍历
+export async function getStudents(q) {
   const db = getDb()
-  const rows = db.prepare('SELECT * FROM students ORDER BY created_at, id').all()
+  if (!q || !q.trim()) {
+    const rows = db.prepare('SELECT * FROM students ORDER BY created_at, id').all()
+    return rows.map(rowToStudent)
+  }
+  const kw = q.trim()
+  // 精确匹配 + 模糊匹配，用 CASE 保持「精确在前」的排序（与原 JS filter 行为一致）
+  const rows = db.prepare(
+    `SELECT * FROM students
+     WHERE name = ? OR name LIKE ?
+     ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END, created_at, id`,
+  ).all(kw, `%${kw}%`, kw)
   return rows.map(rowToStudent)
 }
 

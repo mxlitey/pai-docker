@@ -2,7 +2,7 @@
 // DELETE /api/admin-delete  body: { id }
 // 约束：不可删除自己；不可删除最后一个超管
 import { deleteAdmin, getAdminById, countSuperAdmins, json } from '../_lib/store.js'
-import { requirePermission } from '../_lib/auth.js'
+import { requirePermission, invalidateAdminCache } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
 async function readBody(request) {
@@ -37,6 +37,8 @@ export default async function onRequestDelete(context) {
       targetType: 'admin', targetId: id, targetName: target.username,
       summary: `删除账号 ${target.username}（${target.role}）`,
     })
+    // 失效该账号的权限缓存
+    invalidateAdminCache(id)
     return json({ code: 0, message: '账号已删除', data: null })
   } catch (e) {
     console.error('[admin-delete] 异常:', e?.message || String(e))
