@@ -908,7 +908,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
         onSelect={handleSelect}
         onLogout={() => {
           clearToken()
-          setAuthed(false)
+          onExit()
         }}
       />
       <SidebarInset>

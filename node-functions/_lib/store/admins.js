@@ -12,7 +12,6 @@ function rowToAdmin(r) {
     realName: r.real_name || '',
     phone: r.phone || '',
     status: r.status || 'active',
-    teacherId: r.teacher_id || '',
     // permissions 存为逗号分隔串，空串表示用角色默认权限
     permissions: r.permissions || '',
     lastLoginAt: r.last_login_at || '',

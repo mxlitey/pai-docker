@@ -23,7 +23,6 @@ function rowToSchedule(r) {
     color: r.color || '',
     attended: r.attended === null ? undefined : !!r.attended,
     status: r.status || 'scheduled',
-    room: r.room || '',
     makeupFor: r.makeup_for || '',
     rescheduledFrom: r.rescheduled_from || '',
     deductedEnrollmentId: r.deducted_enrollment_id || '',
@@ -102,8 +101,8 @@ export async function getScheduleById(scheduleId) {
 
 function insertSchedule(db, s, id) {
   db.prepare(`INSERT INTO schedules
-    (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, room, makeup_for, rescheduled_from, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, makeup_for, rescheduled_from, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id,
     s.studentId,
     s.studentName,
@@ -119,7 +118,6 @@ function insertSchedule(db, s, id) {
     s.color || '',
     s.attended === undefined ? null : (s.attended ? 1 : 0),
     s.status || 'scheduled',
-    s.room || '',
     s.makeupFor || '',
     s.rescheduledFrom || '',
     now(),
@@ -238,7 +236,7 @@ export async function updateSchedule(oldSchedule, newSchedule) {
     if (!exist) throw new Error('未找到原排课记录')
     const before = rowToSchedule(exist)
     db.prepare(`UPDATE schedules SET
-      student_id=?, student_name=?, class_id=?, course_id=?, course_name=?, teacher=?, location=?, date=?, start_time=?, end_time=?, note=?, color=?, status=?, room=?, makeup_for=?, rescheduled_from=?
+      student_id=?, student_name=?, class_id=?, course_id=?, course_name=?, teacher=?, location=?, date=?, start_time=?, end_time=?, note=?, color=?, status=?, makeup_for=?, rescheduled_from=?
       WHERE id=?`).run(
       newSchedule.studentId,
       newSchedule.studentName,
@@ -253,7 +251,6 @@ export async function updateSchedule(oldSchedule, newSchedule) {
       newSchedule.note || '',
       newSchedule.color || '',
       newSchedule.status || 'scheduled',
-      newSchedule.room || '',
       newSchedule.makeupFor || '',
       newSchedule.rescheduledFrom || '',
       newSchedule.id,
