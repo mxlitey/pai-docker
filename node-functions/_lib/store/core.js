@@ -142,6 +142,12 @@ export function getDb() {
     CREATE INDEX IF NOT EXISTS idx_schedules_student ON schedules(student_id);
     CREATE INDEX IF NOT EXISTS idx_schedules_course ON schedules(course_id);
     CREATE INDEX IF NOT EXISTS idx_schedules_class ON schedules(class_id);
+    -- 复合索引：按课程+日期范围查排课（searchSchedules 的核心查询路径）
+    -- 无此索引时 idx_schedules_course 返回千万级记录再排序，耗时 60s+；有此索引后 <100ms
+    CREATE INDEX IF NOT EXISTS idx_schedules_course_date ON schedules(course_id, date, start_time);
+    -- 部分索引：仅索引有补课关联的排课（绝大多数行 makeup_for 为空，不进索引）
+    -- getScheduleIdsWithMakeup 用 IN(...) 查询，无索引时千万级全表扫描耗时数十秒
+    CREATE INDEX IF NOT EXISTS idx_schedules_makeup_for ON schedules(makeup_for) WHERE makeup_for != '';
 
     CREATE TABLE IF NOT EXISTS enrollments (
       id                    TEXT PRIMARY KEY,

@@ -425,8 +425,10 @@ export async function getScheduleIdsWithMakeup(scheduleIds) {
   if (!scheduleIds || scheduleIds.length === 0) return new Set()
   const db = getDb()
   const placeholders = scheduleIds.map(() => '?').join(',')
+  // 必须显式加 makeup_for != '' 才能命中部分索引 idx_schedules_makeup_for，
+  // 否则 SQLite 退化为全表扫描（千万级数据 60s+）
   const rows = db.prepare(
-    `SELECT DISTINCT makeup_for FROM schedules WHERE makeup_for IN (${placeholders}) AND status != 'cancelled'`,
+    `SELECT DISTINCT makeup_for FROM schedules WHERE makeup_for != '' AND makeup_for IN (${placeholders}) AND status != 'cancelled'`,
   ).all(...scheduleIds)
   return new Set(rows.map((r) => r.makeup_for).filter(Boolean))
 }
