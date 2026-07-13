@@ -6,7 +6,7 @@
 用法：
   python3 scripts/perf_test.py                              # 交互式选择
   python3 scripts/perf_test.py quick                        # 简易评估（D1-D16，约 4 分钟）
-  python3 scripts/perf_test.py stress                       # 压力测试（S1-S6 + 评估报告，约 20 分钟）
+  python3 scripts/perf_test.py stress                       # 压力测试（S1-S7 + 评估报告，含大数据量测试）
 
   # 指定测试目标环境（默认本机）
   python3 scripts/perf_test.py quick --local                # 本机 127.0.0.1:8788
@@ -61,6 +61,7 @@
   S4 混合负载（读写 7:3，测真实场景瓶颈）
   S5 审计日志查询阶梯（深翻页/大页/按模块过滤，找审计表变慢拐点）
   S6 点名压力（50/100/200条批量扣课 + 并发点名）
+  S7 排课数据量阶梯（1万→10万→100万→1000万排课记录，测大数据量下查询/写入性能拐点）
 
   SLA 阈值：P99 > 1s 或 错误率 > 1% 或 CPU > 80% 判定「不好用」
 
@@ -396,7 +397,7 @@ def create_schedule(student_id, course_id, class_id="", date=None, course_name="
     return None
 
 
-def batch_add_schedules(student_ids, course_id, dates, start_time="09:00", end_time="10:00", class_id="", course_name="性能测试课程"):
+def batch_add_schedules(student_ids, course_id, dates, start_time="09:00", end_time="10:00", class_id="", course_name="性能测试课程", timeout=60):
     """批量排课（一次 API 调用）"""
     if not student_ids or not dates:
         return 0
@@ -410,7 +411,7 @@ def batch_add_schedules(student_ids, course_id, dates, start_time="09:00", end_t
         "dates": dates,
         "startTime": start_time,
         "endTime": end_time,
-    }, token=TOKEN, timeout=60)
+    }, token=TOKEN, timeout=timeout)
     if r.get("code") == 0:
         return r["data"].get("created", 0)
     return 0
@@ -1510,6 +1511,152 @@ def s6_attendance_stress(student_ids, course_id):
     return results
 
 
+def s7_schedule_volume_staircase(course_id, student_ids):
+    """S7 排课数据量阶梯：逐步加排课记录到百万/千万级，找查询/写入变慢拐点
+
+    排课记录是系统中增长最快的业务数据之一。本测试通过批量创建排课记录，
+    逐步达到 1万→10万→100万→1000万 级别，在每个阶梯测试：
+    - 按学员查排课（最常用查询，数据量大时全表扫描风险高）
+    - 按课程查排课（返回量大，易触发瓶颈）
+    - 单条排课写入（含冲突检测，数据量大时检测范围增大）
+    - 批量排课写入（N×M 冲突检测，排课写入的核心瓶颈）
+    """
+    import datetime as dt
+
+    print("\n" + "=" * 60)
+    print("  S7 排课数据量阶梯测试（找排课查询/写入变慢拐点）")
+    print(f"  SLA: P99 > {SLA_P99_MS}ms 或 错误率 > {SLA_ERROR_RATE*100}% 判定不达标")
+    print("  测什么：排课记录从 1万 涨到 1000万，查询和写入（含冲突检测）会不会变慢。")
+    print("  ⚠️  本测试会创建大量排课数据，千万级数据创建可能需要 30 分钟以上")
+    print("=" * 60)
+    results = []
+
+    if not student_ids or not course_id:
+        print("  [跳过] 缺数据")
+        return results
+
+    # 准备：取最多 500 个学员用于批量排课
+    batch_students = student_ids[:500]
+    if len(batch_students) < 10:
+        print(f"  [跳过] 学员数不足（{len(batch_students)}），至少需要 10 个")
+        return results
+
+    # 创建班级 + 报名 + 班级成员（排课前置条件）
+    class_id = ensure_class("排课数据量测试班", course_id)
+    if not class_id:
+        print("  [诊断] ensure_class 失败")
+        return results
+    add_class_members(class_id, batch_students)
+    for sid in batch_students:
+        create_enrollment(sid, course_id, hours=99999)
+
+    # 生成不重复的日期序列（从 2020-01-01 开始，每天一个日期，避免时间冲突）
+    date_base = dt.date(2020, 1, 1)
+    date_cursor = [0]  # 已用于排课的天数偏移（用 list 包装以便闭包修改）
+
+    def gen_dates(n):
+        dates = []
+        for i in range(n):
+            d = date_base + dt.timedelta(days=date_cursor[0] + i)
+            dates.append(d.strftime("%Y-%m-%d"))
+        date_cursor[0] += n
+        return dates
+
+    # 阶梯目标（排课记录数）
+    target_sizes = [10000, 100000, 1000000, 10000000]
+    created_total = 0  # 本次测试创建的排课总数
+
+    # 每个批次：500学员 × 30天 = 15000 条
+    students_per_batch = len(batch_students)
+
+    for target in target_sizes:
+        # 补齐排课记录到目标数
+        batch_count = 0
+        while created_total < target:
+            remaining = target - created_total
+            days = min(30, -(-remaining // students_per_batch))  # 向上取整
+            if days <= 0:
+                days = 1
+            dates = gen_dates(days)
+
+            batch_start = time.perf_counter()
+            created = batch_add_schedules(batch_students, course_id, dates, class_id=class_id, timeout=120)
+            batch_time = time.perf_counter() - batch_start
+
+            created_total += created
+            batch_count += 1
+            # 每 10 个批次或到达目标时打印进度
+            if batch_count % 10 == 0 or created_total >= target:
+                print(f"  [数据准备] 已创建 {created_total:,} 条排课（批次 {batch_count}，本次 {created} 条，耗时 {batch_time:.1f}s）")
+
+            if created == 0:
+                print(f"  ⚠️ 批量排课返回 0 条（可能超时或冲突），跳过当前阶梯")
+                break
+
+        if created_total < target:
+            print(f"\n  [规模 {target:,}] 数据准备未达标（仅 {created_total:,} 条），跳过测试")
+            continue
+
+        print(f"\n  [规模 {created_total:,}] 开始测试...")
+
+        # 1. 按学员查排课（最常用查询）
+        test_sid = batch_students[0]
+        lats, ok, err = measure(
+            lambda: http("GET", f"/api/schedules?studentId={test_sid}", token=TOKEN, timeout=30), 5
+        )
+        s_query = stats(lats)
+        er_query = error_rate(ok, err)
+
+        # 2. 按课程查排课（返回量大，易触发瓶颈）
+        lats_search, ok_s, err_s = measure(
+            lambda: http("GET", f"/api/schedules-search?courseId={course_id}", token=TOKEN, timeout=60), 5
+        )
+        s_search = stats(lats_search)
+        er_search = error_rate(ok_s, err_s)
+
+        # 3. 单条排课写入（含冲突检测）—— 用新日期避免冲突
+        conflict_date = gen_dates(1)[0]
+        lats_write = []
+        for sid in batch_students[:10]:
+            t0 = time.perf_counter()
+            create_schedule(sid, course_id, class_id=class_id, date=conflict_date)
+            lats_write.append((time.perf_counter() - t0) * 1000)
+        s_write = stats(lats_write)
+        created_total += len(lats_write)
+
+        # 4. 批量排课写入（N×M 冲突检测）—— 10学员 × 5天
+        batch_dates = gen_dates(5)
+        t0 = time.perf_counter()
+        batch_created = batch_add_schedules(batch_students[:10], course_id, batch_dates, class_id=class_id, timeout=120)
+        batch_lat = (time.perf_counter() - t0) * 1000
+        created_total += batch_created
+
+        passed = (s_query["p99_ms"] < SLA_P99_MS and s_search["p99_ms"] < SLA_P99_MS
+                  and s_write["p99_ms"] < SLA_P99_MS and er_query < SLA_ERROR_RATE * 100)
+
+        print(f"  按学员查排课  P50={s_query['p50_ms']:.2f}ms  P99={s_query['p99_ms']:.2f}ms")
+        print(f"  按课程查排课  P50={s_search['p50_ms']:.2f}ms  P99={s_search['p99_ms']:.2f}ms")
+        print(f"  单条排课写入  P50={s_write['p50_ms']:.2f}ms  P99={s_write['p99_ms']:.2f}ms")
+        print(f"  批量排课写入  耗时={batch_lat:.2f}ms")
+        print(f"  错误率={er_query}%  {'✓ 达标' if passed else '✗ 不达标'}")
+
+        results.append({
+            "排课量": created_total,
+            "按学员查P99": s_query["p99_ms"],
+            "按课程查P99": s_search["p99_ms"],
+            "单条写入P99": s_write["p99_ms"],
+            "批量写入ms": round(batch_lat, 2),
+            "错误率": er_query,
+            "达标": passed,
+        })
+
+        if not passed:
+            print(f"\n  ⚠️  排课记录达到 {created_total:,} 条时 P99 超过 {SLA_P99_MS}ms，系统开始不好用")
+            break
+
+    return results
+
+
 # ============ 评估报告生成 ============
 
 def _md_to_html(md_content):
@@ -1759,6 +1906,17 @@ def generate_report(mode, results, duration_s):
                 lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
             lines.append("")
 
+        # S7 排课数据量阶梯
+        if "S7" in results and results["S7"]:
+            lines.append("### S7 排课数据量阶梯 —— 百万/千万级排课记录会不会卡\n")
+            lines.append("> 测什么：排课记录从 1万 涨到 1000万，查排课、排课写入（含冲突检测）会不会变卡。找「开始卡」的数据量。\n")
+            lines.append("| 排课记录量 | 按学员查P99 | 按课程查P99 | 单条写入P99 | 批量写入耗时 | 错误率 | 达标 |")
+            lines.append("|-----------|------------|------------|------------|-------------|--------|------|")
+            for r in results["S7"]:
+                mark = "✓ 正常" if r["达标"] else "✗ 异常"
+                lines.append(f"| {r['排课量']:,} | {r['按学员查P99']:.2f}ms | {r['按课程查P99']:.2f}ms | {r['单条写入P99']:.2f}ms | {r['批量写入ms']:.2f}ms | {r['错误率']}% | {mark} |")
+            lines.append("")
+
         # ===== 综合评估（大白话） =====
         lines.append("## 📋 综合评估（详细解读）\n")
         verdicts = _build_detailed_verdicts(results)
@@ -1931,6 +2089,14 @@ def _build_quick_verdicts(mode, results):
                 verdicts.append(f"⚠️ **点名**：{failed[0]['阶梯']} 时点名变慢或出错")
             else:
                 verdicts.append(f"✅ **点名**：批量点名和并发点名均正常")
+        # S7 排课数据量
+        if "S7" in results and results["S7"]:
+            failed = [r for r in results["S7"] if not r["达标"]]
+            if failed:
+                all_pass = False
+                verdicts.append(f"⚠️ **排课数据量**：排课记录达到 {failed[0]['排课量']:,} 条时查询或写入变慢（P99 超过 1 秒）")
+            else:
+                verdicts.append(f"✅ **排课数据量**：排课记录达到 {results['S7'][-1]['排课量']:,} 条查询和写入仍流畅")
         # 总结论
         if all_pass:
             verdicts.append("\n🎉 **总结**：系统在所有测试场景下均表现良好，可以放心使用。")
@@ -1986,6 +2152,13 @@ def _build_detailed_verdicts(results):
             verdicts.append(f"**✋ 点名边界**：{failed[0]['阶梯']} 时点名变慢或出错。点名是高频操作，建议优化批量扣课逻辑或分批点名。")
         else:
             verdicts.append(f"**✋ 点名边界**：批量点名（最多 200 条）和多人同时点名均正常，点名性能良好。")
+    # S7 排课数据量
+    if "S7" in results and results["S7"]:
+        failed = [r for r in results["S7"] if not r["达标"]]
+        if failed:
+            verdicts.append(f"**📅 排课数据量边界**：排课记录达到 **{failed[0]['排课量']:,}** 条时，查询或写入 P99 超过 1 秒。排课记录是增长最快的数据，建议：1）为 schedules 表的 student_id/course_id/class_id/date 字段建复合索引；2）按学年归档历史排课数据；3）如果使用 SQLite，数据量超百万后建议迁移到 PostgreSQL/MySQL。")
+        else:
+            verdicts.append(f"**📅 排课数据量边界**：排课记录达到 **{results['S7'][-1]['排课量']:,}** 条时查询和写入仍流畅（P99 < 1 秒），未找到瓶颈，可支撑大规模排课。")
     return verdicts
 
 
@@ -2084,6 +2257,9 @@ def run_stress():
 
     print("\n>>> S6 点名压力测试 <<<")
     all_results["S6"] = s6_attendance_stress(student_ids, course_id)
+
+    print("\n>>> S7 排课数据量阶梯测试 <<<")
+    all_results["S7"] = s7_schedule_volume_staircase(course_id, student_ids)
 
     duration = time.perf_counter() - start
     report_path = generate_report("stress", all_results, duration)
