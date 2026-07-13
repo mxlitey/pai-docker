@@ -1734,10 +1734,10 @@ def main():
                     # 命令行模式：直接抛出，不交互
                     raise
                 print(f"  ✗ {login_err}")
-                # 检查是否未初始化，提示引导
+                # 检查是否未初始化（data.bootstrap=true 表示需要引导，即未初始化）
                 try:
                     bs, _ = http("GET", "/api/auth/bootstrap", timeout=5)
-                    if bs.get("code") == 0 and not bs.get("data", {}).get("initialized"):
+                    if bs.get("code") == 0 and bs.get("data", {}).get("bootstrap"):
                         print("  ⚠ 系统尚未初始化，请先用浏览器打开后台完成初始化引导")
                         sys.exit(1)
                 except Exception:
