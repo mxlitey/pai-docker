@@ -14,6 +14,7 @@ function rowToClass(r, memberCount) {
     courseId: r.course_id || '',
     grade: r.grade || '',
     teacher: r.teacher || '',
+    teacherId: r.teacher_id || '',
     location: r.location || '',
     color: r.color || '',
     defaultStartTime: r.default_start_time || '',
@@ -46,6 +47,7 @@ export async function getClasses({ courseId, status } = {}) {
     grade: r.grade || '',
     courseName: r.course_name || '',
     teacher: r.teacher || '',
+    teacherId: r.teacher_id || '',
     location: r.location || '',
     color: r.color || '',
     defaultStartTime: r.default_start_time || '',
@@ -82,6 +84,7 @@ export async function addClass(cls) {
     courseId: cls.courseId || '',
     grade: cls.grade || '',
     teacher: cls.teacher || '',
+    teacherId: cls.teacherId || '',
     location: cls.location || '',
     color: cls.color || '',
     defaultStartTime: cls.defaultStartTime || '',
@@ -91,9 +94,9 @@ export async function addClass(cls) {
     remark: cls.remark || '',
   }
   db.prepare(`INSERT INTO classes
-    (id, name, course_id, grade, teacher, location, color, default_start_time, default_end_time, capacity, status, remark, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    finalClass.id, finalClass.name, finalClass.courseId, finalClass.grade, finalClass.teacher,
+    (id, name, course_id, grade, teacher, teacher_id, location, color, default_start_time, default_end_time, capacity, status, remark, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    finalClass.id, finalClass.name, finalClass.courseId, finalClass.grade, finalClass.teacher, finalClass.teacherId,
     finalClass.location, finalClass.color, finalClass.defaultStartTime, finalClass.defaultEndTime,
     finalClass.capacity, finalClass.status, finalClass.remark, now(),
   )
@@ -110,12 +113,13 @@ export async function updateClass(cls) {
   if (!name) throw new Error('班级名称不能为空')
   const tx = db.transaction(() => {
     db.prepare(`UPDATE classes SET
-      name=?, course_id=?, grade=?, teacher=?, location=?, color=?, default_start_time=?, default_end_time=?, capacity=?, status=?, remark=?
+      name=?, course_id=?, grade=?, teacher=?, teacher_id=?, location=?, color=?, default_start_time=?, default_end_time=?, capacity=?, status=?, remark=?
       WHERE id=?`).run(
       name,
       cls.courseId ?? old.course_id,
       cls.grade ?? old.grade,
       cls.teacher ?? old.teacher,
+      cls.teacherId ?? old.teacher_id,
       cls.location ?? old.location,
       cls.color ?? old.color,
       cls.defaultStartTime ?? old.default_start_time,

@@ -53,6 +53,7 @@ export default async function onRequestPost(context) {
       courseId: cls.courseId ? cls.courseId.trim() : '',
       grade: cls.grade ? cls.grade.trim() : '',
       teacher: cls.teacher ? cls.teacher.trim() : '',
+      teacherId: cls.teacherId || '',
       location: cls.location ? cls.location.trim() : '',
       color: cls.color ? cls.color.trim() : '',
       defaultStartTime: cls.defaultStartTime ? cls.defaultStartTime.trim() : '',

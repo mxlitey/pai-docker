@@ -5,6 +5,7 @@ import { cn } from '@/utils/cn'
 import { getCourseDotClass } from '@/utils/courseColors'
 import { todayLocal } from '@/utils/date'
 import { Modal, ModalFooter, Button, inputClass } from '@/components/ui'
+import { TeacherSelect } from '@/components/Admin/TeacherSelect'
 
 interface ScheduleAddModalProps {
   courses: Course[]
@@ -25,6 +26,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
   const [teacher, setTeacher] = useState('')
+  const [teacherId, setTeacherId] = useState('')
   const [location, setLocation] = useState('')
   const [note, setNote] = useState('')
 
@@ -81,6 +83,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
     }
     // 带入班级默认值
     if (cls.teacher) setTeacher(cls.teacher)
+    setTeacherId(cls.teacherId || '')
     if (cls.location) setLocation(cls.location)
     if (cls.defaultStartTime) setStartTime(cls.defaultStartTime)
     if (cls.defaultEndTime) setEndTime(cls.defaultEndTime)
@@ -152,6 +155,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
         courseId,
         courseName: selectedCourse.name,
         teacher,
+        teacherId,
         location,
         color: selectedCourse.color || '',
         dates,
@@ -341,12 +345,12 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
         {/* 教师 */}
         <div className="flex items-start gap-4">
           <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'教师'}</span>
-          <input
-            type="text"
-            value={teacher}
-            onChange={(e) => setTeacher(e.target.value)}
-            className={inputClass}
-            placeholder="如：张老师"
+          <TeacherSelect
+            value={teacherId}
+            onChange={(id, name) => {
+              setTeacherId(id)
+              setTeacher(name)
+            }}
           />
         </div>
 

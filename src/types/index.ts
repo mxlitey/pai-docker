@@ -71,6 +71,7 @@ export interface ClassInfo {
   grade?: string
   courseName?: string
   teacher?: string
+  teacherId?: string
   location?: string
   color?: string
   defaultStartTime?: string
@@ -103,6 +104,7 @@ export interface Schedule {
   courseId?: string
   courseName: string
   teacher: string
+  teacherId?: string
   location: string
   date: string
   startTime: string

@@ -4,6 +4,7 @@ import type { Schedule, Student } from '@/types'
 import { updateSchedule, deleteSchedule } from '@/api/admin'
 import { cn } from '@/utils/cn'
 import { Modal, ModalFooter, Button, confirmDialog, inputClass } from '@/components/ui'
+import { TeacherSelect } from '@/components/Admin/TeacherSelect'
 
 interface ScheduleEditorProps {
   schedule: Schedule | null
@@ -21,6 +22,7 @@ function createForm(schedule: Schedule | null): Schedule {
       studentName: '',
       courseName: '',
       teacher: '',
+      teacherId: '',
       location: '',
       date: '',
       startTime: '',
@@ -239,12 +241,12 @@ export function ScheduleEditor({
         {/* 教师 */}
         <div className="flex items-start gap-4">
           <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">{'教师'}</span>
-          <input
-            type="text"
-            value={form.teacher}
-            onChange={(e) => handleChange('teacher', e.target.value)}
-            className={inputClass}
-            placeholder="如：张老师"
+          <TeacherSelect
+            value={form.teacherId || ''}
+            onChange={(id, name) => {
+              handleChange('teacherId', id)
+              handleChange('teacher', name)
+            }}
           />
         </div>
 

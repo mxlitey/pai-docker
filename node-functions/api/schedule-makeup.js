@@ -22,7 +22,7 @@ export default async function onRequestPost(context) {
   const body = await readBody(request)
   let {
     scheduleId, newDate, newStartTime, newEndTime, reason,
-    newTeacher, newCourseId, newCourseName, newClassId, newLocation, newColor,
+    newTeacher, newTeacherId, newCourseId, newCourseName, newClassId, newLocation, newColor,
   } = body
 
   // 参数校验
@@ -46,12 +46,12 @@ export default async function onRequestPost(context) {
     }
     // 教师角色校验排课归属
     if (context.admin.role === 'teacher') {
-      const teacherName = context.admin.realName || context.admin.username
-      if (original.teacher !== teacherName) {
+      if (original.teacherId !== context.admin.id) {
         return json({ code: 1, message: '无权操作其他教师的排课', data: null }, 403)
       }
       // 禁止教师覆盖教师字段，强制使用原排课教师
       newTeacher = original.teacher
+      newTeacherId = original.teacherId
     }
     // 已取消的排课不允许补课
     if (original.status === 'cancelled') {
@@ -88,6 +88,7 @@ export default async function onRequestPost(context) {
       reason: reason || '',
       operatorId,
       newTeacher: newTeacher !== undefined ? newTeacher : undefined,
+      newTeacherId: newTeacherId !== undefined ? newTeacherId : undefined,
       newCourseId: newCourseId !== undefined ? newCourseId : undefined,
       newCourseName: newCourseName !== undefined ? newCourseName : undefined,
       newClassId: newClassId !== undefined ? newClassId : undefined,

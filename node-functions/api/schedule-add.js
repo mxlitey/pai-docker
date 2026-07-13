@@ -109,6 +109,7 @@ export default async function onRequestPost(context) {
       startTime: schedule.startTime || '',
       endTime: schedule.endTime || '',
       teacher: schedule.teacher || '',
+      teacherId: schedule.teacherId || '',
       location: schedule.location || '',
       note: schedule.note || '',
     }

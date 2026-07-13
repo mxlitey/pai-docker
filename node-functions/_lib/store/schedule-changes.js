@@ -33,7 +33,7 @@ function rowToChange(r) {
 export async function rescheduleSchedule(original, opts) {
   const {
     newDate, newStartTime, newEndTime, reason, operatorId,
-    newTeacher, newCourseId, newCourseName, newClassId, newLocation, newColor,
+    newTeacher, newTeacherId, newCourseId, newCourseName, newClassId, newLocation, newColor,
   } = opts
   const db = getDb()
   const tx = db.transaction(() => {
@@ -55,6 +55,7 @@ export async function rescheduleSchedule(original, opts) {
       rescheduledFrom: original.id, // 标记调课来源
       // 插班字段（可选覆盖）
       teacher: newTeacher !== undefined ? newTeacher : (original.teacher || ''),
+      teacherId: newTeacherId !== undefined ? newTeacherId : (original.teacherId || ''),
       courseId: newCourseId !== undefined ? newCourseId : (original.courseId || ''),
       courseName: newCourseName !== undefined ? newCourseName : (original.courseName || ''),
       classId: newClassId !== undefined ? newClassId : (original.classId || ''),
@@ -62,8 +63,8 @@ export async function rescheduleSchedule(original, opts) {
       color: newColor !== undefined ? newColor : (original.color || ''),
     }
     db.prepare(`INSERT INTO schedules
-      (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, makeup_for, rescheduled_from, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      (id, student_id, student_name, class_id, course_id, course_name, teacher, teacher_id, location, date, start_time, end_time, note, color, attended, status, makeup_for, rescheduled_from, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       newId,
       newSchedule.studentId,
       newSchedule.studentName,
@@ -71,6 +72,7 @@ export async function rescheduleSchedule(original, opts) {
       newSchedule.courseId || '',
       newSchedule.courseName,
       newSchedule.teacher || '',
+      newSchedule.teacherId || '',
       newSchedule.location || '',
       newSchedule.date,
       newSchedule.startTime,
@@ -122,7 +124,7 @@ export async function rescheduleSchedule(original, opts) {
 export async function makeupSchedule(original, opts) {
   const {
     newDate, newStartTime, newEndTime, reason, operatorId,
-    newTeacher, newCourseId, newCourseName, newClassId, newLocation, newColor,
+    newTeacher, newTeacherId, newCourseId, newCourseName, newClassId, newLocation, newColor,
   } = opts
   const db = getDb()
   const tx = db.transaction(() => {
@@ -141,6 +143,7 @@ export async function makeupSchedule(original, opts) {
       rescheduledFrom: '', // 补课不设调课来源
       // 插班字段（可选覆盖）
       teacher: newTeacher !== undefined ? newTeacher : (original.teacher || ''),
+      teacherId: newTeacherId !== undefined ? newTeacherId : (original.teacherId || ''),
       courseId: newCourseId !== undefined ? newCourseId : (original.courseId || ''),
       courseName: newCourseName !== undefined ? newCourseName : (original.courseName || ''),
       classId: newClassId !== undefined ? newClassId : (original.classId || ''),
@@ -148,8 +151,8 @@ export async function makeupSchedule(original, opts) {
       color: newColor !== undefined ? newColor : (original.color || ''),
     }
     db.prepare(`INSERT INTO schedules
-      (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, makeup_for, rescheduled_from, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      (id, student_id, student_name, class_id, course_id, course_name, teacher, teacher_id, location, date, start_time, end_time, note, color, attended, status, makeup_for, rescheduled_from, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       newId,
       newSchedule.studentId,
       newSchedule.studentName,
@@ -157,6 +160,7 @@ export async function makeupSchedule(original, opts) {
       newSchedule.courseId || '',
       newSchedule.courseName,
       newSchedule.teacher || '',
+      newSchedule.teacherId || '',
       newSchedule.location || '',
       newSchedule.date,
       newSchedule.startTime,

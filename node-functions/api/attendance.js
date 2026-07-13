@@ -27,7 +27,7 @@ async function handleGet(context) {
   try {
     const searchParams = { startDate: date, endDate: date }
     if (admin.role === 'teacher') {
-      searchParams.teacher = admin.realName || admin.username
+      searchParams.teacherId = admin.id
     }
     const schedules = (await searchSchedules(searchParams))
       .filter((s) => s.status !== 'cancelled')
@@ -69,11 +69,10 @@ async function handlePost(context, request) {
   // 教师角色校验排课归属：只能对自己的排课点名
   const admin = context.admin
   if (admin && admin.role === 'teacher') {
-    const teacherName = admin.realName || admin.username
     const placeholders = fullItems.map(() => '?').join(',')
     const db = getDb()
-    const rows = db.prepare(`SELECT id, teacher FROM schedules WHERE id IN (${placeholders})`).all(...fullItems.map(i => i.scheduleId))
-    const notOwned = rows.filter(r => r.teacher !== teacherName)
+    const rows = db.prepare(`SELECT id, teacher_id FROM schedules WHERE id IN (${placeholders})`).all(...fullItems.map(i => i.scheduleId))
+    const notOwned = rows.filter(r => r.teacher_id !== admin.id)
     if (notOwned.length > 0) {
       return json({ code: 1, message: '无权操作其他教师的排课', data: null }, 403)
     }

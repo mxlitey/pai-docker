@@ -50,6 +50,7 @@ export default async function onRequestPut(context) {
       courseId: cls.courseId !== undefined ? (cls.courseId ? cls.courseId.trim() : '') : undefined,
       grade: cls.grade !== undefined ? cls.grade.trim() : undefined,
       teacher: cls.teacher !== undefined ? cls.teacher.trim() : undefined,
+      teacherId: cls.teacherId !== undefined ? (cls.teacherId ? cls.teacherId.trim() : '') : undefined,
       location: cls.location !== undefined ? cls.location.trim() : undefined,
       color: cls.color !== undefined ? cls.color.trim() : undefined,
       defaultStartTime: cls.defaultStartTime !== undefined ? cls.defaultStartTime.trim() : undefined,

@@ -19,7 +19,15 @@ export default async function onRequestGet(context) {
   const courseId = url.searchParams.get('courseId') || ''
   const grade = url.searchParams.get('grade') || ''
   // 教师角色只能查看自己的排课
-  const teacher = admin.role === 'teacher' ? (admin.realName || admin.username) : (url.searchParams.get('teacher') || '')
+  const teacherIdParam = url.searchParams.get('teacherId') || ''
+  let teacherId = ''
+  let teacher = ''
+  if (admin.role === 'teacher') {
+    teacherId = admin.id
+  } else {
+    teacherId = teacherIdParam
+    teacher = url.searchParams.get('teacher') || ''
+  }
   const classId = url.searchParams.get('classId') || ''
 
   // 日期格式校验：传了就必须合法，避免脏输入触发异常分支
@@ -49,6 +57,7 @@ export default async function onRequestGet(context) {
       courseId,
       grade,
       teacher,
+      teacherId,
       classId,
     })
     // 批量标记哪些缺勤排课已安排补课（补课按钮隐藏依据）

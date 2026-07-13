@@ -3,6 +3,7 @@ import type { Schedule, ScheduleChange, Course, ClassInfo } from '@/types'
 import { rescheduleSchedule, makeupSchedule, listScheduleChanges } from '@/api/admin'
 import { Modal, ModalFooter, inputClass } from '@/components/ui'
 import { cn } from '@/utils/cn'
+import { TeacherSelect } from '@/components/Admin/TeacherSelect'
 
 interface RescheduleModalProps {
   schedule: Schedule | null
@@ -21,6 +22,7 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
   const [newCourseId, setNewCourseId] = useState('')
   const [newClassId, setNewClassId] = useState('')
   const [newTeacher, setNewTeacher] = useState('')
+  const [newTeacherId, setNewTeacherId] = useState('')
   const [newLocation, setNewLocation] = useState('')
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
@@ -36,6 +38,7 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
     setNewCourseId(schedule.courseId || '')
     setNewClassId(schedule.classId || '')
     setNewTeacher(schedule.teacher || '')
+    setNewTeacherId(schedule.teacherId || '')
     setNewLocation(schedule.location || '')
     setReason('')
     setChanges([])
@@ -69,11 +72,12 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
     if (!schedule) return false
     return (
       newTeacher !== (schedule.teacher || '') ||
+      newTeacherId !== (schedule.teacherId || '') ||
       newCourseId !== (schedule.courseId || '') ||
       newClassId !== (schedule.classId || '') ||
       newLocation !== (schedule.location || '')
     )
-  }, [schedule, newTeacher, newCourseId, newClassId, newLocation])
+  }, [schedule, newTeacher, newTeacherId, newCourseId, newClassId, newLocation])
 
   if (!schedule) return null
 
@@ -104,6 +108,7 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
       setNewCourseId(cls.courseId)
     }
     if (cls.teacher) setNewTeacher(cls.teacher)
+    setNewTeacherId(cls.teacherId || '')
     if (cls.location) setNewLocation(cls.location)
     if (cls.defaultStartTime) setNewStartTime(cls.defaultStartTime)
     if (cls.defaultEndTime) setNewEndTime(cls.defaultEndTime)
@@ -127,6 +132,7 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
     // 构造插班参数：仅传被改动的字段（与原排课不同的才传，避免无谓覆盖）
     const insertOpts: {
       newTeacher?: string
+      newTeacherId?: string
       newCourseId?: string
       newCourseName?: string
       newClassId?: string
@@ -134,6 +140,7 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
       newColor?: string
     } = {}
     if (newTeacher !== (schedule.teacher || '')) insertOpts.newTeacher = newTeacher
+    if (newTeacherId !== (schedule.teacherId || '')) insertOpts.newTeacherId = newTeacherId
     if (newCourseId !== (schedule.courseId || '')) {
       insertOpts.newCourseId = newCourseId
       insertOpts.newCourseName = selectedCourse?.name || ''
@@ -336,12 +343,12 @@ export function RescheduleModal({ schedule, courses, classes, onClose, onUpdated
           {/* 老师 */}
           <div className="flex items-center gap-4">
             <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0">教师</span>
-            <input
-              type="text"
-              value={newTeacher}
-              onChange={(e) => setNewTeacher(e.target.value)}
-              className={inputClass}
-              placeholder="选填"
+            <TeacherSelect
+              value={newTeacherId}
+              onChange={(id, name) => {
+                setNewTeacherId(id)
+                setNewTeacher(name)
+              }}
             />
           </div>
 

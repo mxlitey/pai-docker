@@ -13,8 +13,12 @@ export default async function onRequest(context) {
   if (authFail) return authFail
   const admin = context.admin
 
-  const permFail = await requirePermission(context, 'teachers:view')
-  if (permFail) return permFail
+  // 教师角色可以查看自己的绩效（无需 teachers:view 权限）
+  // 非教师角色查看全部绩效需要 teachers:view 权限
+  if (admin.role !== 'teacher') {
+    const permFail = await requirePermission(context, 'teachers:view')
+    if (permFail) return permFail
+  }
 
   if (request.method !== 'GET') {
     return json({ code: 1, message: '仅支持 GET 请求', data: null }, 405)
@@ -26,9 +30,9 @@ export default async function onRequest(context) {
 
   try {
     const params = { startDate, endDate }
-    // 教师角色仅查看自己的绩效
+    // 教师角色仅查看自己的绩效（按 teacher_id 精确匹配）
     if (admin.role === 'teacher') {
-      params.teacher = admin.realName || admin.username
+      params.teacherId = admin.id
     }
     const rows = getTeacherPerformance(params)
     return json({ code: 0, data: rows })

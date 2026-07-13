@@ -50,13 +50,12 @@ export async function onRequestGet(context) {
     const start = new Date(now.getFullYear(), now.getMonth() - 6, 1)
     const p = (n) => String(n).padStart(2, '0')
     const defaultStart = `${start.getFullYear()}-${p(start.getMonth() + 1)}-01`
-    const defaultEnd = `${now.getFullYear()}-${p(now.getMonth() + 1)}-01`
+    const defaultEnd = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`
     schedules = await getSchedulesByDateRange(targetId, defaultStart, defaultEnd)
   }
-  // 教师角色仅返回自己的排课
+  // 教师角色仅返回自己的排课（按 teacher_id 精确匹配）
   if (context.admin.role === 'teacher') {
-    const teacherName = context.admin.realName || context.admin.username
-    schedules = schedules.filter((s) => s.teacher === teacherName)
+    schedules = schedules.filter((s) => s.teacherId === context.admin.id)
   }
   // 过滤已取消的排课（调课后原记录标记为 cancelled）
   schedules = schedules.filter((s) => s.status !== 'cancelled')

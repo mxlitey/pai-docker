@@ -66,8 +66,7 @@ async function handlePost(context) {
         return json({ code: 1, message: '排课记录不存在', data: null }, 400)
       }
       if (context.admin.role === 'teacher') {
-        const teacherName = context.admin.realName || context.admin.username
-        if (schedule.teacher !== teacherName) {
+        if (schedule.teacherId !== context.admin.id) {
           return json({ code: 1, message: '无权为其他教师的排课添加反馈', data: null }, 403)
         }
       }

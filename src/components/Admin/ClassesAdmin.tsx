@@ -26,6 +26,7 @@ import {
   inputClass,
   toast,
 } from '@/components/ui'
+import { TeacherSelect } from '@/components/Admin/TeacherSelect'
 
 interface ClassesAdminProps {
   courses: Course[]
@@ -245,6 +246,7 @@ interface ClassFormState {
   courseId: string
   grade: string
   teacher: string
+  teacherId: string
   location: string
   defaultStartTime: string
   defaultEndTime: string
@@ -262,6 +264,7 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
           courseId: cls.courseId || '',
           grade: cls.grade || '',
           teacher: cls.teacher || '',
+          teacherId: cls.teacherId || '',
           location: cls.location || '',
           defaultStartTime: cls.defaultStartTime || '',
           defaultEndTime: cls.defaultEndTime || '',
@@ -274,6 +277,7 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
           courseId: '',
           grade: '',
           teacher: '',
+          teacherId: '',
           location: '',
           defaultStartTime: '',
           defaultEndTime: '',
@@ -339,6 +343,7 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
           courseId: form.courseId || undefined,
           grade: form.grade,
           teacher: form.teacher.trim(),
+          teacherId: form.teacherId || undefined,
           location: form.location.trim(),
           defaultStartTime: form.defaultStartTime || undefined,
           defaultEndTime: form.defaultEndTime || undefined,
@@ -360,6 +365,7 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
           courseId: form.courseId || undefined,
           grade: form.grade,
           teacher: form.teacher.trim(),
+          teacherId: form.teacherId || undefined,
           location: form.location.trim(),
           defaultStartTime: form.defaultStartTime || undefined,
           defaultEndTime: form.defaultEndTime || undefined,
@@ -448,12 +454,9 @@ function ClassEditModal({ cls, courses, grades, onClose, onSaved, showToast }: C
 
         {/* 教师 */}
         <Field label={'教师'}>
-          <input
-            type="text"
-            className={inputClass}
-            value={form.teacher}
-            onChange={(e) => update({ teacher: e.target.value })}
-            placeholder={'如：张老师'}
+          <TeacherSelect
+            value={form.teacherId}
+            onChange={(id, name) => update({ teacherId: id, teacher: name })}
           />
         </Field>
 

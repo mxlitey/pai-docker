@@ -15,6 +15,7 @@ function rowToSchedule(r) {
     courseId: r.course_id || '',
     courseName: r.course_name,
     teacher: r.teacher || '',
+    teacherId: r.teacher_id || '',
     location: r.location || '',
     date: r.date,
     startTime: r.start_time || '',
@@ -73,9 +74,9 @@ export async function getSchedulesByDateRange(studentId, startDate, endDate) {
   return rows.map(rowToSchedule)
 }
 
-export async function searchSchedules({ startDate, endDate, courseId, grade, teacher, classId } = {}) {
+export async function searchSchedules({ startDate, endDate, courseId, grade, teacher, teacherId, classId } = {}) {
   const db = getDb()
-  // 未传日期范围时默认查当月，避免全表扫描返回过多数据
+  // 未传日期范围时默认查当月，避免全表扫描返回太多数据
   if (!startDate && !endDate) {
     const now = new Date()
     const next = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -94,7 +95,9 @@ export async function searchSchedules({ startDate, endDate, courseId, grade, tea
   if (endDate) { sql += ' AND s.date<=?'; params.push(endDate) }
   if (courseId) { sql += ' AND s.course_id=?'; params.push(courseId) }
   if (grade) { sql += ' AND s.student_id IN (SELECT id FROM students WHERE grade=?)'; params.push(grade) }
-  if (teacher) { sql += ' AND s.teacher=?'; params.push(teacher) }
+  // 老师过滤：优先用 teacher_id（准确），兼容旧接口的 teacher 名字过滤
+  if (teacherId) { sql += ' AND s.teacher_id=?'; params.push(teacherId) }
+  else if (teacher) { sql += ' AND s.teacher=?'; params.push(teacher) }
   if (classId) { sql += ' AND s.class_id=?'; params.push(classId) }
   sql += ' ORDER BY s.date, s.start_time LIMIT 5000'
   const rows = db.prepare(sql).all(...params)
@@ -110,8 +113,8 @@ export async function getScheduleById(scheduleId) {
 
 function insertSchedule(db, s, id) {
   db.prepare(`INSERT INTO schedules
-    (id, student_id, student_name, class_id, course_id, course_name, teacher, location, date, start_time, end_time, note, color, attended, status, makeup_for, rescheduled_from, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    (id, student_id, student_name, class_id, course_id, course_name, teacher, teacher_id, location, date, start_time, end_time, note, color, attended, status, makeup_for, rescheduled_from, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id,
     s.studentId,
     s.studentName,
@@ -119,6 +122,7 @@ function insertSchedule(db, s, id) {
     s.courseId || '',
     s.courseName,
     s.teacher || '',
+    s.teacherId || '',
     s.location || '',
     s.date,
     s.startTime || '',
@@ -245,7 +249,7 @@ export async function updateSchedule(oldSchedule, newSchedule) {
     if (!exist) throw new Error('未找到原排课记录')
     const before = rowToSchedule(exist)
     db.prepare(`UPDATE schedules SET
-      student_id=?, student_name=?, class_id=?, course_id=?, course_name=?, teacher=?, location=?, date=?, start_time=?, end_time=?, note=?, color=?, status=?, makeup_for=?, rescheduled_from=?
+      student_id=?, student_name=?, class_id=?, course_id=?, course_name=?, teacher=?, teacher_id=?, location=?, date=?, start_time=?, end_time=?, note=?, color=?, status=?, makeup_for=?, rescheduled_from=?
       WHERE id=?`).run(
       newSchedule.studentId,
       newSchedule.studentName,
@@ -253,6 +257,7 @@ export async function updateSchedule(oldSchedule, newSchedule) {
       newSchedule.courseId || '',
       newSchedule.courseName,
       newSchedule.teacher || '',
+      newSchedule.teacherId || '',
       newSchedule.location || '',
       newSchedule.date,
       newSchedule.startTime || '',

@@ -95,6 +95,7 @@ export function getDb() {
       course_id          TEXT NOT NULL DEFAULT '',
       grade              TEXT DEFAULT '',
       teacher            TEXT DEFAULT '',
+      teacher_id         TEXT DEFAULT '',
       location           TEXT DEFAULT '',
       color              TEXT DEFAULT '',
       default_start_time TEXT DEFAULT '',
@@ -123,6 +124,7 @@ export function getDb() {
       course_id    TEXT DEFAULT '',
       course_name  TEXT NOT NULL,
       teacher      TEXT DEFAULT '',
+      teacher_id   TEXT DEFAULT '',
       location     TEXT DEFAULT '',
       date         TEXT NOT NULL,
       start_time   TEXT DEFAULT '',
@@ -142,6 +144,7 @@ export function getDb() {
     CREATE INDEX IF NOT EXISTS idx_schedules_student ON schedules(student_id);
     CREATE INDEX IF NOT EXISTS idx_schedules_course ON schedules(course_id);
     CREATE INDEX IF NOT EXISTS idx_schedules_class ON schedules(class_id);
+    CREATE INDEX IF NOT EXISTS idx_schedules_teacher_id ON schedules(teacher_id) WHERE teacher_id != '';
     -- 复合索引：按课程+日期范围查排课（searchSchedules 的核心查询路径）
     -- 无此索引时 idx_schedules_course 返回千万级记录再排序，耗时 60s+；有此索引后 <100ms
     CREATE INDEX IF NOT EXISTS idx_schedules_course_date ON schedules(course_id, date, start_time);
@@ -336,6 +339,9 @@ export function getDb() {
   ensureColumn(db, 'students', 'balance', 'REAL NOT NULL DEFAULT 0')
   // classes 补齐 grade 列（旧库兼容）
   ensureColumn(db, 'classes', 'grade', "TEXT DEFAULT ''")
+  // classes/schedules 补齐 teacher_id 列（关联老师账号 admins.id）
+  ensureColumn(db, 'classes', 'teacher_id', "TEXT DEFAULT ''")
+  ensureColumn(db, 'schedules', 'teacher_id', "TEXT DEFAULT ''")
   // admins 补齐 permissions 列（细粒度权限点）
   ensureColumn(db, 'admins', 'permissions', "TEXT DEFAULT ''")
   // 清理已废弃的预留字段（旧库可能存在，新库不再创建）

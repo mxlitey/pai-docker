@@ -279,6 +279,7 @@ export async function rescheduleSchedule(
   reason?: string,
   insertOpts?: {
     newTeacher?: string
+    newTeacherId?: string
     newCourseId?: string
     newCourseName?: string
     newClassId?: string
@@ -305,6 +306,7 @@ export async function makeupSchedule(
   reason?: string,
   insertOpts?: {
     newTeacher?: string
+    newTeacherId?: string
     newCourseId?: string
     newCourseName?: string
     newClassId?: string
@@ -557,6 +559,7 @@ export async function batchAddSchedules(body: {
   courseId: string
   courseName: string
   teacher?: string
+  teacherId?: string
   location?: string
   color?: string
   dates: string[]
@@ -580,6 +583,7 @@ export async function searchSchedules(params: {
   courseId?: string
   grade?: string
   classId?: string
+  teacherId?: string
 }): Promise<ApiResult<{ schedules: Schedule[]; total: number }>> {
   const qs = new URLSearchParams()
   if (params.startDate) qs.set('startDate', params.startDate)
@@ -587,6 +591,7 @@ export async function searchSchedules(params: {
   if (params.courseId) qs.set('courseId', params.courseId)
   if (params.grade) qs.set('grade', params.grade)
   if (params.classId) qs.set('classId', params.classId)
+  if (params.teacherId) qs.set('teacherId', params.teacherId)
   const query = qs.toString()
   return request(`${API_BASE}/schedules-search${query ? '?' + query : ''}`, { method: 'GET' })
 }
@@ -724,6 +729,11 @@ export async function listAccountTransactions(params: {
 // 账号列表（仅超管）
 export async function listAdmins(): Promise<ApiResult<{ admins: AdminUser[] }>> {
   return request(`${API_BASE}/admins`, { method: 'GET' })
+}
+
+// 老师列表（登录即可调用，返回 role='teacher' 的精简列表，供排课/班级表单下拉选择）
+export async function listTeachers(): Promise<ApiResult<{ teachers: { id: string; username: string; realName: string; phone: string }[] }>> {
+  return request(`${API_BASE}/teachers-list`, { method: 'GET' })
 }
 
 // 新增账户（仅超管，role 仅允许 admin/teacher）
