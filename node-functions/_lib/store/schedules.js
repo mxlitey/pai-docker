@@ -74,6 +74,14 @@ export async function getSchedulesByDateRange(studentId, startDate, endDate) {
 
 export async function searchSchedules({ startDate, endDate, courseId, grade, teacher, classId } = {}) {
   const db = getDb()
+  // 未传日期范围时默认查当月，避免全表扫描返回过多数据
+  if (!startDate && !endDate) {
+    const now = new Date()
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const p = (n) => String(n).padStart(2, '0')
+    startDate = `${now.getFullYear()}-${p(now.getMonth() + 1)}-01`
+    endDate = `${next.getFullYear()}-${p(next.getMonth() + 1)}-01`
+  }
   // LEFT JOIN classes/courses 取班级名和年级，供点名页按「班级(课程)年级」分组展示
   let sql = `SELECT s.*, c.name AS class_name, COALESCE(c.grade, co.grade) AS grade
     FROM schedules s
@@ -87,7 +95,7 @@ export async function searchSchedules({ startDate, endDate, courseId, grade, tea
   if (grade) { sql += ' AND s.student_id IN (SELECT id FROM students WHERE grade=?)'; params.push(grade) }
   if (teacher) { sql += ' AND s.teacher=?'; params.push(teacher) }
   if (classId) { sql += ' AND s.class_id=?'; params.push(classId) }
-  sql += ' ORDER BY s.date, s.start_time'
+  sql += ' ORDER BY s.date, s.start_time LIMIT 5000'
   const rows = db.prepare(sql).all(...params)
   return rows.map(rowToSchedule)
 }
