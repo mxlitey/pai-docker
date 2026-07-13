@@ -1476,15 +1476,15 @@ def s6_attendance_stress(student_ids, course_id):
             sched_pairs.append((sid, sid_sched))
         else:
             sched_fail += 1
-    print(f"  已创建 {len(sched_pairs)} 条排课，失败 {sched_fail} 条")
-    if not sched_pairs and sample:
-        # 诊断首个排课失败原因
+    if sched_fail > 0 and sched_fail == len(sample):
+        # 全部失败时诊断首个
         r, _ = http("POST", "/api/schedule-add", {"schedule": {
             "studentId": sample[0], "courseId": course_id, "courseName": "性能测试课程",
             "classId": class_id, "studentName": f"perf_{sample[0][:8]}",
             "date": today, "startTime": "09:00", "endTime": "10:00",
         }}, token=TOKEN)
         print(f"  [诊断] schedule-add 响应: code={r.get('code')} msg={r.get('message', '')}")
+    print(f"  已创建 {len(sched_pairs)} 条排课，失败 {sched_fail} 条")
 
     if not sched_pairs:
         print("  [跳过] 排课创建失败")

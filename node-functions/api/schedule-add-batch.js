@@ -4,7 +4,7 @@
 // 为每个 (date, studentId) 组合生成一条排课记录，一次性写入
 // classId 必填：排课以班级为单位，studentIds 必须全部为该班级成员
 // dates 为多日期数组，支持一次性排多天的课
-import { batchAddSchedules, getStudents, getCourseById, getClassById, getClassMembers, findScheduleConflicts, json } from '../_lib/store.js'
+import { batchAddSchedules, getStudents, getCourseById, getClassById, getClassMembers, findScheduleConflicts, findBatchScheduleConflicts, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 import { genScheduleId } from '../_lib/id.js'
@@ -118,18 +118,9 @@ export default async function onRequestPost(context) {
     // 笛卡尔积：dates × studentIds，为每个组合生成一条排课
     const schedules = []
     const usedIds = new Set() // 请求内去重，确保生成的 id 绝对不重复
-    // 时间冲突检测：同一学员同一日期时间段重叠的 scheduled 排课
+    // 时间冲突检测：批量查询同一学员同一日期时间段重叠的 scheduled 排课
     if (startTime && endTime) {
-      const conflictMap = new Map() // studentId -> Set(date)
-      for (const sid of studentIds) {
-        for (const date of dates) {
-          const conflicts = await findScheduleConflicts(sid, date, startTime, endTime)
-          if (conflicts.length > 0) {
-            if (!conflictMap.has(sid)) conflictMap.set(sid, new Set())
-            conflictMap.get(sid).add(date)
-          }
-        }
-      }
+      const conflictMap = await findBatchScheduleConflicts(studentIds, dates, startTime, endTime)
       if (conflictMap.size > 0) {
         const studentNameMap = new Map(students.map((s) => [s.id, s.name]))
         const details = []

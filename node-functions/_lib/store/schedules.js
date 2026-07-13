@@ -444,3 +444,25 @@ export async function findScheduleConflicts(studentId, date, startTime, endTime,
   ).all(studentId, date, endTime, startTime, excludeId, excludeId)
   return rows.map(rowToSchedule)
 }
+
+// 批量排课冲突检测：一次性查询多个 (学员, 日期) 组合的时间冲突
+// 返回 Map<studentId, Set<date>>，包含所有有冲突的学员和对应日期
+export async function findBatchScheduleConflicts(studentIds, dates, startTime, endTime) {
+  if (!startTime || !endTime || !studentIds.length || !dates.length) return new Map()
+  const db = getDb()
+  const conflictMap = new Map()
+  // 按日期分组查询：同一日期的所有学员一起查
+  for (const date of dates) {
+    const placeholders = studentIds.map(() => '?').join(',')
+    const rows = db.prepare(
+      `SELECT student_id FROM schedules
+       WHERE date=? AND status='scheduled' AND student_id IN (${placeholders})
+         AND start_time < ? AND end_time > ?`,
+    ).all(date, ...studentIds, endTime, startTime)
+    for (const row of rows) {
+      if (!conflictMap.has(row.student_id)) conflictMap.set(row.student_id, new Set())
+      conflictMap.get(row.student_id).add(date)
+    }
+  }
+  return conflictMap
+}
