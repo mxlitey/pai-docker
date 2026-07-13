@@ -1553,6 +1553,8 @@ def s7_schedule_volume_staircase(course_id, student_ids):
     - 批量排课写入（N×M 冲突检测，排课写入的核心瓶颈）
     - 点名加载（GET /api/attendance?date=xxx，按日期查排课，数据量大时 JOIN 可能变慢）
     - 批量点名写入（POST /api/attendance，主键查找+扣课时，测大数据量下是否仍快）
+    - 教师绩效查询（多表聚合 schedules + feedback，大数据量下聚合可能变慢）
+    - 调课记录查询（schedules + schedule_changes 双表查询，按学员查）
     """
     import datetime as dt
 
@@ -1704,9 +1706,28 @@ def s7_schedule_volume_staircase(course_id, student_ids):
             s_att_write = {"p99_ms": 0}
             er_att_write = 0
 
+        # 7. 教师绩效查询（多表聚合：schedules + feedback，大数据量下可能变慢）
+        today = time.strftime("%Y-%m-%d")
+        month_start = today[:8] + "01"
+        tp_params = urlencode({"startDate": month_start, "endDate": today})
+        lats_tp, ok_tp, err_tp = measure(
+            lambda: http("GET", f"/api/teacher-performance?{tp_params}", token=TOKEN, timeout=60), 5
+        )
+        s_tp = stats(lats_tp)
+        er_tp = error_rate(ok_tp, err_tp)
+
+        # 8. 调课记录查询（schedules + schedule_changes 双表，按学员查）
+        sc_params = urlencode({"studentId": test_sid, "limit": 50})
+        lats_sc, ok_sc, err_sc = measure(
+            lambda: http("GET", f"/api/schedule-changes?{sc_params}", token=TOKEN, timeout=30), 5
+        )
+        s_sc = stats(lats_sc)
+        er_sc = error_rate(ok_sc, err_sc)
+
         passed = (s_query["p99_ms"] < SLA_P99_MS and s_search["p99_ms"] < SLA_P99_MS
                   and s_write["p99_ms"] < SLA_P99_MS and s_att["p99_ms"] < SLA_P99_MS
-                  and s_att_write["p99_ms"] < SLA_P99_MS and er_query < SLA_ERROR_RATE * 100)
+                  and s_att_write["p99_ms"] < SLA_P99_MS and s_tp["p99_ms"] < SLA_P99_MS
+                  and s_sc["p99_ms"] < SLA_P99_MS and er_query < SLA_ERROR_RATE * 100)
 
         print(f"  按学员查排课  P50={s_query['p50_ms']:.2f}ms  P99={s_query['p99_ms']:.2f}ms")
         print(f"  按课程查排课  P50={s_search['p50_ms']:.2f}ms  P99={s_search['p99_ms']:.2f}ms")
@@ -1714,6 +1735,8 @@ def s7_schedule_volume_staircase(course_id, student_ids):
         print(f"  批量排课写入  耗时={batch_lat:.2f}ms")
         print(f"  点名加载({att_total}条)  P50={s_att['p50_ms']:.2f}ms  P99={s_att['p99_ms']:.2f}ms")
         print(f"  批量点名写入  P50={s_att_write['p50_ms']:.2f}ms  P99={s_att_write['p99_ms']:.2f}ms")
+        print(f"  教师绩效查询  P50={s_tp['p50_ms']:.2f}ms  P99={s_tp['p99_ms']:.2f}ms")
+        print(f"  调课记录查询  P50={s_sc['p50_ms']:.2f}ms  P99={s_sc['p99_ms']:.2f}ms")
         print(f"  错误率={er_query}%  {'✓ 达标' if passed else '✗ 不达标'}")
 
         results.append({
@@ -1724,6 +1747,8 @@ def s7_schedule_volume_staircase(course_id, student_ids):
             "批量写入ms": round(batch_lat, 2),
             "点名加载P99": s_att["p99_ms"],
             "点名写入P99": s_att_write["p99_ms"],
+            "教师绩效P99": s_tp["p99_ms"],
+            "调课记录P99": s_sc["p99_ms"],
             "错误率": er_query,
             "达标": passed,
         })
@@ -1987,12 +2012,12 @@ def generate_report(mode, results, duration_s):
         # S7 排课数据量阶梯
         if "S7" in results and results["S7"]:
             lines.append("### S7 排课数据量阶梯 —— 百万/千万级排课记录会不会卡\n")
-            lines.append("> 测什么：排课记录从 1万 涨到 1000万，查排课、排课写入（含冲突检测）、点名加载和写入会不会变卡。找「开始卡」的数据量。\n")
-            lines.append("| 排课记录量 | 按学员查P99 | 按课程查P99 | 单条写入P99 | 批量写入耗时 | 点名加载P99 | 点名写入P99 | 错误率 | 达标 |")
-            lines.append("|-----------|------------|------------|------------|-------------|------------|------------|--------|------|")
+            lines.append("> 测什么：排课记录从 1万 涨到 1000万，查排课、排课写入（含冲突检测）、点名、教师绩效、调课记录会不会变卡。找「开始卡」的数据量。\n")
+            lines.append("| 排课记录量 | 按学员查P99 | 按课程查P99 | 单条写入P99 | 批量写入耗时 | 点名加载P99 | 点名写入P99 | 教师绩效P99 | 调课记录P99 | 错误率 | 达标 |")
+            lines.append("|-----------|------------|------------|------------|-------------|------------|------------|------------|------------|--------|------|")
             for r in results["S7"]:
                 mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                lines.append(f"| {r['排课量']:,} | {r['按学员查P99']:.2f}ms | {r['按课程查P99']:.2f}ms | {r['单条写入P99']:.2f}ms | {r['批量写入ms']:.2f}ms | {r.get('点名加载P99', 0):.2f}ms | {r.get('点名写入P99', 0):.2f}ms | {r['错误率']}% | {mark} |")
+                lines.append(f"| {r['排课量']:,} | {r['按学员查P99']:.2f}ms | {r['按课程查P99']:.2f}ms | {r['单条写入P99']:.2f}ms | {r['批量写入ms']:.2f}ms | {r.get('点名加载P99', 0):.2f}ms | {r.get('点名写入P99', 0):.2f}ms | {r.get('教师绩效P99', 0):.2f}ms | {r.get('调课记录P99', 0):.2f}ms | {r['错误率']}% | {mark} |")
             lines.append("")
 
         # ===== 综合评估（大白话） =====
