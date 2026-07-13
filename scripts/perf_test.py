@@ -65,7 +65,12 @@ SLA_CPU_PERCENT = 80     # CPU 占用 > 80% 判定不达标
 
 # ============ HTTP 工具 ============
 
-def http(method, path, body=None, token=None, timeout=30):
+# 401 自动重登录的并发锁（多线程同时收到 401 时，只重登录一次）
+_token_lock = threading.Lock()
+
+
+def http(method, path, body=None, token=None, timeout=30, _allow_relogin=True):
+    global TOKEN
     url = BASE + path
     headers = {"Content-Type": "application/json"}
     if token:
@@ -79,9 +84,26 @@ def http(method, path, body=None, token=None, timeout=30):
     except urllib.error.HTTPError as e:
         raw = e.read().decode("utf-8")
         try:
-            return json.loads(raw), e.code
+            r = json.loads(raw)
         except Exception:
-            return {"code": -1, "message": raw}, e.code
+            r = {"code": -1, "message": raw}
+        # 鉴权请求收到 401：token 可能已过期/失效，自动重新登录并重试一次
+        # _allow_relogin 避免死循环（重试时不再触发重登录）
+        if e.code == 401 and token and _allow_relogin and ADMIN_USER:
+            with _token_lock:
+                if token != TOKEN:
+                    # 其他线程已刷新 token，直接用新 token 重试
+                    new_token = TOKEN
+                else:
+                    try:
+                        login()
+                        new_token = TOKEN
+                        print(f"  [诊断] token 失效(401)，已自动重新登录")
+                    except Exception as login_err:
+                        print(f"  [诊断] 自动重登录失败: {login_err}")
+                        return r, e.code
+            return http(method, path, body, token=new_token, timeout=timeout, _allow_relogin=False)
+        return r, e.code
     except Exception as e:
         return {"code": -1, "message": str(e)}, 0
 
@@ -1103,6 +1125,9 @@ def s4_mixed_load(student_ids, course_id, duration_s=120):
     write_ok = [0]
     write_err = [0]
     lock = threading.Lock()
+    # 错误诊断计数器：每个 worker 最多打印 2 次错误详情，避免刷屏
+    diag_read = [0]
+    diag_write = [0]
 
     def read_worker():
         while not stop.is_set():
@@ -1115,10 +1140,16 @@ def s4_mixed_load(student_ids, course_id, duration_s=120):
                         read_ok[0] += 1
                     else:
                         read_err[0] += 1
+                        if diag_read[0] < 2:
+                            diag_read[0] += 1
+                            print(f"  [诊断] 读错误#{diag_read[0]}: code={r.get('code')} msg={str(r.get('message',''))[:100]}")
                     read_lats.append((time.perf_counter() - t0) * 1000)
-            except Exception:
+            except Exception as e:
                 with lock:
                     read_err[0] += 1
+                    if diag_read[0] < 2:
+                        diag_read[0] += 1
+                        print(f"  [诊断] 读异常#{diag_read[0]}: {str(e)[:100]}")
                     read_lats.append((time.perf_counter() - t0) * 1000)
 
     def write_worker():
@@ -1135,10 +1166,16 @@ def s4_mixed_load(student_ids, course_id, duration_s=120):
                         write_ok[0] += 1
                     else:
                         write_err[0] += 1
+                        if diag_write[0] < 2:
+                            diag_write[0] += 1
+                            print(f"  [诊断] 写错误#{diag_write[0]}: code={r.get('code')} msg={str(r.get('message',''))[:100]}")
                     write_lats.append((time.perf_counter() - t0) * 1000)
-            except Exception:
+            except Exception as e:
                 with lock:
                     write_err[0] += 1
+                    if diag_write[0] < 2:
+                        diag_write[0] += 1
+                        print(f"  [诊断] 写异常#{diag_write[0]}: {str(e)[:100]}")
                     write_lats.append((time.perf_counter() - t0) * 1000)
 
     # 7 读线程 + 3 写线程
@@ -1187,12 +1224,32 @@ def s5_audit_log_staircase():
 
     # 先获取当前审计日志总量
     r, _ = http("GET", "/api/audit-logs?page=1&pageSize=1", token=TOKEN)
-    total = r.get("data", {}).get("total", 0) if r.get("code") == 0 else 0
+    if r.get("code") != 0:
+        # 请求失败：打印完整响应帮助诊断（常见原因：token 失效返回 401、权限不足返回 403）
+        print(f"  [诊断] audit-logs 请求失败: code={r.get('code')} msg={r.get('message', '')}")
+        print(f"  [诊断] 完整响应: {json.dumps(r, ensure_ascii=False)[:200]}")
+        total = 0
+    else:
+        total = r.get("data", {}).get("total", 0)
     print(f"  当前审计日志总量: {total}")
 
     if total == 0:
-        print("  [跳过] 无审计日志数据")
-        return results
+        # 二次验证：total=0 可能是 MAX(rowid) 优化在空表返回 null 导致，也可能是真的无数据
+        # 尝试拉一页数据看是否有 logs 字段
+        r2, _ = http("GET", "/api/audit-logs?page=1&pageSize=5", token=TOKEN)
+        if r2.get("code") == 0:
+            logs = r2.get("data", {}).get("logs", [])
+            if logs:
+                print(f"  [诊断] total=0 但实际返回 {len(logs)} 条日志（MAX(rowid) 计数异常）")
+                print(f"  [诊断] 首条: {json.dumps(logs[0], ensure_ascii=False)[:150]}")
+                # 用实际返回条数作为 fallback
+                total = max(1, len(logs))
+            else:
+                print("  [跳过] 无审计日志数据")
+                return results
+        else:
+            print(f"  [跳过] audit-logs 二次验证失败: code={r2.get('code')} msg={r2.get('message', '')}")
+            return results
 
     # 阶梯 1：首页 20 条
     print("\n  [阶梯 1] 首页 20 条")
@@ -1257,16 +1314,48 @@ def s6_attendance_stress(student_ids, course_id):
     today = time.strftime("%Y-%m-%d")
     # 创建班级 + 报名 + 排课（前置条件）
     class_id = ensure_class("点名压测班", course_id)
+    if not class_id:
+        print("  [诊断] ensure_class 失败，无法创建班级")
+        r, _ = http("GET", "/api/classes", token=TOKEN)
+        if r.get("code") != 0:
+            print(f"  [诊断] /api/classes 查询失败: code={r.get('code')} msg={r.get('message', '')}")
+        print("  [跳过] 班级创建失败")
+        return results
     sample = student_ids[:200]
     print(f"  准备：为 {len(sample)} 个学员创建报名+今日排课...")
+    enr_ok = 0
+    enr_fail = 0
     for sid in sample:
-        create_enrollment(sid, course_id, hours=20)
+        if create_enrollment(sid, course_id, hours=20):
+            enr_ok += 1
+        else:
+            enr_fail += 1
+    print(f"  报名创建: 成功 {enr_ok} 失败 {enr_fail}")
+    if enr_ok == 0 and sample:
+        # 诊断首个报名失败原因
+        r, _ = http("POST", "/api/enrollment-add", {"enrollment": {
+            "studentId": sample[0], "courseId": course_id,
+            "purchasedHours": 20, "giftHours": 2,
+            "unitPrice": 100, "totalAmount": 2000, "paidAmount": 2000,
+        }}, token=TOKEN)
+        print(f"  [诊断] enrollment-add 响应: code={r.get('code')} msg={r.get('message', '')}")
     sched_ids = []
+    sched_fail = 0
     for sid in sample:
         sid_sched = create_schedule(sid, course_id, class_id=class_id, date=today)
         if sid_sched:
             sched_ids.append(sid_sched)
-    print(f"  已创建 {len(sched_ids)} 条排课")
+        else:
+            sched_fail += 1
+    print(f"  已创建 {len(sched_ids)} 条排课，失败 {sched_fail} 条")
+    if not sched_ids and sample:
+        # 诊断首个排课失败原因
+        r, _ = http("POST", "/api/schedule-add", {"schedule": {
+            "studentId": sample[0], "courseId": course_id, "courseName": "性能测试课程",
+            "classId": class_id, "studentName": f"perf_{sample[0][:8]}",
+            "date": today, "startTime": "09:00", "endTime": "10:00",
+        }}, token=TOKEN)
+        print(f"  [诊断] schedule-add 响应: code={r.get('code')} msg={r.get('message', '')}")
 
     if not sched_ids:
         print("  [跳过] 排课创建失败")
