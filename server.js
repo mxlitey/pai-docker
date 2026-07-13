@@ -3,6 +3,21 @@
 // 1. 路由 /api/* 到 node-functions/api/*.js（按文件名映射，无需逐个注册）
 // 2. 托管 dist/ 静态资源（Vite 构建产物）
 // 3. 启动时初始化数据库并打印引导提示
+
+// 统一日志时间前缀：重写 console.log/error/warn，自动添加 "2026/07/10 13:46:49 " 前缀
+// 所有模块（含 node-functions/）的 console 调用均会自动带上时间戳
+const _ts = () => {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+const _origLog = console.log
+const _origErr = console.error
+const _origWarn = console.warn
+console.log = (...a) => _origLog(_ts(), ...a)
+console.error = (...a) => _origErr(_ts(), ...a)
+console.warn = (...a) => _origWarn(_ts(), ...a)
+
 import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
