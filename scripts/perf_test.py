@@ -17,6 +17,32 @@
   # 也可用环境变量 PERF_BASE 指定
   PERF_BASE=http://192.168.1.100:8788 python3 scripts/perf_test.py quick
 
+================================================================
+  📖 给非技术人员看的说明（看不懂术语请先读这里）
+================================================================
+
+  这个脚本模拟「很多老师同时用排课系统」的场景，测系统扛不扛得住。
+  跑完会在 scripts/reports/ 下生成一份报告，告诉你「系统好不好用」。
+
+  报告里会出现这些词，含义如下：
+
+  · P50（中位数）  —— 一半的请求都在这个时间内完成。代表「正常速度」。
+  · P95            —— 95% 的请求都在这个时间内完成。代表「大部分人的体验」。
+  · P99            —— 99% 的请求都在这个时间内完成。剩下 1% 比这更慢。
+                      P99 是重点看的数据，它一高就说明「有人卡住了」。
+  · QPS（每秒请求数）—— 系统一秒能处理多少个请求。数字越大越能扛。
+  · 错误率         —— 100 个请求里有几个失败。0% 最好，>1% 就要警惕。
+  · 并发           —— 同一时刻有多少人在用。比如「并发 100」= 100 人同时点。
+  · SLA（合格线）   —— P99 超过 1 秒、或错误率超过 1%，就判定「不达标」。
+  · 衰减率         —— 跑久了会不会变慢。正数=变慢，负数=变快，越小越好。
+
+  怎么看结果：
+  · 看到「✓ 达标」= 这一关系统扛住了，正常。
+  · 看到「✗ 不达标」= 这一关系统扛不住，需要关注。
+  · 报告最后的「测试结果速读」会用大白话总结系统好不好用。
+
+================================================================
+
 【简易评估 quick】
   固定 200 学员规模下的多维度性能快照：
   D1 基础响应延迟 / D2 并发吞吐 / D3 DB查询 / D4 业务事务
@@ -38,7 +64,7 @@
 
   SLA 阈值：P99 > 1s 或 错误率 > 1% 或 CPU > 80% 判定「不好用」
 
-测试完成后输出评估报告（控制台 + reports/perf_report_YYYYMMDD_HHMMSS.md）
+测试完成后输出评估报告（控制台 + scripts/reports/perf_report_YYYYMMDD_HHMMSS.md）
 """
 
 import json
@@ -48,10 +74,9 @@ import threading
 import os
 import sys
 import argparse
+import http.client as httplib
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urlencode
-import urllib.request
-import urllib.error
+from urllib.parse import urlencode, urlparse
 
 BASE = os.environ.get("PERF_BASE", "http://127.0.0.1:8788")
 TOKEN = None
@@ -64,26 +89,90 @@ SLA_CPU_PERCENT = 80     # CPU 占用 > 80% 判定不达标
 
 
 # ============ HTTP 工具 ============
+# 使用 http.client 长连接复用，避免 Windows 上 urlopen 短连接耗尽本地端口
+# （WinError 10048: 通常每个套接字地址只允许使用一次）
+# 每个线程维护一个独立的 HTTPConnection，避免多线程共享连接的并发问题
 
-def http(method, path, body=None, token=None, timeout=30):
-    url = BASE + path
+# 401 自动重登录的并发锁（多线程同时收到 401 时，只重登录一次）
+_token_lock = threading.Lock()
+# 每线程一个 HTTPConnection，复用 TCP 连接避免端口耗尽
+_thread_conn = threading.local()
+
+
+def _get_conn(timeout=30):
+    """获取当前线程的 HTTP 连接（复用）。BASE 变更或连接断开时自动重建。"""
+    parsed = urlparse(BASE)
+    scheme = parsed.scheme or 'http'
+    host = parsed.hostname or '127.0.0.1'
+    port = parsed.port or (443 if scheme == 'https' else 80)
+    key = (scheme, host, port)
+    conn = getattr(_thread_conn, 'conn', None)
+    cur_key = getattr(_thread_conn, 'key', None)
+    if conn is None or cur_key != key:
+        if conn is not None:
+            try: conn.close()
+            except Exception: pass
+        if scheme == 'https':
+            conn = httplib.HTTPSConnection(host, port, timeout=timeout)
+        else:
+            conn = httplib.HTTPConnection(host, port, timeout=timeout)
+        _thread_conn.conn = conn
+        _thread_conn.key = key
+    conn.timeout = timeout
+    return conn
+
+
+def _close_conn():
+    """关闭当前线程的连接（连接异常时调用，下次自动重建）"""
+    conn = getattr(_thread_conn, 'conn', None)
+    if conn is not None:
+        try: conn.close()
+        except Exception: pass
+        _thread_conn.conn = None
+
+
+def http(method, path, body=None, token=None, timeout=30, _allow_relogin=True, _retry=True):
+    """发送 HTTP 请求，返回 (parsed_json, status_code)。
+    每线程复用长连接，避免端口耗尽；连接异常自动重建并重试一次。
+    收到 401 时自动重登录（多线程并发下只重登录一次）。
+    """
+    global TOKEN
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = "Bearer " + token
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8")
-            return json.loads(raw), resp.status
-    except urllib.error.HTTPError as e:
-        raw = e.read().decode("utf-8")
+        conn = _get_conn(timeout)
+        conn.request(method, path, body=data, headers=headers)
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        status = resp.status
         try:
-            return json.loads(raw), e.code
+            r = json.loads(raw)
         except Exception:
-            return {"code": -1, "message": raw}, e.code
+            r = {"code": -1, "message": raw[:200]}
+        # 401 自动重登录
+        if status == 401 and token and _allow_relogin and ADMIN_USER:
+            with _token_lock:
+                if token != TOKEN:
+                    new_token = TOKEN
+                else:
+                    try:
+                        login()
+                        new_token = TOKEN
+                        print(f"  [诊断] token 失效(401)，已自动重新登录")
+                    except Exception as login_err:
+                        print(f"  [诊断] 自动重登录失败: {login_err}")
+                        return r, status
+            return http(method, path, body, token=new_token, timeout=timeout, _allow_relogin=False)
+        return r, status
     except Exception as e:
-        return {"code": -1, "message": str(e)}, 0
+        # 连接异常：关闭旧连接，下次重建；重试一次避免偶发断连
+        _close_conn()
+        if _retry:
+            return http(method, path, body, token=token, timeout=timeout,
+                        _allow_relogin=_allow_relogin, _retry=False)
+        return {"code": -1, "message": str(e)[:200]}, 0
 
 
 def measure(fn, n=1):
@@ -273,14 +362,14 @@ def add_class_members(class_id, student_ids):
 
 
 def create_feedback(student_id, schedule_id, teacher_id=""):
-    """创建课后反馈"""
-    r, _ = http("POST", "/api/feedback-add", {"feedback": {
+    """创建课后反馈（后端 /api/feedback 直接读整个 body 作为 feedback 对象，不要外层包装）"""
+    r, _ = http("POST", "/api/feedback", {
         "scheduleId": schedule_id,
         "studentId": student_id,
         "teacherId": teacher_id,
         "content": "测试反馈内容",
         "rating": 5,
-    }}, token=TOKEN)
+    }, token=TOKEN)
     return r.get("code") == 0
 
 
@@ -327,14 +416,18 @@ def batch_add_schedules(student_ids, course_id, dates, start_time="09:00", end_t
     return 0
 
 
-def set_attendance(items):
-    """批量点名（items: [{scheduleId, attended}]）"""
+def set_attendance(items, date=None):
+    """批量点名（items: [{scheduleId, studentId, attended}]）
+    API 要求必传 date（yyyy-MM-dd），缺 date 会返回 400
+    返回 (response_dict, status) —— measure() 期望 fn 返回元组
+    """
     if not items:
-        return 0
-    r, _ = http("POST", "/api/attendance", {"items": items}, token=TOKEN, timeout=60)
-    if r.get("code") == 0:
-        return r["data"].get("updated", 0) or len(items)
-    return 0
+        return {"code": 0, "data": {"updatedSchedules": 0}}, 200
+    if not date:
+        # 从 items 中第一条的 date 字段取（S6 已统一补 date）；fallback 用今天
+        date = items[0].get("date") or time.strftime("%Y-%m-%d")
+    r, st = http("POST", "/api/attendance", {"date": date, "items": items}, token=TOKEN, timeout=60)
+    return r, st
 
 
 def create_transfer(student_id, from_enrollment_id, reason="测试退课"):
@@ -352,6 +445,7 @@ def create_transfer(student_id, from_enrollment_id, reason="测试退课"):
 def d1_basic_latency():
     print("\n" + "=" * 60)
     print("  D1 基础响应延迟（冷/热、公开/鉴权）")
+    print("  测什么：点开页面/刷新列表时，系统多快能响应。越快越流畅。")
     print("=" * 60)
     results = {}
 
@@ -381,6 +475,7 @@ def d1_basic_latency():
 def d2_concurrency():
     print("\n" + "=" * 60)
     print("  D2 并发吞吐量（不同并发数）")
+    print("  测什么：同时有很多人用时，系统一秒能处理多少请求、会不会卡。")
     print("=" * 60)
     results = {}
 
@@ -413,6 +508,7 @@ def d2_concurrency():
 def d3_db_query(student_ids):
     print("\n" + "=" * 60)
     print("  D3 数据库查询性能（按学员查排课）")
+    print("  测什么：查某个学员的排课时，数据库查得多快。这是最常用的操作之一。")
     print("=" * 60)
     results = {}
     if not student_ids:
@@ -438,6 +534,7 @@ def d3_db_query(student_ids):
 def d4_business_tx(student_ids, course_id):
     print("\n" + "=" * 60)
     print("  D4 业务事务性能（报名/点名/退课）")
+    print("  测什么：给学员报名这种「写操作」要多快。涉及多张表，比纯查询慢。")
     print("=" * 60)
     results = {}
     if not student_ids or not course_id:
@@ -459,6 +556,7 @@ def d4_business_tx(student_ids, course_id):
 def d5_reports():
     print("\n" + "=" * 60)
     print("  D5 报表聚合性能（6 种报表）")
+    print("  测什么：月底看营收/课时/出勤等报表时，系统算得快不快。")
     print("=" * 60)
     results = {}
     today = time.strftime("%Y-%m-%d")
@@ -479,6 +577,7 @@ def d5_reports():
 def d6_search(student_ids):
     print("\n" + "=" * 60)
     print("  D6 搜索性能")
+    print("  测什么：在搜索框输入名字找学员时，多快能出结果。")
     print("=" * 60)
     results = {}
     if not student_ids:
@@ -505,6 +604,7 @@ def d6_search(student_ids):
 def d7_auth():
     print("\n" + "=" * 60)
     print("  D7 鉴权性能")
+    print("  测什么：每次操作都要校验登录状态，这个校验本身会不会拖慢系统。")
     print("=" * 60)
     results = {}
     lats, _, _ = measure(lambda: http("GET", "/api/auth", token=TOKEN), 200)
@@ -522,6 +622,7 @@ def d7_auth():
 def d8_write_throughput(course_id):
     print("\n" + "=" * 60)
     print("  D8 写操作吞吐量")
+    print("  测什么：连续新增学员时，一秒能写多少条。反映系统的写入能力。")
     print("=" * 60)
     results = {}
     lats = []
@@ -539,6 +640,7 @@ def d8_write_throughput(course_id):
 def d9_system():
     print("\n" + "=" * 60)
     print("  D9 系统资源占用")
+    print("  测什么：跑业务时服务器 CPU/内存占用多少。太高说明要加配置。")
     print("=" * 60)
     results = {}
     is_remote = not BASE.startswith("http://127.0.0.1") and not BASE.startswith("http://localhost")
@@ -585,6 +687,7 @@ def d10_courses_classes(student_ids, course_id):
     """D10 课程/班级/班级成员查询性能"""
     print("\n" + "=" * 60)
     print("  D10 课程/班级/班级成员查询性能")
+    print("  测什么：查课程、班级、班级成员、按课程/班级查排课，快不快。")
     print("=" * 60)
     results = {}
     if not course_id:
@@ -633,6 +736,7 @@ def d11_audit_logs():
     """D11 审计日志查询性能"""
     print("\n" + "=" * 60)
     print("  D11 审计日志查询性能")
+    print("  测什么：查「谁在什么时候做了什么」的操作记录，快不快。日志会越积越多。")
     print("=" * 60)
     results = {}
 
@@ -672,6 +776,7 @@ def d12_feedback_perf(student_ids, course_id):
     """D12 课后反馈查询 + 教师绩效性能"""
     print("\n" + "=" * 60)
     print("  D12 课后反馈查询 + 教师绩效性能")
+    print("  测什么：查课后反馈和老师绩效报表，快不快。")
     print("=" * 60)
     results = {}
     if not student_ids or not course_id:
@@ -711,6 +816,7 @@ def d13_attendance(student_ids, course_id):
     """D13 点名性能（读点名列表 + 批量点名扣课）"""
     print("\n" + "=" * 60)
     print("  D13 点名性能（读列表 + 批量扣课）")
+    print("  测什么：上课点名时，读名单、批量扣课时、改缺勤退课时，要多快。")
     print("=" * 60)
     results = {}
     if not student_ids or not course_id:
@@ -745,23 +851,25 @@ def d13_attendance(student_ids, course_id):
     print(f"  点名列表GET(50条)   {s}")
     results["点名列表GET_P95"] = s["p95_ms"]
 
-    # 2. 点名 POST（批量扣课，50条）
-    items = [{"scheduleId": sid, "attended": True} for _, sid in sched_ids]
+    # 2. 点名 POST（批量扣课，50条）—— items 需含 scheduleId + studentId + attended
+    items = [{"scheduleId": sid_sched, "studentId": sid, "attended": True, "date": today}
+             for sid, sid_sched in sched_ids]
     lats = []
     for _ in range(5):
         t0 = time.perf_counter()
-        set_attendance(items)
+        set_attendance(items, date=today)
         lats.append((time.perf_counter() - t0) * 1000)
     s = stats(lats)
     print(f"  批量点名POST(50条)  {s}")
     results["批量点名50条_P95"] = s["p95_ms"]
 
     # 3. 改缺勤（回退课时）
-    undo_items = [{"scheduleId": sid, "attended": False} for _, sid in sched_ids[:20]]
+    undo_items = [{"scheduleId": sid_sched, "studentId": sid, "attended": False, "date": today}
+                  for sid, sid_sched in sched_ids[:20]]
     lats = []
     for _ in range(5):
         t0 = time.perf_counter()
-        set_attendance(undo_items)
+        set_attendance(undo_items, date=today)
         lats.append((time.perf_counter() - t0) * 1000)
     s = stats(lats)
     print(f"  改缺勤POST(20条)    {s}")
@@ -774,6 +882,7 @@ def d14_schedule_write(student_ids, course_id):
     """D14 排课写入性能（单条 + 批量 + 冲突检测）"""
     print("\n" + "=" * 60)
     print("  D14 排课写入性能（单条/批量/冲突检测）")
+    print("  测什么：排一节课、批量排多节课、检测时间冲突，要多快。")
     print("=" * 60)
     results = {}
     if not student_ids or not course_id:
@@ -785,6 +894,8 @@ def d14_schedule_write(student_ids, course_id):
     sample = student_ids[:50]
     for sid in sample:
         create_enrollment(sid, course_id, hours=20)
+    # 后端 /api/schedule-add-batch 校验学员必须是班级成员，先加入班级
+    add_class_members(class_id, sample)
 
     tomorrow = time.strftime("%Y-%m-%d", time.localtime(time.time() + 86400))
 
@@ -825,6 +936,7 @@ def d15_transfer(student_ids, course_id):
     """D15 退课性能（多表事务）"""
     print("\n" + "=" * 60)
     print("  D15 退课性能（多表事务）")
+    print("  测什么：退课要同时改报名、账户余额、排课等多张表，测这个事务快不快。")
     print("=" * 60)
     results = {}
     if not student_ids or not course_id:
@@ -864,6 +976,7 @@ def d16_optimized_tables(student_ids):
     """D16 优化后的表查询性能（验证 datetime() 修复效果）"""
     print("\n" + "=" * 60)
     print("  D16 优化表查询（报名/账户流水/退课/调课/管理员）")
+    print("  测什么：查报名记录、账户流水、退课流水、调课记录、管理员列表，快不快。")
     print("=" * 60)
     results = {}
     if not student_ids:
@@ -912,6 +1025,7 @@ def s1_data_volume_staircase(course_id):
     print("\n" + "=" * 60)
     print("  S1 数据量阶梯测试（找查询变慢拐点）")
     print(f"  SLA: P99 > {SLA_P99_MS}ms 判定不达标")
+    print("  测什么：学员从 100 涨到 10000，查询会不会变慢。找「开始卡」的学员数。")
     print("=" * 60)
     results = []
     target_sizes = [100, 500, 1000, 5000, 10000]
@@ -981,6 +1095,7 @@ def s2_concurrency_staircase():
     print("\n" + "=" * 60)
     print("  S2 并发阶梯测试（找崩溃临界点）")
     print(f"  SLA: 错误率 > {SLA_ERROR_RATE*100}% 或 P99 > {SLA_P99_MS}ms 判定不达标")
+    print("  测什么：同时 10/50/100/200/500 人用，系统会不会崩。找「开始出错」的人数。")
     print("=" * 60)
     results = []
     conc_levels = [10, 50, 100, 200, 500]
@@ -1017,6 +1132,7 @@ def s3_sustained_load(duration_s=180):
     """S3 持续负载：固定 QPS 跑 3 分钟，测性能衰减"""
     print("\n" + "=" * 60)
     print(f"  S3 持续负载测试（{duration_s}s，测性能衰减）")
+    print("  测什么：连续跑 3 分钟，看系统会不会越跑越慢（内存泄漏/卡顿）。")
     print("=" * 60)
     results = []
     target_qps = 100  # 目标 100 QPS 持续跑
@@ -1087,6 +1203,7 @@ def s4_mixed_load(student_ids, course_id, duration_s=120):
     """S4 混合负载：读写 7:3"""
     print("\n" + "=" * 60)
     print(f"  S4 混合负载测试（读写 7:3，{duration_s}s）")
+    print("  测什么：模拟真实使用——7 成人在看、3 成人在写，看系统扛不扛得住。")
     print("=" * 60)
     import random
     results = {}
@@ -1103,6 +1220,9 @@ def s4_mixed_load(student_ids, course_id, duration_s=120):
     write_ok = [0]
     write_err = [0]
     lock = threading.Lock()
+    # 错误诊断计数器：每个 worker 最多打印 2 次错误详情，避免刷屏
+    diag_read = [0]
+    diag_write = [0]
 
     def read_worker():
         while not stop.is_set():
@@ -1115,10 +1235,16 @@ def s4_mixed_load(student_ids, course_id, duration_s=120):
                         read_ok[0] += 1
                     else:
                         read_err[0] += 1
+                        if diag_read[0] < 2:
+                            diag_read[0] += 1
+                            print(f"  [诊断] 读错误#{diag_read[0]}: code={r.get('code')} msg={str(r.get('message',''))[:100]}")
                     read_lats.append((time.perf_counter() - t0) * 1000)
-            except Exception:
+            except Exception as e:
                 with lock:
                     read_err[0] += 1
+                    if diag_read[0] < 2:
+                        diag_read[0] += 1
+                        print(f"  [诊断] 读异常#{diag_read[0]}: {str(e)[:100]}")
                     read_lats.append((time.perf_counter() - t0) * 1000)
 
     def write_worker():
@@ -1135,10 +1261,16 @@ def s4_mixed_load(student_ids, course_id, duration_s=120):
                         write_ok[0] += 1
                     else:
                         write_err[0] += 1
+                        if diag_write[0] < 2:
+                            diag_write[0] += 1
+                            print(f"  [诊断] 写错误#{diag_write[0]}: code={r.get('code')} msg={str(r.get('message',''))[:100]}")
                     write_lats.append((time.perf_counter() - t0) * 1000)
-            except Exception:
+            except Exception as e:
                 with lock:
                     write_err[0] += 1
+                    if diag_write[0] < 2:
+                        diag_write[0] += 1
+                        print(f"  [诊断] 写异常#{diag_write[0]}: {str(e)[:100]}")
                     write_lats.append((time.perf_counter() - t0) * 1000)
 
     # 7 读线程 + 3 写线程
@@ -1182,17 +1314,38 @@ def s5_audit_log_staircase():
     print("\n" + "=" * 60)
     print("  S5 审计日志查询性能阶梯（找审计表变慢拐点）")
     print(f"  SLA: P99 > {SLA_P99_MS}ms 判定不达标")
+    print("  测什么：审计日志越积越多，翻到很后面会不会卡。找「开始卡」的页数。")
     print("=" * 60)
     results = []
 
     # 先获取当前审计日志总量
     r, _ = http("GET", "/api/audit-logs?page=1&pageSize=1", token=TOKEN)
-    total = r.get("data", {}).get("total", 0) if r.get("code") == 0 else 0
+    if r.get("code") != 0:
+        # 请求失败：打印完整响应帮助诊断（常见原因：token 失效返回 401、权限不足返回 403）
+        print(f"  [诊断] audit-logs 请求失败: code={r.get('code')} msg={r.get('message', '')}")
+        print(f"  [诊断] 完整响应: {json.dumps(r, ensure_ascii=False)[:200]}")
+        total = 0
+    else:
+        total = r.get("data", {}).get("total", 0)
     print(f"  当前审计日志总量: {total}")
 
     if total == 0:
-        print("  [跳过] 无审计日志数据")
-        return results
+        # 二次验证：total=0 可能是 MAX(rowid) 优化在空表返回 null 导致，也可能是真的无数据
+        # 尝试拉一页数据看是否有 logs 字段
+        r2, _ = http("GET", "/api/audit-logs?page=1&pageSize=5", token=TOKEN)
+        if r2.get("code") == 0:
+            logs = r2.get("data", {}).get("logs", [])
+            if logs:
+                print(f"  [诊断] total=0 但实际返回 {len(logs)} 条日志（MAX(rowid) 计数异常）")
+                print(f"  [诊断] 首条: {json.dumps(logs[0], ensure_ascii=False)[:150]}")
+                # 用实际返回条数作为 fallback
+                total = max(1, len(logs))
+            else:
+                print("  [跳过] 无审计日志数据")
+                return results
+        else:
+            print(f"  [跳过] audit-logs 二次验证失败: code={r2.get('code')} msg={r2.get('message', '')}")
+            return results
 
     # 阶梯 1：首页 20 条
     print("\n  [阶梯 1] 首页 20 条")
@@ -1248,6 +1401,7 @@ def s6_attendance_stress(student_ids, course_id):
     print("\n" + "=" * 60)
     print("  S6 点名压力测试（并发点名 + 大批量扣课）")
     print(f"  SLA: P99 > {SLA_P99_MS}ms 或 错误率 > {SLA_ERROR_RATE*100}% 判定不达标")
+    print("  测什么：一次点名 50/100/200 个学员，还有多个老师同时点名，扛不扛得住。")
     print("=" * 60)
     results = []
     if not student_ids or not course_id:
@@ -1257,24 +1411,61 @@ def s6_attendance_stress(student_ids, course_id):
     today = time.strftime("%Y-%m-%d")
     # 创建班级 + 报名 + 排课（前置条件）
     class_id = ensure_class("点名压测班", course_id)
+    if not class_id:
+        print("  [诊断] ensure_class 失败，无法创建班级")
+        r, _ = http("GET", "/api/classes", token=TOKEN)
+        if r.get("code") != 0:
+            print(f"  [诊断] /api/classes 查询失败: code={r.get('code')} msg={r.get('message', '')}")
+        print("  [跳过] 班级创建失败")
+        return results
     sample = student_ids[:200]
     print(f"  准备：为 {len(sample)} 个学员创建报名+今日排课...")
+    enr_ok = 0
+    enr_fail = 0
     for sid in sample:
-        create_enrollment(sid, course_id, hours=20)
-    sched_ids = []
+        if create_enrollment(sid, course_id, hours=20):
+            enr_ok += 1
+        else:
+            enr_fail += 1
+    print(f"  报名创建: 成功 {enr_ok} 失败 {enr_fail}")
+    if enr_ok == 0 and sample:
+        # 诊断首个报名失败原因
+        r, _ = http("POST", "/api/enrollment-add", {"enrollment": {
+            "studentId": sample[0], "courseId": course_id,
+            "purchasedHours": 20, "giftHours": 2,
+            "unitPrice": 100, "totalAmount": 2000, "paidAmount": 2000,
+        }}, token=TOKEN)
+        print(f"  [诊断] enrollment-add 响应: code={r.get('code')} msg={r.get('message', '')}")
+    sched_pairs = []  # [(student_id, schedule_id), ...] —— 点名 API 需要 studentId
+    sched_fail = 0
     for sid in sample:
         sid_sched = create_schedule(sid, course_id, class_id=class_id, date=today)
         if sid_sched:
-            sched_ids.append(sid_sched)
-    print(f"  已创建 {len(sched_ids)} 条排课")
+            sched_pairs.append((sid, sid_sched))
+        else:
+            sched_fail += 1
+    print(f"  已创建 {len(sched_pairs)} 条排课，失败 {sched_fail} 条")
+    if not sched_pairs and sample:
+        # 诊断首个排课失败原因
+        r, _ = http("POST", "/api/schedule-add", {"schedule": {
+            "studentId": sample[0], "courseId": course_id, "courseName": "性能测试课程",
+            "classId": class_id, "studentName": f"perf_{sample[0][:8]}",
+            "date": today, "startTime": "09:00", "endTime": "10:00",
+        }}, token=TOKEN)
+        print(f"  [诊断] schedule-add 响应: code={r.get('code')} msg={r.get('message', '')}")
 
-    if not sched_ids:
+    if not sched_pairs:
         print("  [跳过] 排课创建失败")
         return results
 
+    # 构造点名 items：API 要求每项含 scheduleId + studentId + attended
+    def make_items(pairs, attended=True):
+        return [{"scheduleId": sid_sched, "studentId": sid, "attended": attended, "date": today}
+                for sid, sid_sched in pairs]
+
     # 阶梯 1: 小批量点名（50条）
-    items50 = [{"scheduleId": sid, "attended": True} for sid in sched_ids[:50]]
-    lats, ok, err = measure(lambda: set_attendance(items50), 5)
+    items50 = make_items(sched_pairs[:50])
+    lats, ok, err = measure(lambda: set_attendance(items50, date=today), 5)
     s = stats(lats)
     er = error_rate(ok, err)
     passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
@@ -1283,8 +1474,8 @@ def s6_attendance_stress(student_ids, course_id):
     results.append({"阶梯": "点名50条", "P99": s["p99_ms"], "错误率": er, "达标": passed})
 
     # 阶梯 2: 中批量点名（100条）
-    items100 = [{"scheduleId": sid, "attended": True} for sid in sched_ids[:100]]
-    lats, ok, err = measure(lambda: set_attendance(items100), 5)
+    items100 = make_items(sched_pairs[:100])
+    lats, ok, err = measure(lambda: set_attendance(items100, date=today), 5)
     s = stats(lats)
     er = error_rate(ok, err)
     passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
@@ -1293,8 +1484,8 @@ def s6_attendance_stress(student_ids, course_id):
     results.append({"阶梯": "点名100条", "P99": s["p99_ms"], "错误率": er, "达标": passed})
 
     # 阶梯 3: 大批量点名（200条）
-    items200 = [{"scheduleId": sid, "attended": True} for sid in sched_ids[:200]]
-    lats, ok, err = measure(lambda: set_attendance(items200), 5)
+    items200 = make_items(sched_pairs[:200])
+    lats, ok, err = measure(lambda: set_attendance(items200, date=today), 5)
     s = stats(lats)
     er = error_rate(ok, err)
     passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
@@ -1303,10 +1494,10 @@ def s6_attendance_stress(student_ids, course_id):
     results.append({"阶梯": "点名200条", "P99": s["p99_ms"], "错误率": er, "达标": passed})
 
     # 阶梯 4: 并发点名（10 个老师同时点名不同学员）
-    chunks = [sched_ids[i::10] for i in range(10)]
-    concurrent_items = [[{"scheduleId": sid, "attended": True} for sid in chunk] for chunk in chunks if chunk]
+    chunks = [sched_pairs[i::10] for i in range(10)]
+    concurrent_items = [make_items(chunk) for chunk in chunks if chunk]
     lats, ok, err, wall = measure_concurrent(
-        lambda: set_attendance(concurrent_items[0]) if concurrent_items else ({"code": -1}, 0),
+        lambda: set_attendance(concurrent_items[0], date=today) if concurrent_items else ({"code": -1}, 0),
         concurrency=len(concurrent_items), total=len(concurrent_items), timeout=120,
     )
     s = stats(lats)
@@ -1322,9 +1513,9 @@ def s6_attendance_stress(student_ids, course_id):
 # ============ 评估报告生成 ============
 
 def generate_report(mode, results, duration_s):
-    """生成 Markdown 评估报告"""
+    """生成 Markdown 评估报告（含通俗说明，方便非技术人员阅读）"""
     ts = time.strftime("%Y%m%d_%H%M%S")
-    report_dir = os.path.join(os.path.dirname(__file__), "..", "reports")
+    report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
     os.makedirs(report_dir, exist_ok=True)
     report_path = os.path.join(report_dir, f"perf_report_{ts}.md")
 
@@ -1343,13 +1534,36 @@ def generate_report(mode, results, duration_s):
     lines.append(f"- **测试耗时**：{duration_s:.0f} 秒")
     lines.append(f"- **测试环境**：{env_type}")
     lines.append(f"- **服务地址**：{BASE}\n")
-    lines.append(f"- **SLA 阈值**：P99 > {SLA_P99_MS}ms / 错误率 > {SLA_ERROR_RATE*100}% / CPU > {SLA_CPU_PERCENT}%\n")
+    lines.append(f"- **合格线（SLA）**：响应时间 P99 超过 {SLA_P99_MS}ms、或错误率超过 {SLA_ERROR_RATE*100}%，判定为「不达标」\n")
     if env_type != "本机":
         lines.append(f"> ⚠️ 非**本机**测试：网络延迟会叠加到所有响应时间上，结果反映的是「客户端→网络→服务端」端到端性能，而非纯服务端性能。\n")
 
+    # ===== 指标说明（给非技术人员看） =====
+    lines.append("## 📖 指标说明（看不懂术语请先读这里）\n")
+    lines.append("| 术语 | 大白话解释 |")
+    lines.append("|------|-----------|")
+    lines.append("| **P50** | 一半的请求都在这个时间内完成，代表「正常速度」 |")
+    lines.append("| **P95** | 95% 的请求都在这个时间内完成，代表「大部分人的体验」 |")
+    lines.append("| **P99** | 99% 的请求都在这个时间内完成，剩下 1% 比这更慢。**重点看这个**，一高就说明有人卡住了 |")
+    lines.append("| **QPS** | 每秒能处理多少个请求，数字越大越能扛 |")
+    lines.append("| **错误率** | 100 个请求里失败几个，0% 最好，超过 1% 要警惕 |")
+    lines.append("| **并发** | 同一时刻有多少人在用，比如「并发 100」= 100 人同时操作 |")
+    lines.append("| **达标 ✓** | 这一关系统扛住了，正常 |")
+    lines.append("| **不达标 ✗** | 这一关系统扛不住，需要关注 |")
+    lines.append("| **衰减率** | 连续运行后会不会变慢。正数=变慢，负数=变快，绝对值越小越稳定 |")
+    lines.append("")
+    lines.append("> 经验值参考：P99 < 100ms 体感流畅；100-500ms 可接受；> 1000ms 用户会感觉卡顿。\n")
+
+    # ===== 测试结果速读（先给结论） =====
+    lines.append("## 🎯 测试结果速读（一句话结论）\n")
+    quick_verdicts = _build_quick_verdicts(mode, results)
+    for v in quick_verdicts:
+        lines.append(f"- {v}")
+    lines.append("")
+
     if mode == "quick":
-        lines.append("## 简易评估结果\n")
-        lines.append("固定 200+ 学员规模下的多维度性能快照。\n")
+        lines.append("## 简易评估结果（详细数据）\n")
+        lines.append("固定 200+ 学员规模下的多维度性能快照。每个维度测一项常用操作。\n")
         for dim, data in results.items():
             lines.append(f"### {dim}\n")
             lines.append("| 指标 | 值 |")
@@ -1362,112 +1576,86 @@ def generate_report(mode, results, duration_s):
             lines.append("")
     else:
         # 压力测试报告
-        lines.append("## 压力测试结果\n")
+        lines.append("## 压力测试结果（详细数据）\n")
 
         # S1 数据量
         if "S1" in results:
-            lines.append("### S1 数据量阶梯（查询变慢拐点）\n")
+            lines.append("### S1 数据量阶梯 —— 学员越多查询会不会变慢\n")
+            lines.append("> 测什么：学员从 100 涨到 10000，看查询/搜索/报表/审计日志会不会变卡。找「开始卡」的学员数。\n")
             lines.append("| 学员规模 | 全量列表P99 | 模糊搜索P99 | 报表P99 | 审计P99 | 错误率 | 达标 |")
             lines.append("|----------|-------------|-------------|---------|---------|--------|------|")
             for r in results["S1"]:
-                mark = "✓" if r["达标"] else "✗"
+                mark = "✓ 正常" if r["达标"] else "✗ 异常"
                 audit_p99 = r.get("审计P99", 0)
                 lines.append(f"| {r['规模']} | {r['全量列表P99']:.2f}ms | {r['模糊搜索P99']:.2f}ms | {r['报表P99']:.2f}ms | {audit_p99:.2f}ms | {r['错误率']}% | {mark} |")
             lines.append("")
 
         # S2 并发
         if "S2" in results:
-            lines.append("### S2 并发阶梯（崩溃临界点）\n")
-            lines.append("| 并发数 | QPS | P99 | 错误率 | 达标 |")
-            lines.append("|--------|-----|-----|--------|------|")
+            lines.append("### S2 并发阶梯 —— 同时多少人用会崩\n")
+            lines.append("> 测什么：同时 10/50/100/200/500 人操作，看系统会不会出错或变慢。找「开始出错」的人数。\n")
+            lines.append("| 并发人数 | 每秒处理(QPS) | P99响应 | 错误率 | 达标 |")
+            lines.append("|----------|---------------|---------|--------|------|")
             for r in results["S2"]:
-                mark = "✓" if r["达标"] else "✗"
+                mark = "✓ 正常" if r["达标"] else "✗ 异常"
                 lines.append(f"| {r['并发']} | {r['QPS']:.1f} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
             lines.append("")
 
         # S3 持续负载
         if "S3" in results:
             s3 = results["S3"]
-            lines.append("### S3 持续负载（性能衰减）\n")
-            lines.append(f"- 首段 P99：{s3['首段P99']:.2f}ms")
-            lines.append(f"- 末段 P99：{s3['末段P99']:.2f}ms")
-            lines.append(f"- 衰减率：{'+' if s3['衰减率%']>0 else ''}{s3['衰减率%']}%\n")
-            lines.append("| 时间(s) | QPS | P99 | 错误率 | 达标 |")
-            lines.append("|---------|-----|-----|--------|------|")
+            lines.append("### S3 持续负载 —— 连续运行会不会越来越慢\n")
+            lines.append("> 测什么：固定压力连续跑 3 分钟，看系统会不会越跑越慢（内存泄漏/卡顿）。\n")
+            lines.append(f"- 起始 P99：{s3['首段P99']:.2f}ms")
+            lines.append(f"- 结束 P99：{s3['末段P99']:.2f}ms")
+            deg = s3['衰减率%']
+            if deg > 50:
+                deg_desc = f"衰减 {deg}%，**明显变慢**（疑似内存泄漏）"
+            elif deg > 20:
+                deg_desc = f"衰减 {deg}%，轻微变慢"
+            else:
+                deg_desc = f"衰减 {'+' if deg>0 else ''}{deg}%，**性能稳定**"
+            lines.append(f"- 趋势：{deg_desc}\n")
+            lines.append("| 运行时间(s) | QPS | P99 | 错误率 | 达标 |")
+            lines.append("|-------------|-----|-----|--------|------|")
             for s in s3["samples"]:
-                mark = "✓" if s["达标"] else "✗"
+                mark = "✓ 正常" if s["达标"] else "✗ 异常"
                 lines.append(f"| {s['时间s']} | {s['QPS']:.1f} | {s['P99']:.2f}ms | {s['错误率']}% | {mark} |")
             lines.append("")
 
         # S4 混合负载
         if "S4" in results:
             s4 = results["S4"]
-            lines.append("### S4 混合负载（读写 7:3）\n")
-            lines.append(f"- 读 QPS：{s4['读QPS']:.1f}  P99：{s4['读P99']:.2f}ms  错误率：{s4['读错误率']}%")
-            lines.append(f"- 写 QPS：{s4['写QPS']:.1f}  P99：{s4['写P99']:.2f}ms  错误率：{s4['写错误率']}%\n")
+            lines.append("### S4 混合负载 —— 真实使用场景（7 成看、3 成写）\n")
+            lines.append("> 测什么：模拟真实场景——大部分人查看、少部分人新增，看系统扛不扛得住混合操作。\n")
+            lines.append(f"- 读操作：每秒 {s4['读QPS']:.1f} 次，P99={s4['读P99']:.2f}ms，错误率={s4['读错误率']}%")
+            lines.append(f"- 写操作：每秒 {s4['写QPS']:.1f} 次，P99={s4['写P99']:.2f}ms，错误率={s4['写错误率']}%\n")
 
         # S5 审计日志
         if "S5" in results and results["S5"]:
-            lines.append("### S5 审计日志查询阶梯（审计表变慢拐点）\n")
+            lines.append("### S5 审计日志查询 —— 日志多了会不会卡\n")
+            lines.append("> 测什么：操作记录会越积越多，翻到很后面会不会变卡。找「开始卡」的页数。\n")
             lines.append("| 阶梯 | P99 | 错误率 | 达标 |")
             lines.append("|------|-----|--------|------|")
             for r in results["S5"]:
-                mark = "✓" if r["达标"] else "✗"
+                mark = "✓ 正常" if r["达标"] else "✗ 异常"
                 lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
             lines.append("")
 
         # S6 点名压力
         if "S6" in results and results["S6"]:
-            lines.append("### S6 点名压力测试（批量扣课 + 并发点名）\n")
+            lines.append("### S6 点名压力 —— 批量点名 + 多人同时点名\n")
+            lines.append("> 测什么：一次点名 50/100/200 个学员，还有多个老师同时点名，看扣课快不快。\n")
             lines.append("| 阶梯 | P99 | 错误率 | 达标 |")
             lines.append("|------|-----|--------|------|")
             for r in results["S6"]:
-                mark = "✓" if r["达标"] else "✗"
+                mark = "✓ 正常" if r["达标"] else "✗ 异常"
                 lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
             lines.append("")
 
-        # 综合评估
-        lines.append("## 综合评估\n")
-        verdicts = []
-        if "S1" in results:
-            failed = [r for r in results["S1"] if not r["达标"]]
-            if failed:
-                verdicts.append(f"**数据量边界**：在 {failed[0]['规模']} 学员时 P99 超过 {SLA_P99_MS}ms，查询开始变慢")
-            else:
-                verdicts.append(f"**数据量边界**：在 {results['S1'][-1]['规模']} 学员规模下仍达标，未找到瓶颈")
-        if "S5" in results and results["S5"]:
-            failed = [r for r in results["S5"] if not r["达标"]]
-            if failed:
-                verdicts.append(f"**审计表边界**：{failed[0]['阶梯']} 时 P99 超过 {SLA_P99_MS}ms，审计日志查询变慢（建议按月归档）")
-            else:
-                verdicts.append(f"**审计表边界**：所有阶梯均达标，审计日志查询性能良好")
-        if "S2" in results:
-            failed = [r for r in results["S2"] if not r["达标"]]
-            if failed:
-                verdicts.append(f"**并发边界**：在并发 {failed[0]['并发']} 时错误率/P99 超标，系统开始不稳定")
-            else:
-                verdicts.append(f"**并发边界**：在并发 {results['S2'][-1]['并发']} 下仍达标，未找到瓶颈")
-        if "S3" in results:
-            deg = results["S3"]["衰减率%"]
-            if deg > 50:
-                verdicts.append(f"**稳定性**：P99 衰减 {deg}%，存在明显性能衰减（疑似内存泄漏或 WAL 膨胀）")
-            elif deg > 20:
-                verdicts.append(f"**稳定性**：P99 衰减 {deg}%，有轻微性能衰减")
-            else:
-                verdicts.append(f"**稳定性**：P99 衰减 {deg}%，性能稳定")
-        if "S4" in results:
-            s4 = results["S4"]
-            if s4["写错误率"] > SLA_ERROR_RATE * 100:
-                verdicts.append(f"**混合负载**：写错误率 {s4['写错误率']}% 超标，SQLite 单写者锁成为瓶颈")
-            else:
-                verdicts.append(f"**混合负载**：读写混合场景达标，读 QPS={s4['读QPS']:.0f} 写 QPS={s4['写QPS']:.0f}")
-        if "S6" in results and results["S6"]:
-            failed = [r for r in results["S6"] if not r["达标"]]
-            if failed:
-                verdicts.append(f"**点名边界**：{failed[0]['阶梯']} 时 P99 超过 {SLA_P99_MS}ms，点名扣课变慢（建议优化 batchSetAttendance）")
-            else:
-                verdicts.append(f"**点名边界**：所有阶梯均达标，点名扣课性能良好")
-
+        # ===== 综合评估（大白话） =====
+        lines.append("## 📋 综合评估（详细解读）\n")
+        verdicts = _build_detailed_verdicts(results)
         for v in verdicts:
             lines.append(f"- {v}")
         lines.append("")
@@ -1478,6 +1666,144 @@ def generate_report(mode, results, duration_s):
 
     print(f"\n  📄 评估报告已生成：{os.path.abspath(report_path)}")
     return report_path
+
+
+def _build_quick_verdicts(mode, results):
+    """生成「测试结果速读」——一句话结论，用大白话告诉用户系统好不好用"""
+    verdicts = []
+    if mode == "quick":
+        # 简易评估：看几个关键指标
+        verdicts.append(f"✅ 测试已完成，耗时 {int(results.get('_duration', 0))} 秒" if False else "✅ 简易评估已完成")
+        # 检查是否有明显异常的指标
+        issues = []
+        for dim, data in results.items():
+            if not isinstance(data, dict):
+                continue
+            for k, v in data.items():
+                if not isinstance(v, (int, float)):
+                    continue
+                if "P99" in k and v > SLA_P99_MS:
+                    issues.append(f"{dim} 的 {k}={v:.0f}ms 超过 1 秒")
+                elif "错误率" in k and v > SLA_ERROR_RATE * 100:
+                    issues.append(f"{dim} 的 {k}={v}% 超过 1%")
+                elif "CPU" in k and v > SLA_CPU_PERCENT:
+                    issues.append(f"{dim} 的 {k}={v}% 超过 80%")
+        if issues:
+            verdicts.append("⚠️ 发现以下问题需关注：")
+            for i in issues[:5]:
+                verdicts.append(f"   - {i}")
+        else:
+            verdicts.append("✅ 各项指标均在正常范围内，系统运行良好。")
+    else:
+        # 压力测试：汇总各阶梯结论
+        verdicts.append(f"✅ 压力测试已完成")
+        all_pass = True
+        # S1 数据量
+        if "S1" in results:
+            failed = [r for r in results["S1"] if not r["达标"]]
+            if failed:
+                all_pass = False
+                verdicts.append(f"⚠️ **数据量**：学员达到 {failed[0]['规模']} 时查询开始变慢（P99 超过 1 秒）")
+            else:
+                verdicts.append(f"✅ **数据量**：学员达到 {results['S1'][-1]['规模']} 人查询仍流畅")
+        # S2 并发
+        if "S2" in results:
+            failed = [r for r in results["S2"] if not r["达标"]]
+            if failed:
+                all_pass = False
+                verdicts.append(f"⚠️ **并发**：同时 {failed[0]['并发']} 人时系统开始出错或变慢")
+            else:
+                verdicts.append(f"✅ **并发**：同时 {results['S2'][-1]['并发']} 人系统仍稳定")
+        # S3 持续负载
+        if "S3" in results:
+            deg = results["S3"]["衰减率%"]
+            if deg > 50:
+                all_pass = False
+                verdicts.append(f"⚠️ **稳定性**：连续运行后性能衰减 {deg}%，明显变慢（疑似内存泄漏）")
+            elif deg > 20:
+                verdicts.append(f"⚠️ **稳定性**：连续运行后性能衰减 {deg}%，轻微变慢")
+            else:
+                verdicts.append(f"✅ **稳定性**：连续运行 3 分钟性能稳定（衰减 {'+' if deg>0 else ''}{deg}%）")
+        # S4 混合负载
+        if "S4" in results:
+            s4 = results["S4"]
+            if s4["写错误率"] > SLA_ERROR_RATE * 100 or s4["读错误率"] > SLA_ERROR_RATE * 100:
+                all_pass = False
+                verdicts.append(f"⚠️ **混合负载**：写错误率 {s4['写错误率']}%、读错误率 {s4['读错误率']}%，超标")
+            else:
+                verdicts.append(f"✅ **混合负载**：读写混合场景正常（读 {s4['读QPS']:.0f}/秒，写 {s4['写QPS']:.0f}/秒）")
+        # S5 审计日志
+        if "S5" in results and results["S5"]:
+            failed = [r for r in results["S5"] if not r["达标"]]
+            if failed:
+                all_pass = False
+                verdicts.append(f"⚠️ **审计日志**：{failed[0]['阶梯']} 时查询变慢（建议按月归档旧日志）")
+            else:
+                verdicts.append(f"✅ **审计日志**：所有翻页查询均流畅")
+        # S6 点名
+        if "S6" in results and results["S6"]:
+            failed = [r for r in results["S6"] if not r["达标"]]
+            if failed:
+                all_pass = False
+                verdicts.append(f"⚠️ **点名**：{failed[0]['阶梯']} 时点名变慢或出错")
+            else:
+                verdicts.append(f"✅ **点名**：批量点名和并发点名均正常")
+        # 总结论
+        if all_pass:
+            verdicts.append("\n🎉 **总结**：系统在所有测试场景下均表现良好，可以放心使用。")
+        else:
+            verdicts.append("\n📋 **总结**：部分场景需要关注，详见下方「综合评估」的逐项解读。")
+    return verdicts
+
+
+def _build_detailed_verdicts(results):
+    """生成「综合评估」详细解读，用大白话逐项解释"""
+    verdicts = []
+    # S1 数据量
+    if "S1" in results:
+        failed = [r for r in results["S1"] if not r["达标"]]
+        if failed:
+            verdicts.append(f"**📈 数据量边界**：当学员数达到 **{failed[0]['规模']}** 时，查询响应时间 P99 超过 1 秒，开始变卡。建议控制学员规模，或对慢查询做索引优化。")
+        else:
+            verdicts.append(f"**📈 数据量边界**：学员规模到 **{results['S1'][-1]['规模']}** 人查询仍流畅（P99 < 1 秒），未找到瓶颈，可放心扩招。")
+    # S5 审计日志
+    if "S5" in results and results["S5"]:
+        failed = [r for r in results["S5"] if not r["达标"]]
+        if failed:
+            verdicts.append(f"**📝 审计日志边界**：在 **{failed[0]['阶梯']}** 时查询变慢。审计日志会随操作不断累积，建议定期按月归档旧日志，保持查询速度。")
+        else:
+            verdicts.append(f"**📝 审计日志边界**：所有翻页查询均流畅，审计日志查询性能良好。")
+    # S2 并发
+    if "S2" in results:
+        failed = [r for r in results["S2"] if not r["达标"]]
+        if failed:
+            verdicts.append(f"**👥 并发边界**：同时 **{failed[0]['并发']}** 人操作时，错误率或响应时间超标，系统开始不稳定。教培场景同时在线人数通常不会超过这个值，可酌情忽略或扩容。")
+        else:
+            verdicts.append(f"**👥 并发边界**：同时 **{results['S2'][-1]['并发']}** 人操作系统仍稳定，未找到崩溃点，并发能力充足。")
+    # S3 持续负载
+    if "S3" in results:
+        deg = results["S3"]["衰减率%"]
+        if deg > 50:
+            verdicts.append(f"**⏱️ 稳定性**：连续运行 3 分钟后，响应时间增加了 **{deg}%**，存在明显性能衰减。可能原因：内存泄漏、WAL 文件膨胀。建议重启服务观察，或检查是否有未释放的资源。")
+        elif deg > 20:
+            verdicts.append(f"**⏱️ 稳定性**：连续运行后性能衰减 {deg}%，有轻微变慢，建议持续观察。")
+        else:
+            verdicts.append(f"**⏱️ 稳定性**：连续运行 3 分钟性能稳定（衰减 {'+' if deg>0 else ''}{deg}%），无内存泄漏迹象。")
+    # S4 混合负载
+    if "S4" in results:
+        s4 = results["S4"]
+        if s4["写错误率"] > SLA_ERROR_RATE * 100:
+            verdicts.append(f"**🔀 混合负载**：写操作错误率 {s4['写错误率']}% 超标。SQLite 数据库同一时刻只允许一个写操作，高并发写入时会排队失败。如果业务有大量并发写入需求，可考虑换用 PostgreSQL/MySQL。")
+        else:
+            verdicts.append(f"**🔀 混合负载**：读写混合场景正常，读 {s4['读QPS']:.0f} 次/秒、写 {s4['写QPS']:.0f} 次/秒，满足日常使用。")
+    # S6 点名
+    if "S6" in results and results["S6"]:
+        failed = [r for r in results["S6"] if not r["达标"]]
+        if failed:
+            verdicts.append(f"**✋ 点名边界**：{failed[0]['阶梯']} 时点名变慢或出错。点名是高频操作，建议优化批量扣课逻辑或分批点名。")
+        else:
+            verdicts.append(f"**✋ 点名边界**：批量点名（最多 200 条）和多人同时点名均正常，点名性能良好。")
+    return verdicts
 
 
 # ============ 主流程 ============

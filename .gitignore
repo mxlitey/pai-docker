@@ -9,3 +9,4 @@ server.pid
 data/
 # 性能测试报告（运行时生成）
 reports/
+scripts/reports/
