@@ -64,7 +64,7 @@
 
   SLA 阈值：P99 > 1s 或 错误率 > 1% 或 CPU > 80% 判定「不好用」
 
-测试完成后输出评估报告（控制台 + scripts/reports/perf_report_YYYYMMDD_HHMMSS.md）
+测试完成后输出评估报告（控制台 + scripts/reports/perf_report_YYYYMMDD_HHMMSS.html）
 """
 
 import json
@@ -1512,12 +1512,118 @@ def s6_attendance_stress(student_ids, course_id):
 
 # ============ 评估报告生成 ============
 
+def _md_to_html(md_content):
+    """简易 Markdown → HTML 转换（覆盖报告用到的语法：标题/表格/列表/引用/粗体/段落）"""
+    import re
+    lines = md_content.split("\n")
+    html_lines = []
+    in_table = False
+    table_rows = []
+    in_list = False
+    in_quote = False
+
+    def escape(s):
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    def inline(s):
+        s = escape(s)
+        # 粗体 **text**
+        s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
+        return s
+
+    def flush_table():
+        nonlocal in_table, table_rows
+        if not table_rows:
+            in_table = False
+            return
+        html_lines.append('<table>')
+        # 首行为表头
+        header = table_rows[0]
+        cells = [c.strip() for c in header.split('|')][1:-1]
+        html_lines.append('<thead><tr>' + ''.join(f'<th>{inline(c)}</th>' for c in cells) + '</tr></thead>')
+        # 跳过分隔行（|---|---|）
+        body_rows = table_rows[2:] if len(table_rows) > 2 else []
+        html_lines.append('<tbody>')
+        for row in body_rows:
+            cells = [c.strip() for c in row.split('|')][1:-1]
+            html_lines.append('<tr>' + ''.join(f'<td>{inline(c)}</td>' for c in cells) + '</tr>')
+        html_lines.append('</tbody></table>')
+        in_table = False
+        table_rows = []
+
+    def flush_list():
+        nonlocal in_list
+        if in_list:
+            html_lines.append('</ul>')
+            in_list = False
+
+    def flush_quote():
+        nonlocal in_quote
+        if in_quote:
+            html_lines.append('</blockquote>')
+            in_quote = False
+
+    for line in lines:
+        stripped = line.strip()
+        # 表格行
+        if stripped.startswith('|') and stripped.endswith('|'):
+            flush_list()
+            flush_quote()
+            if not in_table:
+                in_table = True
+                table_rows = []
+            table_rows.append(stripped)
+            continue
+        else:
+            if in_table:
+                flush_table()
+
+        # 标题
+        if stripped.startswith('### '):
+            flush_list()
+            flush_quote()
+            html_lines.append(f'<h3>{inline(stripped[4:])}</h3>')
+        elif stripped.startswith('## '):
+            flush_list()
+            flush_quote()
+            html_lines.append(f'<h2>{inline(stripped[3:])}</h2>')
+        elif stripped.startswith('# '):
+            flush_list()
+            flush_quote()
+            html_lines.append(f'<h1>{inline(stripped[2:])}</h1>')
+        elif stripped.startswith('> '):
+            flush_list()
+            if not in_quote:
+                html_lines.append('<blockquote>')
+                in_quote = True
+            html_lines.append(f'<p>{inline(stripped[2:])}</p>')
+        elif stripped.startswith('- '):
+            flush_quote()
+            if not in_list:
+                html_lines.append('<ul>')
+                in_list = True
+            html_lines.append(f'<li>{inline(stripped[2:])}</li>')
+        elif stripped == '':
+            flush_list()
+            flush_quote()
+        else:
+            flush_list()
+            flush_quote()
+            html_lines.append(f'<p>{inline(stripped)}</p>')
+
+    if in_table:
+        flush_table()
+    flush_list()
+    flush_quote()
+    return '\n'.join(html_lines)
+
+
 def generate_report(mode, results, duration_s):
-    """生成 Markdown 评估报告（含通俗说明，方便非技术人员阅读）"""
+    """生成 HTML 评估报告（含通俗说明，方便非技术人员阅读）"""
     ts = time.strftime("%Y%m%d_%H%M%S")
     report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
     os.makedirs(report_dir, exist_ok=True)
-    report_path = os.path.join(report_dir, f"perf_report_{ts}.md")
+    report_path = os.path.join(report_dir, f"perf_report_{ts}.html")
 
     # 判定测试环境类型
     if BASE.startswith("http://127.0.0.1") or BASE.startswith("http://localhost"):
@@ -1661,8 +1767,85 @@ def generate_report(mode, results, duration_s):
         lines.append("")
 
     content = "\n".join(lines)
+    # 将 Markdown 内容转换为带样式的 HTML 文档
+    html_body = _md_to_html(content)
+    title = f"性能测试评估报告 - {time.strftime('%Y-%m-%d %H:%M:%S')}"
+    html_doc = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title}</title>
+<style>
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    line-height: 1.6;
+    color: #333;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px;
+    background: #f7f7f9;
+  }}
+  h1 {{
+    color: #1a73e8;
+    border-bottom: 2px solid #1a73e8;
+    padding-bottom: 8px;
+  }}
+  h2 {{
+    color: #174ea6;
+    margin-top: 32px;
+    border-left: 4px solid #1a73e8;
+    padding-left: 12px;
+  }}
+  h3 {{
+    color: #333;
+    margin-top: 24px;
+  }}
+  table {{
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  }}
+  th, td {{
+    border: 1px solid #e0e0e0;
+    padding: 8px 12px;
+    text-align: left;
+  }}
+  th {{
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 500;
+  }}
+  tr:nth-child(even) {{
+    background: #f5f7fa;
+  }}
+  blockquote {{
+    border-left: 4px solid #ffa726;
+    background: #fff8e1;
+    padding: 8px 16px;
+    margin: 12px 0;
+    color: #5d4037;
+  }}
+  blockquote p {{ margin: 4px 0; }}
+  code {{
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', monospace;
+  }}
+  p {{ margin: 8px 0; }}
+  ul {{ margin: 8px 0; padding-left: 24px; }}
+  li {{ margin: 4px 0; }}
+</style>
+</head>
+<body>
+{html_body}
+</body>
+</html>"""
     with open(report_path, "w", encoding="utf-8") as f:
-        f.write(content)
+        f.write(html_doc)
 
     print(f"\n  📄 评估报告已生成：{os.path.abspath(report_path)}")
     return report_path
