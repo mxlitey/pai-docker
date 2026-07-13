@@ -64,12 +64,8 @@ COPY node-functions ./node-functions
 COPY --from=builder /build/dist ./dist
 
 # 数据持久化目录
-RUN mkdir -p /app/data \
-    && chown -R node:node /app
+RUN mkdir -p /app/data
 VOLUME /app/data
-
-# 安全：以非 root 用户运行应用，降低容器逃逸/RCE 的影响面
-USER node
 
 EXPOSE 8788
 

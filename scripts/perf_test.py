@@ -1735,11 +1735,24 @@ def main():
                     raise
                 print(f"  ✗ {login_err}")
                 # 检查是否未初始化（data.bootstrap=true 表示需要引导，即未初始化）
+                # 未初始化时自动用 admin/admin123 引导，然后重试登录
                 try:
                     bs, _ = http("GET", "/api/auth/bootstrap", timeout=5)
                     if bs.get("code") == 0 and bs.get("data", {}).get("bootstrap"):
-                        print("  ⚠ 系统尚未初始化，请先用浏览器打开后台完成初始化引导")
-                        sys.exit(1)
+                        print("  ℹ 系统尚未初始化，自动用 admin/admin123 初始化...")
+                        r, status = http("POST", "/api/auth/bootstrap", {
+                            "username": "admin",
+                            "password": "admin123",
+                            "realName": "管理员",
+                        }, timeout=10)
+                        if r.get("code") == 0:
+                            print("  ✓ 初始化成功（账号 admin / 密码 admin123）")
+                            ADMIN_USER = "admin"
+                            ADMIN_PASS = "admin123"
+                            login_attempted = False  # 重置标记，直接用默认账号重试登录
+                        else:
+                            print(f"  ✗ 初始化失败: {r.get('message', '未知错误')}")
+                            sys.exit(1)
                 except Exception:
                     pass
 
