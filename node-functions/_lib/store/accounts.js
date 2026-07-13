@@ -58,7 +58,7 @@ export async function getAccountTransactions({ studentId } = {}) {
   let sql = 'SELECT * FROM account_transactions WHERE 1=1'
   const params = []
   if (studentId) { sql += ' AND student_id=?'; params.push(studentId) }
-  sql += ' ORDER BY datetime(created_at) DESC, id DESC'
+  sql += ' ORDER BY created_at DESC, id DESC'
   const rows = db.prepare(sql).all(...params)
   return rows.map(rowToTx)
 }

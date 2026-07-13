@@ -25,7 +25,7 @@ function rowToAdmin(r) {
 // ========== 管理员账号（RBAC） ==========
 export async function getAdmins() {
   const db = getDb()
-  const rows = db.prepare('SELECT * FROM admins ORDER BY datetime(created_at), id').all()
+  const rows = db.prepare('SELECT * FROM admins ORDER BY created_at, id').all()
   return rows.map(rowToAdmin)
 }
 

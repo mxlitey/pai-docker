@@ -315,10 +315,10 @@ export async function batchSetAttendance(items) {
       const findEnrollment = (courseId) => {
         const withRemaining = db.prepare(`SELECT * FROM enrollments
           WHERE student_id=? AND course_id=? AND status='active' AND (remaining_paid_hours > 0 OR remaining_gift_hours > 0)
-          ORDER BY datetime(enrolled_at), datetime(created_at) LIMIT 1`).get(row.student_id, courseId)
+          ORDER BY enrolled_at, created_at LIMIT 1`).get(row.student_id, courseId)
         if (withRemaining) return withRemaining
         return db.prepare(`SELECT * FROM enrollments WHERE student_id=? AND course_id=? AND status='active'
-          ORDER BY datetime(enrolled_at), datetime(created_at) LIMIT 1`).get(row.student_id, courseId)
+          ORDER BY enrolled_at, created_at LIMIT 1`).get(row.student_id, courseId)
       }
 
       if (newAttended) {

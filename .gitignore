@@ -7,3 +7,5 @@ dist
 server.pid
 # SQLite 数据目录（运行时生成，含 pai.db 与 config.json 密钥）
 data/
+# 性能测试报告（运行时生成）
+reports/

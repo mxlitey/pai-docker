@@ -19,7 +19,7 @@ function rowToGrade(r) {
 
 export async function getGrades() {
   const db = getDb()
-  const rows = db.prepare('SELECT * FROM grades ORDER BY sort_order, datetime(created_at), id').all()
+  const rows = db.prepare('SELECT * FROM grades ORDER BY sort_order, created_at, id').all()
   return rows.map(rowToGrade)
 }
 

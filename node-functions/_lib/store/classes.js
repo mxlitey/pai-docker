@@ -37,7 +37,7 @@ export async function getClasses({ courseId, status } = {}) {
   const params = []
   if (courseId) { sql += ' AND c.course_id=?'; params.push(courseId) }
   if (status) { sql += ' AND c.status=?'; params.push(status) }
-  sql += ' ORDER BY c.name, datetime(c.created_at), c.id'
+  sql += ' ORDER BY c.name, c.created_at, c.id'
   const rows = db.prepare(sql).all(...params)
   return rows.map((r) => ({
     id: r.id,

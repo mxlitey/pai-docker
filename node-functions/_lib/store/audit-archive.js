@@ -60,7 +60,7 @@ export function archiveAuditLogs(month) {
   const doArchive = db.transaction(() => {
     // 查询该月所有审计日志（created_at 为 'YYYY-MM-DD HH:MM:SS'，可按字典序比较）
     const rows = db.prepare(
-      `SELECT * FROM audit_logs WHERE created_at >= ? AND created_at < ? ORDER BY datetime(created_at), id`,
+      `SELECT * FROM audit_logs WHERE created_at >= ? AND created_at < ? ORDER BY created_at, id`,
     ).all(start, end)
     const logs = rows.map(rowToAuditLog)
 

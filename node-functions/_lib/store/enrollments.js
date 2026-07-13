@@ -38,7 +38,7 @@ export async function getEnrollments({ studentId, courseId, status } = {}) {
   if (studentId) { sql += ' AND student_id=?'; params.push(studentId) }
   if (courseId) { sql += ' AND course_id=?'; params.push(courseId) }
   if (status) { sql += ' AND status=?'; params.push(status) }
-  sql += ' ORDER BY datetime(enrolled_at), datetime(created_at), id'
+  sql += ' ORDER BY enrolled_at, created_at, id'
   const rows = db.prepare(sql).all(...params)
   return rows.map(rowToEnrollment)
 }
@@ -53,11 +53,11 @@ export async function findActiveEnrollmentForAttendance(studentId, courseId) {
   const db = getDb()
   const withRemaining = db.prepare(`SELECT * FROM enrollments
     WHERE student_id=? AND course_id=? AND status='active' AND (remaining_paid_hours > 0 OR remaining_gift_hours > 0)
-    ORDER BY datetime(enrolled_at), datetime(created_at) LIMIT 1`).get(studentId, courseId)
+    ORDER BY enrolled_at, created_at LIMIT 1`).get(studentId, courseId)
   if (withRemaining) return rowToEnrollment(withRemaining)
   const anyActive = db.prepare(`SELECT * FROM enrollments
     WHERE student_id=? AND course_id=? AND status='active'
-    ORDER BY datetime(enrolled_at), datetime(created_at) LIMIT 1`).get(studentId, courseId)
+    ORDER BY enrolled_at, created_at LIMIT 1`).get(studentId, courseId)
   return rowToEnrollment(anyActive)
 }
 

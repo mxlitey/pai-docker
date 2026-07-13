@@ -188,7 +188,7 @@ export async function getScheduleChanges({ scheduleId, studentId, limit } = {}) 
     sql += ' AND student_id=?'
     params.push(studentId)
   }
-  sql += ' ORDER BY datetime(created_at) DESC'
+  sql += ' ORDER BY created_at DESC'
   if (limit && limit > 0) {
     sql += ' LIMIT ?'
     params.push(limit)

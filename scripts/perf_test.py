@@ -4,15 +4,28 @@
 排课系统性能测试脚本（双入口）
 
 用法：
-  python3 scripts/perf_test.py              # 交互式选择
-  python3 scripts/perf_test.py quick        # 简易评估（D1-D12，约 3 分钟）
-  python3 scripts/perf_test.py stress       # 压力测试（S1-S5 + 评估报告，约 18 分钟）
+  python3 scripts/perf_test.py                              # 交互式选择
+  python3 scripts/perf_test.py quick                        # 简易评估（D1-D16，约 4 分钟）
+  python3 scripts/perf_test.py stress                       # 压力测试（S1-S6 + 评估报告，约 20 分钟）
+
+  # 指定测试目标环境（默认本机）
+  python3 scripts/perf_test.py quick --local                # 本机 127.0.0.1:8788
+  python3 scripts/perf_test.py quick --lan 192.168.1.100    # 局域网（默认端口 8788）
+  python3 scripts/perf_test.py quick --wan https://api.example.com  # 公网（完整 URL）
+  python3 scripts/perf_test.py quick --base http://10.0.0.5:9000    # 自定义地址
+
+  # 也可用环境变量 PERF_BASE 指定
+  PERF_BASE=http://192.168.1.100:8788 python3 scripts/perf_test.py quick
 
 【简易评估 quick】
   固定 200 学员规模下的多维度性能快照：
   D1 基础响应延迟 / D2 并发吞吐 / D3 DB查询 / D4 业务事务
   D5 报表聚合 / D6 搜索 / D7 鉴权 / D8 写吞吐 / D9 系统资源
   D10 课程/班级/班级成员 / D11 审计日志 / D12 反馈+教师绩效
+  D13 点名（读列表+批量扣课+改缺勤）
+  D14 排课写入（单条/批量/冲突检测）
+  D15 退课（多表事务）
+  D16 优化表查询（报名/账户流水/退课/调课/管理员）
 
 【压力测试 stress】
   按标准 SLA 阶梯加压，找到「系统不好用」的边界：
@@ -21,6 +34,7 @@
   S3 持续负载（固定 QPS 跑 3 分钟，测内存泄漏/性能衰减）
   S4 混合负载（读写 7:3，测真实场景瓶颈）
   S5 审计日志查询阶梯（深翻页/大页/按模块过滤，找审计表变慢拐点）
+  S6 点名压力（50/100/200条批量扣课 + 并发点名）
 
   SLA 阈值：P99 > 1s 或 错误率 > 1% 或 CPU > 80% 判定「不好用」
 
@@ -33,6 +47,7 @@ import statistics
 import threading
 import os
 import sys
+import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlencode
 import urllib.request
@@ -263,14 +278,20 @@ def create_feedback(student_id, schedule_id, teacher_id=""):
     return r.get("code") == 0
 
 
-def create_schedule(student_id, course_id, class_id="", date=None):
+def create_schedule(student_id, course_id, class_id="", date=None, course_name="性能测试课程", student_name=""):
     """创建单条排课"""
     if date is None:
         date = time.strftime("%Y-%m-%d")
+    if not class_id:
+        class_id = "none"
+    if not student_name:
+        student_name = f"perf_{student_id[:8]}"
     r, _ = http("POST", "/api/schedule-add", {"schedule": {
         "studentId": student_id,
         "courseId": course_id,
+        "courseName": course_name,
         "classId": class_id,
+        "studentName": student_name,
         "date": date,
         "startTime": "09:00",
         "endTime": "10:00",
@@ -278,6 +299,46 @@ def create_schedule(student_id, course_id, class_id="", date=None):
     if r.get("code") == 0:
         return r["data"]["schedule"]["id"]
     return None
+
+
+def batch_add_schedules(student_ids, course_id, dates, start_time="09:00", end_time="10:00", class_id="", course_name="性能测试课程"):
+    """批量排课（一次 API 调用）"""
+    if not student_ids or not dates:
+        return 0
+    if not class_id:
+        class_id = "none"
+    r, _ = http("POST", "/api/schedule-add-batch", {
+        "studentIds": student_ids,
+        "courseId": course_id,
+        "courseName": course_name,
+        "classId": class_id,
+        "dates": dates,
+        "startTime": start_time,
+        "endTime": end_time,
+    }, token=TOKEN, timeout=60)
+    if r.get("code") == 0:
+        return r["data"].get("created", 0)
+    return 0
+
+
+def set_attendance(items):
+    """批量点名（items: [{scheduleId, attended}]）"""
+    if not items:
+        return 0
+    r, _ = http("POST", "/api/attendance", {"items": items}, token=TOKEN, timeout=60)
+    if r.get("code") == 0:
+        return r["data"].get("updated", 0) or len(items)
+    return 0
+
+
+def create_transfer(student_id, from_enrollment_id, reason="测试退课"):
+    """退课"""
+    r, _ = http("POST", "/api/transfer-add", {"transfer": {
+        "studentId": student_id,
+        "fromEnrollmentId": from_enrollment_id,
+        "reason": reason,
+    }}, token=TOKEN)
+    return r.get("code") == 0
 
 
 # ============ D1-D9 简易评估（固定规模快照） ============
@@ -474,6 +535,22 @@ def d9_system():
     print("  D9 系统资源占用")
     print("=" * 60)
     results = {}
+    is_remote = not BASE.startswith("http://127.0.0.1") and not BASE.startswith("http://localhost")
+
+    if is_remote:
+        # 远程测试：无法直接读进程/数据库，用 API 延迟推断负载
+        print("  [远程测试] 无法直接采集服务器资源，改用 API 延迟推断")
+        lats, _, _ = measure(lambda: http("GET", "/api/config"), 30)
+        s = stats(lats)
+        print(f"  配置接口延迟  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms")
+        # 延迟显著高于本机基线（>100ms）可能意味着高负载
+        if s["p99_ms"] > 100:
+            results["远程延迟告警"] = s["p99_ms"]
+            print(f"  ⚠ P99={s['p99_ms']:.0f}ms 高于 100ms，服务器可能高负载")
+        results["配置接口P99"] = s["p99_ms"]
+        return results
+
+    # 本机测试：直接采集进程/数据库资源
     import subprocess
     try:
         result = subprocess.run(["ps", "aux"], capture_output=True, text=True, timeout=5)
@@ -621,6 +698,204 @@ def d12_feedback_perf(student_ids, course_id):
     s = stats(lats)
     print(f"  教师绩效            {s}")
     results["教师绩效P95"] = s["p95_ms"]
+    return results
+
+
+def d13_attendance(student_ids, course_id):
+    """D13 点名性能（读点名列表 + 批量点名扣课）"""
+    print("\n" + "=" * 60)
+    print("  D13 点名性能（读列表 + 批量扣课）")
+    print("=" * 60)
+    results = {}
+    if not student_ids or not course_id:
+        print("  [跳过] 缺数据")
+        return results
+
+    today = time.strftime("%Y-%m-%d")
+    # 创建班级（schedule-add 要求 classId 在班级表中存在）
+    class_id = ensure_class("点名测试班", course_id)
+    if not class_id:
+        print("  [跳过] 班级创建失败")
+        return results
+
+    # 先为部分学员创建报名 + 今天的排课，供点名用
+    sample = student_ids[:50]
+    print(f"  准备：为 {len(sample)} 个学员创建报名+今日排课...")
+    for sid in sample:
+        create_enrollment(sid, course_id, hours=20)
+    sched_ids = []
+    for sid in sample:
+        sid_sched = create_schedule(sid, course_id, class_id=class_id, date=today)
+        if sid_sched:
+            sched_ids.append((sid, sid_sched))
+
+    if not sched_ids:
+        print("  [跳过] 排课创建失败")
+        return results
+
+    # 1. 点名 GET（读取当日点名列表）
+    lats, _, _ = measure(lambda: http("GET", f"/api/attendance?date={today}", token=TOKEN), 30)
+    s = stats(lats)
+    print(f"  点名列表GET(50条)   {s}")
+    results["点名列表GET_P95"] = s["p95_ms"]
+
+    # 2. 点名 POST（批量扣课，50条）
+    items = [{"scheduleId": sid, "attended": True} for _, sid in sched_ids]
+    lats = []
+    for _ in range(5):
+        t0 = time.perf_counter()
+        set_attendance(items)
+        lats.append((time.perf_counter() - t0) * 1000)
+    s = stats(lats)
+    print(f"  批量点名POST(50条)  {s}")
+    results["批量点名50条_P95"] = s["p95_ms"]
+
+    # 3. 改缺勤（回退课时）
+    undo_items = [{"scheduleId": sid, "attended": False} for _, sid in sched_ids[:20]]
+    lats = []
+    for _ in range(5):
+        t0 = time.perf_counter()
+        set_attendance(undo_items)
+        lats.append((time.perf_counter() - t0) * 1000)
+    s = stats(lats)
+    print(f"  改缺勤POST(20条)    {s}")
+    results["改缺勤20条_P95"] = s["p95_ms"]
+
+    return results
+
+
+def d14_schedule_write(student_ids, course_id):
+    """D14 排课写入性能（单条 + 批量 + 冲突检测）"""
+    print("\n" + "=" * 60)
+    print("  D14 排课写入性能（单条/批量/冲突检测）")
+    print("=" * 60)
+    results = {}
+    if not student_ids or not course_id:
+        print("  [跳过] 缺数据")
+        return results
+
+    # 创建班级 + 报名（排课前置条件）
+    class_id = ensure_class("排课测试班", course_id)
+    sample = student_ids[:50]
+    for sid in sample:
+        create_enrollment(sid, course_id, hours=20)
+
+    tomorrow = time.strftime("%Y-%m-%d", time.localtime(time.time() + 86400))
+
+    # 1. 单条排课（含冲突检测）
+    single_sample = sample[:20]
+    lats = []
+    for sid in single_sample:
+        t0 = time.perf_counter()
+        create_schedule(sid, course_id, class_id=class_id, date=tomorrow)
+        lats.append((time.perf_counter() - t0) * 1000)
+    s = stats(lats)
+    print(f"  单条排课(含冲突检测)  {s}")
+    results["单条排课P95"] = s["p95_ms"]
+
+    # 2. 批量排课（50学员 × 1天）
+    lats = []
+    for i in range(3):
+        day = time.strftime("%Y-%m-%d", time.localtime(time.time() + 86400 * (2 + i)))
+        t0 = time.perf_counter()
+        batch_add_schedules(sample, course_id, [day], class_id=class_id)
+        lats.append((time.perf_counter() - t0) * 1000)
+    s = stats(lats)
+    print(f"  批量排课(50人×1天)    {s}")
+    results["批量排课50人_P95"] = s["p95_ms"]
+
+    # 3. 批量排课（50学员 × 10天，N×M 冲突检测）
+    dates = [time.strftime("%Y-%m-%d", time.localtime(time.time() + 86400 * (5 + i))) for i in range(10)]
+    t0 = time.perf_counter()
+    batch_add_schedules(sample, course_id, dates, class_id=class_id)
+    lat = (time.perf_counter() - t0) * 1000
+    print(f"  批量排课(50人×10天)   {lat:.2f}ms")
+    results["批量排课50人10天"] = round(lat, 2)
+
+    return results
+
+
+def d15_transfer(student_ids, course_id):
+    """D15 退课性能（多表事务）"""
+    print("\n" + "=" * 60)
+    print("  D15 退课性能（多表事务）")
+    print("=" * 60)
+    results = {}
+    if not student_ids or not course_id:
+        print("  [跳过] 缺数据")
+        return results
+
+    # 先为测试学员创建报名（带课时）
+    sample = student_ids[:10]
+    enr_ids = []
+    for sid in sample:
+        r, _ = http("POST", "/api/enrollment-add", {"enrollment": {
+            "studentId": sid, "courseId": course_id,
+            "purchasedHours": 10, "giftHours": 2,
+            "unitPrice": 100, "totalAmount": 1000, "paidAmount": 1000,
+        }}, token=TOKEN)
+        if r.get("code") == 0:
+            enr_ids.append((sid, r["data"]["enrollment"]["id"]))
+
+    if not enr_ids:
+        print("  [跳过] 报名创建失败")
+        return results
+
+    # 退课（多表事务：transfers + enrollments + account_transactions + schedules）
+    lats = []
+    for sid, eid in enr_ids:
+        t0 = time.perf_counter()
+        create_transfer(sid, eid)
+        lats.append((time.perf_counter() - t0) * 1000)
+    s = stats(lats)
+    print(f"  退课(多表事务)  {s}")
+    results["退课P95"] = s["p95_ms"]
+
+    return results
+
+
+def d16_optimized_tables(student_ids):
+    """D16 优化后的表查询性能（验证 datetime() 修复效果）"""
+    print("\n" + "=" * 60)
+    print("  D16 优化表查询（报名/账户流水/退课/调课/管理员）")
+    print("=" * 60)
+    results = {}
+    if not student_ids:
+        print("  [跳过] 缺数据")
+        return results
+
+    sid = student_ids[0]
+
+    # 1. 报名记录查询
+    lats, _, _ = measure(lambda: http("GET", f"/api/enrollments?studentId={sid}", token=TOKEN), 30)
+    s = stats(lats)
+    print(f"  报名记录查询        {s}")
+    results["报名记录P95"] = s["p95_ms"]
+
+    # 2. 账户流水查询
+    lats, _, _ = measure(lambda: http("GET", f"/api/account-transactions?studentId={sid}", token=TOKEN), 30)
+    s = stats(lats)
+    print(f"  账户流水查询        {s}")
+    results["账户流水P95"] = s["p95_ms"]
+
+    # 3. 退课流水查询
+    lats, _, _ = measure(lambda: http("GET", f"/api/transfers?studentId={sid}", token=TOKEN), 30)
+    s = stats(lats)
+    print(f"  退课流水查询        {s}")
+    results["退课流水P95"] = s["p95_ms"]
+
+    # 4. 调课记录查询
+    lats, _, _ = measure(lambda: http("GET", f"/api/schedule-changes?studentId={sid}", token=TOKEN), 30)
+    s = stats(lats)
+    print(f"  调课记录查询        {s}")
+    results["调课记录P95"] = s["p95_ms"]
+
+    # 5. 管理员列表
+    lats, _, _ = measure(lambda: http("GET", "/api/admins", token=TOKEN), 30)
+    s = stats(lats)
+    print(f"  管理员列表          {s}")
+    results["管理员列表P95"] = s["p95_ms"]
+
     return results
 
 
@@ -962,6 +1237,82 @@ def s5_audit_log_staircase():
     return results
 
 
+def s6_attendance_stress(student_ids, course_id):
+    """S6 点名压力测试（并发点名 + 大批量扣课）"""
+    print("\n" + "=" * 60)
+    print("  S6 点名压力测试（并发点名 + 大批量扣课）")
+    print(f"  SLA: P99 > {SLA_P99_MS}ms 或 错误率 > {SLA_ERROR_RATE*100}% 判定不达标")
+    print("=" * 60)
+    results = []
+    if not student_ids or not course_id:
+        print("  [跳过] 缺数据")
+        return results
+
+    today = time.strftime("%Y-%m-%d")
+    # 创建班级 + 报名 + 排课（前置条件）
+    class_id = ensure_class("点名压测班", course_id)
+    sample = student_ids[:200]
+    print(f"  准备：为 {len(sample)} 个学员创建报名+今日排课...")
+    for sid in sample:
+        create_enrollment(sid, course_id, hours=20)
+    sched_ids = []
+    for sid in sample:
+        sid_sched = create_schedule(sid, course_id, class_id=class_id, date=today)
+        if sid_sched:
+            sched_ids.append(sid_sched)
+    print(f"  已创建 {len(sched_ids)} 条排课")
+
+    if not sched_ids:
+        print("  [跳过] 排课创建失败")
+        return results
+
+    # 阶梯 1: 小批量点名（50条）
+    items50 = [{"scheduleId": sid, "attended": True} for sid in sched_ids[:50]]
+    lats, ok, err = measure(lambda: set_attendance(items50), 5)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"\n  [阶梯 1] 批量点名 50 条")
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "点名50条", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # 阶梯 2: 中批量点名（100条）
+    items100 = [{"scheduleId": sid, "attended": True} for sid in sched_ids[:100]]
+    lats, ok, err = measure(lambda: set_attendance(items100), 5)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"\n  [阶梯 2] 批量点名 100 条")
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "点名100条", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # 阶梯 3: 大批量点名（200条）
+    items200 = [{"scheduleId": sid, "attended": True} for sid in sched_ids[:200]]
+    lats, ok, err = measure(lambda: set_attendance(items200), 5)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"\n  [阶梯 3] 批量点名 200 条")
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "点名200条", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # 阶梯 4: 并发点名（10 个老师同时点名不同学员）
+    chunks = [sched_ids[i::10] for i in range(10)]
+    concurrent_items = [[{"scheduleId": sid, "attended": True} for sid in chunk] for chunk in chunks if chunk]
+    lats, ok, err, wall = measure_concurrent(
+        lambda: set_attendance(concurrent_items[0]) if concurrent_items else ({"code": -1}, 0),
+        concurrency=len(concurrent_items), total=len(concurrent_items), timeout=120,
+    )
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"\n  [阶梯 4] 并发点名（{len(concurrent_items)} 路各 ~{len(concurrent_items[0]) if concurrent_items else 0} 条）")
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": f"并发{len(concurrent_items)}路", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    return results
+
+
 # ============ 评估报告生成 ============
 
 def generate_report(mode, results, duration_s):
@@ -971,13 +1322,24 @@ def generate_report(mode, results, duration_s):
     os.makedirs(report_dir, exist_ok=True)
     report_path = os.path.join(report_dir, f"perf_report_{ts}.md")
 
+    # 判定测试环境类型
+    if BASE.startswith("http://127.0.0.1") or BASE.startswith("http://localhost"):
+        env_type = "本机"
+    elif BASE.startswith("https://"):
+        env_type = "公网"
+    else:
+        env_type = "局域网"
+
     lines = []
     lines.append(f"# 性能测试评估报告\n")
     lines.append(f"- **测试时间**：{time.strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"- **测试模式**：{'简易评估 (quick)' if mode == 'quick' else '压力测试 (stress)'}")
     lines.append(f"- **测试耗时**：{duration_s:.0f} 秒")
+    lines.append(f"- **测试环境**：{env_type}")
     lines.append(f"- **服务地址**：{BASE}\n")
     lines.append(f"- **SLA 阈值**：P99 > {SLA_P99_MS}ms / 错误率 > {SLA_ERROR_RATE*100}% / CPU > {SLA_CPU_PERCENT}%\n")
+    if env_type != "本机":
+        lines.append(f"> ⚠️ 非**本机**测试：网络延迟会叠加到所有响应时间上，结果反映的是「客户端→网络→服务端」端到端性能，而非纯服务端性能。\n")
 
     if mode == "quick":
         lines.append("## 简易评估结果\n")
@@ -1048,6 +1410,16 @@ def generate_report(mode, results, duration_s):
                 lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
             lines.append("")
 
+        # S6 点名压力
+        if "S6" in results and results["S6"]:
+            lines.append("### S6 点名压力测试（批量扣课 + 并发点名）\n")
+            lines.append("| 阶梯 | P99 | 错误率 | 达标 |")
+            lines.append("|------|-----|--------|------|")
+            for r in results["S6"]:
+                mark = "✓" if r["达标"] else "✗"
+                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+            lines.append("")
+
         # 综合评估
         lines.append("## 综合评估\n")
         verdicts = []
@@ -1083,6 +1455,12 @@ def generate_report(mode, results, duration_s):
                 verdicts.append(f"**混合负载**：写错误率 {s4['写错误率']}% 超标，SQLite 单写者锁成为瓶颈")
             else:
                 verdicts.append(f"**混合负载**：读写混合场景达标，读 QPS={s4['读QPS']:.0f} 写 QPS={s4['写QPS']:.0f}")
+        if "S6" in results and results["S6"]:
+            failed = [r for r in results["S6"] if not r["达标"]]
+            if failed:
+                verdicts.append(f"**点名边界**：{failed[0]['阶梯']} 时 P99 超过 {SLA_P99_MS}ms，点名扣课变慢（建议优化 batchSetAttendance）")
+            else:
+                verdicts.append(f"**点名边界**：所有阶梯均达标，点名扣课性能良好")
 
         for v in verdicts:
             lines.append(f"- {v}")
@@ -1136,6 +1514,10 @@ def run_quick():
     all_results["D10课程班级"] = d10_courses_classes(student_ids, course_id)
     all_results["D11审计日志"] = d11_audit_logs()
     all_results["D12反馈绩效"] = d12_feedback_perf(student_ids, course_id)
+    all_results["D13点名性能"] = d13_attendance(student_ids, course_id)
+    all_results["D14排课写入"] = d14_schedule_write(student_ids, course_id)
+    all_results["D15退课性能"] = d15_transfer(student_ids, course_id)
+    all_results["D16优化表查询"] = d16_optimized_tables(student_ids)
     duration = time.perf_counter() - start
 
     report_path = generate_report("quick", all_results, duration)
@@ -1185,6 +1567,9 @@ def run_stress():
     print("\n>>> S5 审计日志查询阶梯 <<<")
     all_results["S5"] = s5_audit_log_staircase()
 
+    print("\n>>> S6 点名压力测试 <<<")
+    all_results["S6"] = s6_attendance_stress(student_ids, course_id)
+
     duration = time.perf_counter() - start
     report_path = generate_report("stress", all_results, duration)
 
@@ -1194,23 +1579,86 @@ def run_stress():
     return report_path
 
 
-def main():
-    if len(sys.argv) > 1:
-        mode = sys.argv[1].lower()
-    else:
-        print("请选择测试模式：")
-        print("  1. quick  - 简易评估（约 2 分钟，固定规模性能快照）")
-        print("  2. stress - 压力测试（约 15 分钟，SLA 阶梯找边界）")
-        choice = input("\n输入 1 或 2: ").strip()
-        mode = "quick" if choice == "1" else "stress"
+def parse_target(args):
+    """解析测试目标地址，返回最终 BASE URL。
+    优先级：--base > --wan > --lan > --local > PERF_BASE 环境变量 > 默认本机
+    """
+    global BASE
+    if args.base:
+        BASE = args.base.rstrip("/")
+    elif args.wan:
+        BASE = args.wan.rstrip("/")
+    elif args.lan:
+        # 局域网：传 IP 或 host，默认 8788 端口、http
+        host = args.lan
+        if host.startswith("http://") or host.startswith("https://"):
+            BASE = host.rstrip("/")
+        else:
+            port = args.lan_port or 8788
+            BASE = f"http://{host}:{port}"
+    elif args.local:
+        BASE = "http://127.0.0.1:8788"
+    # else: 保持环境变量或默认值
+    return BASE
 
-    if mode == "quick":
-        run_quick()
-    elif mode == "stress":
-        run_stress()
-    else:
-        print(f"未知模式: {mode}，请使用 quick 或 stress")
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="排课系统性能测试脚本",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  %(prog)s quick --local                       本机测试
+  %(prog)s stress --lan 192.168.1.100          局域网测试（默认端口 8788）
+  %(prog)s quick --lan 192.168.1.100 --lan-port 9000  指定局域网端口
+  %(prog)s stress --wan https://api.example.com       公网测试
+  %(prog)s quick --base http://10.0.0.5:9000          自定义地址
+
+环境变量:
+  PERF_BASE    默认测试目标（如 http://192.168.1.100:8788）
+""",
+    )
+    parser.add_argument("mode", nargs="?", choices=["quick", "stress"], help="测试模式：quick 或 stress")
+    target_group = parser.add_argument_group("测试目标（互斥，按优先级：--base > --wan > --lan > --local）")
+    target_group.add_argument("--local", action="store_true", help="本机 127.0.0.1:8788")
+    target_group.add_argument("--lan", metavar="HOST", help="局域网地址（IP 或 host，默认端口 8788）")
+    target_group.add_argument("--lan-port", type=int, default=None, help="局域网端口（默认 8788，需配合 --lan）")
+    target_group.add_argument("--wan", metavar="URL", help="公网地址（完整 URL，含 http/https）")
+    target_group.add_argument("--base", metavar="URL", help="自定义完整地址（含 http/https 和端口）")
+
+    args = parser.parse_args()
+
+    # 交互式选择模式
+    if not args.mode:
+        print("请选择测试模式：")
+        print("  1. quick  - 简易评估（约 4 分钟，固定规模性能快照）")
+        print("  2. stress - 压力测试（约 20 分钟，SLA 阶梯找边界）")
+        choice = input("\n输入 1 或 2: ").strip()
+        args.mode = "quick" if choice == "1" else "stress"
+
+    # 解析目标地址
+    parse_target(args)
+
+    print("=" * 60)
+    print(f"  测试目标: {BASE}")
+    print(f"  测试模式: {args.mode}")
+    print("=" * 60)
+
+    # 测试前连通性检查
+    print("[连通性检查] 正在测试目标是否可达...")
+    t0 = time.perf_counter()
+    r, status = http("GET", "/api/config", timeout=5)
+    latency = (time.perf_counter() - t0) * 1000
+    if status == 0:
+        print(f"  ✗ 目标不可达: {r.get('message', '未知错误')}")
+        print("  请检查地址是否正确、服务是否启动、防火墙是否放行")
         sys.exit(1)
+    print(f"  ✓ 目标可达，配置接口延迟 {latency:.0f}ms\n")
+
+    if args.mode == "quick":
+        run_quick()
+    elif args.mode == "stress":
+        run_stress()
 
 
 if __name__ == "__main__":
