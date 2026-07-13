@@ -1643,17 +1643,21 @@ def s7_schedule_volume_staircase(course_id, student_ids):
 
         print(f"\n  [规模 {created_total:,}] 开始测试...")
 
-        # 1. 按学员查排课（最常用查询）
+        # 1. 按学员查排课（最常用查询）—— 传测试数据日期范围，确保命中真实排课数据
         test_sid = batch_students[0]
+        query_start = date_base.strftime("%Y-%m-%d")
+        query_end = (date_base + dt.timedelta(days=365)).strftime("%Y-%m-%d")
         lats, ok, err = measure(
-            lambda: http("GET", f"/api/schedules?studentId={test_sid}", token=TOKEN, timeout=30), 5
+            lambda: http("GET", f"/api/schedules?studentId={test_sid}&startDate={query_start}&endDate={query_end}", token=TOKEN, timeout=30), 5
         )
         s_query = stats(lats)
         er_query = error_rate(ok, err)
 
-        # 2. 按课程查排课（返回量大，易触发瓶颈）
+        # 2. 按课程查排课（返回量大，易触发瓶颈）—— 传测试数据日期范围，确保命中真实大数据量
+        search_start = date_base.strftime("%Y-%m-%d")
+        search_end = (date_base + dt.timedelta(days=30)).strftime("%Y-%m-%d")
         lats_search, ok_s, err_s = measure(
-            lambda: http("GET", f"/api/schedules-search?courseId={course_id}", token=TOKEN, timeout=60), 5
+            lambda: http("GET", f"/api/schedules-search?courseId={course_id}&startDate={search_start}&endDate={search_end}", token=TOKEN, timeout=60), 5
         )
         s_search = stats(lats_search)
         er_search = error_rate(ok_s, err_s)
@@ -1701,10 +1705,10 @@ def s7_schedule_volume_staircase(course_id, student_ids):
         if att_created == 0 and att_err:
             print(f"  [诊断] 点名数据准备失败：{att_err}")
         created_total += att_created
-        # 获取刚创建的排课 ID（按学员查当月排课取最后一条）
+        # 获取刚创建的排课 ID（按学员+具体日期查，避免全量返回导致超时）
         att_items = []
         for sid in att_students:
-            r_s, _ = http("GET", f"/api/schedules?studentId={sid}", token=TOKEN, timeout=30)
+            r_s, _ = http("GET", f"/api/schedules?studentId={sid}&startDate={att_date}&endDate={att_date}", token=TOKEN, timeout=30)
             if r_s.get("code") == 0:
                 scheds = r_s.get("data", {}).get("schedules", [])
                 if scheds:
@@ -1716,7 +1720,7 @@ def s7_schedule_volume_staircase(course_id, student_ids):
             s_att_write = stats(lats_att_write)
             er_att_write = error_rate(ok_aw, err_aw)
         else:
-            s_att_write = {"p99_ms": 0}
+            s_att_write = {"p50_ms": 0, "p99_ms": 0}
             er_att_write = 0
 
         # 7. 教师绩效查询（多表聚合：schedules + feedback，大数据量下可能变慢）

@@ -45,7 +45,13 @@ export async function onRequestGet(context) {
   if (startDate && endDate) {
     schedules = await getSchedulesByDateRange(targetId, startDate, endDate)
   } else {
-    schedules = await getAllSchedulesByStudent(targetId)
+    // 未传日期范围时默认查最近 6 个月，避免大数据量下全表返回导致超时
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth() - 6, 1)
+    const p = (n) => String(n).padStart(2, '0')
+    const defaultStart = `${start.getFullYear()}-${p(start.getMonth() + 1)}-01`
+    const defaultEnd = `${now.getFullYear()}-${p(now.getMonth() + 1)}-01`
+    schedules = await getSchedulesByDateRange(targetId, defaultStart, defaultEnd)
   }
   // 教师角色仅返回自己的排课
   if (context.admin.role === 'teacher') {

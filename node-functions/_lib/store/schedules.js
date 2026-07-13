@@ -57,8 +57,9 @@ export async function listScheduleMonths(studentId) {
 export async function getAllSchedulesByStudent(studentId) {
   validateStorageId(studentId, 'studentId')
   const db = getDb()
+  // 加 LIMIT 防止大数据量下返回过多记录导致 OOM/超时
   const rows = db.prepare(`SELECT * FROM schedules WHERE student_id=?
-    ORDER BY date, start_time`).all(studentId)
+    ORDER BY date DESC, start_time DESC LIMIT 2000`).all(studentId)
   return rows.map(rowToSchedule)
 }
 
