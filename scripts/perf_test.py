@@ -1129,13 +1129,39 @@ def s2_concurrency_staircase():
     return results
 
 
-def s3_sustained_load(duration_s=180):
-    """S3 持续负载：固定 QPS 跑 3 分钟，测性能衰减"""
+def s3_sustained_load(student_ids, course_id, duration_s=180):
+    """S3 持续负载：固定 QPS 跑 3 分钟，测性能衰减
+
+    轮换请求真实业务接口（学员列表/排课查询/报表/审计日志/排课搜索），
+    比单纯请求 /api/config 更贴近真实使用场景。
+    """
+    import random
+
     print("\n" + "=" * 60)
     print(f"  S3 持续负载测试（{duration_s}s，测性能衰减）")
-    print("  测什么：连续跑 3 分钟，看系统会不会越跑越慢（内存泄漏/卡顿）。")
+    print("  测什么：连续跑 3 分钟，轮换请求真实业务接口，看系统会不会越跑越慢（内存泄漏/卡顿）。")
     print("=" * 60)
     results = []
+    if not student_ids:
+        print("  [跳过] 无学员数据")
+        return {"samples": [], "衰减率%": 0, "首段P99": 0, "末段P99": 0}
+
+    # 构造真实业务请求列表（轮换发送）
+    today = time.strftime("%Y-%m-%d")
+    month_start = today[:8] + "01"
+    report_params = urlencode({"type": "revenue", "startDate": month_start, "endDate": today})
+    business_requests = [
+        ("GET", f"/api/students?q=perf", None),
+        ("GET", f"/api/schedules?studentId={random.choice(student_ids)}", None),
+        ("GET", f"/api/schedules-search?courseId={course_id}", None),
+        ("GET", f"/api/reports?{report_params}", None),
+        ("GET", "/api/audit-logs?page=1&pageSize=20", None),
+        ("GET", f"/api/schedules?studentId={random.choice(student_ids)}", None),
+        ("GET", "/api/courses", None),
+        ("GET", f"/api/schedules?studentId={random.choice(student_ids)}", None),
+    ]
+    req_count = len(business_requests)
+
     target_qps = 100  # 目标 100 QPS 持续跑
     interval = 1.0 / target_qps
     samples = []
@@ -1146,12 +1172,17 @@ def s3_sustained_load(duration_s=180):
     ok_count = [0]
     err_count = [0]
     lock = threading.Lock()
+    req_idx = [0]  # 轮换索引
 
     def worker():
         while not stop.is_set():
             t0 = time.perf_counter()
             try:
-                r, _ = http("GET", "/api/config", timeout=5)
+                # 轮换请求不同业务接口
+                with lock:
+                    method, path, body = business_requests[req_idx[0] % req_count]
+                    req_idx[0] += 1
+                r, _ = http(method, path, body, token=TOKEN, timeout=5)
                 with lock:
                     if r.get("code") == 0:
                         ok_count[0] += 1
@@ -2294,7 +2325,7 @@ def run_stress():
     all_results["S2"] = s2_concurrency_staircase()
 
     print("\n>>> S3 持续负载测试 <<<")
-    all_results["S3"] = s3_sustained_load(duration_s=180)
+    all_results["S3"] = s3_sustained_load(student_ids, course_id, duration_s=180)
 
     print("\n>>> S4 混合负载测试 <<<")
     all_results["S4"] = s4_mixed_load(student_ids, course_id, duration_s=120)
