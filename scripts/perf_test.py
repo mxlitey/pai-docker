@@ -48,10 +48,9 @@ import threading
 import os
 import sys
 import argparse
+import http.client
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urlencode
-import urllib.request
-import urllib.error
+from urllib.parse import urlencode, urlparse
 
 BASE = os.environ.get("PERF_BASE", "http://127.0.0.1:8788")
 TOKEN = None
@@ -64,35 +63,72 @@ SLA_CPU_PERCENT = 80     # CPU 占用 > 80% 判定不达标
 
 
 # ============ HTTP 工具 ============
+# 使用 http.client 长连接复用，避免 Windows 上 urlopen 短连接耗尽本地端口
+# （WinError 10048: 通常每个套接字地址只允许使用一次）
+# 每个线程维护一个独立的 HTTPConnection，避免多线程共享连接的并发问题
 
 # 401 自动重登录的并发锁（多线程同时收到 401 时，只重登录一次）
 _token_lock = threading.Lock()
+# 每线程一个 HTTPConnection，复用 TCP 连接避免端口耗尽
+_thread_conn = threading.local()
 
 
-def http(method, path, body=None, token=None, timeout=30, _allow_relogin=True):
+def _get_conn(timeout=30):
+    """获取当前线程的 HTTP 连接（复用）。BASE 变更或连接断开时自动重建。"""
+    parsed = urlparse(BASE)
+    scheme = parsed.scheme or 'http'
+    host = parsed.hostname or '127.0.0.1'
+    port = parsed.port or (443 if scheme == 'https' else 80)
+    key = (scheme, host, port)
+    conn = getattr(_thread_conn, 'conn', None)
+    cur_key = getattr(_thread_conn, 'key', None)
+    if conn is None or cur_key != key:
+        if conn is not None:
+            try: conn.close()
+            except Exception: pass
+        if scheme == 'https':
+            conn = http.client.HTTPSConnection(host, port, timeout=timeout)
+        else:
+            conn = http.client.HTTPConnection(host, port, timeout=timeout)
+        _thread_conn.conn = conn
+        _thread_conn.key = key
+    conn.timeout = timeout
+    return conn
+
+
+def _close_conn():
+    """关闭当前线程的连接（连接异常时调用，下次自动重建）"""
+    conn = getattr(_thread_conn, 'conn', None)
+    if conn is not None:
+        try: conn.close()
+        except Exception: pass
+        _thread_conn.conn = None
+
+
+def http(method, path, body=None, token=None, timeout=30, _allow_relogin=True, _retry=True):
+    """发送 HTTP 请求，返回 (parsed_json, status_code)。
+    每线程复用长连接，避免端口耗尽；连接异常自动重建并重试一次。
+    收到 401 时自动重登录（多线程并发下只重登录一次）。
+    """
     global TOKEN
-    url = BASE + path
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = "Bearer " + token
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8")
-            return json.loads(raw), resp.status
-    except urllib.error.HTTPError as e:
-        raw = e.read().decode("utf-8")
+        conn = _get_conn(timeout)
+        conn.request(method, path, body=data, headers=headers)
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        status = resp.status
         try:
             r = json.loads(raw)
         except Exception:
-            r = {"code": -1, "message": raw}
-        # 鉴权请求收到 401：token 可能已过期/失效，自动重新登录并重试一次
-        # _allow_relogin 避免死循环（重试时不再触发重登录）
-        if e.code == 401 and token and _allow_relogin and ADMIN_USER:
+            r = {"code": -1, "message": raw[:200]}
+        # 401 自动重登录
+        if status == 401 and token and _allow_relogin and ADMIN_USER:
             with _token_lock:
                 if token != TOKEN:
-                    # 其他线程已刷新 token，直接用新 token 重试
                     new_token = TOKEN
                 else:
                     try:
@@ -101,11 +137,16 @@ def http(method, path, body=None, token=None, timeout=30, _allow_relogin=True):
                         print(f"  [诊断] token 失效(401)，已自动重新登录")
                     except Exception as login_err:
                         print(f"  [诊断] 自动重登录失败: {login_err}")
-                        return r, e.code
+                        return r, status
             return http(method, path, body, token=new_token, timeout=timeout, _allow_relogin=False)
-        return r, e.code
+        return r, status
     except Exception as e:
-        return {"code": -1, "message": str(e)}, 0
+        # 连接异常：关闭旧连接，下次重建；重试一次避免偶发断连
+        _close_conn()
+        if _retry:
+            return http(method, path, body, token=token, timeout=timeout,
+                        _allow_relogin=_allow_relogin, _retry=False)
+        return {"code": -1, "message": str(e)[:200]}, 0
 
 
 def measure(fn, n=1):
