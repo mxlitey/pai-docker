@@ -169,14 +169,20 @@ def error_rate(ok, err):
 
 # ============ 测试数据准备 ============
 
-def login(username="admin", password="admin123"):
+# 测试账号：优先用命令行参数 / 环境变量，其次用默认值 admin/admin123
+ADMIN_USER = os.environ.get("PERF_USER", "admin")
+ADMIN_PASS = os.environ.get("PERF_PASS", "admin123")
+
+def login(username=None, password=None):
     global TOKEN, ADMIN_ID
-    r, _ = http("POST", "/api/auth", {"username": username, "password": password})
+    u = username or ADMIN_USER
+    p = password or ADMIN_PASS
+    r, _ = http("POST", "/api/auth", {"username": u, "password": p})
     if r.get("code") != 0:
         raise Exception("登录失败: " + r.get("message", ""))
     TOKEN = r["data"]["token"]
     ADMIN_ID = r["data"]["admin"]["id"]
-    print(f"[登录] 成功 admin={ADMIN_ID}")
+    print(f"[登录] 成功 admin={ADMIN_ID}（账号: {u}）")
 
 
 def ensure_grade(name="一年级"):
@@ -1626,7 +1632,12 @@ def main():
     target_group.add_argument("--wan", metavar="URL", help="公网地址（完整 URL，含 http/https）")
     target_group.add_argument("--base", metavar="URL", help="自定义完整地址（含 http/https 和端口）")
 
+    auth_group = parser.add_argument_group("登录账号（默认 admin/admin123，也可用环境变量 PERF_USER/PERF_PASS）")
+    auth_group.add_argument("--user", metavar="USERNAME", help="登录账号（默认 admin）")
+    auth_group.add_argument("--password", metavar="PASSWORD", help="登录密码（默认 admin123）")
+
     args = parser.parse_args()
+    interactive = False  # 标记是否经过交互式选择
 
     # 交互式选择模式
     if not args.mode:
@@ -1635,30 +1646,122 @@ def main():
         print("  2. stress - 压力测试（约 20 分钟，SLA 阶梯找边界）")
         choice = input("\n输入 1 或 2: ").strip()
         args.mode = "quick" if choice == "1" else "stress"
+        interactive = True
+
+    # 交互式选择目标环境（未显式指定时）
+    if not (args.local or args.lan or args.wan or args.base):
+        print("\n请选择测试目标环境：")
+        print("  1. 本机    - 127.0.0.1:8788")
+        print("  2. 局域网  - 输入 IP 或 host（默认端口 8788）")
+        print("  3. 公网    - 输入完整 URL（含 http/https）")
+        print("  4. 自定义  - 输入完整地址（含 http/https 和端口）")
+        env_choice = input("\n输入 1/2/3/4: ").strip()
+        interactive = True
+        if env_choice == "1":
+            args.local = True
+        elif env_choice == "2":
+            host = input("  局域网地址（IP 或 host）: ").strip()
+            if not host:
+                print("地址不能为空")
+                sys.exit(1)
+            port_input = input(f"  端口（回车默认 8788）: ").strip()
+            args.lan = host
+            if port_input:
+                try:
+                    args.lan_port = int(port_input)
+                except ValueError:
+                    print(f"非法端口: {port_input}")
+                    sys.exit(1)
+        elif env_choice == "3":
+            url = input("  公网地址（完整 URL，如 https://api.example.com）: ").strip()
+            if not url:
+                print("地址不能为空")
+                sys.exit(1)
+            args.wan = url
+        elif env_choice == "4":
+            url = input("  自定义地址（完整 URL，如 http://10.0.0.5:9000）: ").strip()
+            if not url:
+                print("地址不能为空")
+                sys.exit(1)
+            args.base = url
+        else:
+            print(f"未知选项: {env_choice}，默认使用本机")
+            args.local = True
 
     # 解析目标地址
     parse_target(args)
 
+    # 解析登录账号：命令行参数 > 环境变量 > 默认 admin/admin123
+    global ADMIN_USER, ADMIN_PASS
+    if args.user:
+        ADMIN_USER = args.user
+    if args.password:
+        ADMIN_PASS = args.password
+
     print("=" * 60)
     print(f"  测试目标: {BASE}")
     print(f"  测试模式: {args.mode}")
+    print(f"  登录账号: {ADMIN_USER}")
     print("=" * 60)
 
-    # 测试前连通性检查
-    print("[连通性检查] 正在测试目标是否可达...")
-    t0 = time.perf_counter()
-    r, status = http("GET", "/api/config", timeout=5)
-    latency = (time.perf_counter() - t0) * 1000
-    if status == 0:
-        print(f"  ✗ 目标不可达: {r.get('message', '未知错误')}")
-        print("  请检查地址是否正确、服务是否启动、防火墙是否放行")
-        sys.exit(1)
-    print(f"  ✓ 目标可达，配置接口延迟 {latency:.0f}ms\n")
+    # 用 try/finally 包裹整个测试逻辑，确保交互式模式下无论成功/异常/中断都会等待用户确认
+    # 解决 Windows 双击 .py 运行时窗口直接关闭的问题
+    try:
+        # 测试前连通性检查
+        print("[连通性检查] 正在测试目标是否可达...")
+        t0 = time.perf_counter()
+        r, status = http("GET", "/api/config", timeout=5)
+        latency = (time.perf_counter() - t0) * 1000
+        if status == 0:
+            print(f"  ✗ 目标不可达: {r.get('message', '未知错误')}")
+            print("  请检查地址是否正确、服务是否启动、防火墙是否放行")
+            sys.exit(1)
+        print(f"  ✓ 目标可达，配置接口延迟 {latency:.0f}ms\n")
 
-    if args.mode == "quick":
-        run_quick()
-    elif args.mode == "stress":
-        run_stress()
+        # 交互式模式下，登录失败时让用户重新输入账号密码（最多 3 次）
+        login_attempted = False
+        while True:
+            try:
+                if interactive and login_attempted:
+                    # 上次登录失败，让用户输入账号密码
+                    ADMIN_USER = input("  登录账号: ").strip()
+                    ADMIN_PASS = input("  登录密码: ").strip()
+                login()
+                break
+            except Exception as login_err:
+                login_attempted = True
+                if not interactive:
+                    # 命令行模式：直接抛出，不交互
+                    raise
+                print(f"  ✗ {login_err}")
+                # 检查是否未初始化（data.bootstrap=true 表示需要引导，即未初始化）
+                try:
+                    bs, _ = http("GET", "/api/auth/bootstrap", timeout=5)
+                    if bs.get("code") == 0 and bs.get("data", {}).get("bootstrap"):
+                        print("  ⚠ 系统尚未初始化，请先用浏览器打开后台完成初始化引导")
+                        sys.exit(1)
+                except Exception:
+                    pass
+
+        if args.mode == "quick":
+            run_quick()
+        elif args.mode == "stress":
+            run_stress()
+    except SystemExit:
+        # sys.exit 触发，交互式模式下仍需等待
+        raise
+    except Exception as e:
+        print(f"\n[错误] 测试过程中发生异常: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        # 交互式运行时（经过 input 选择），无论成功/异常都等待用户确认后再退出
+        # 管道/重定向调用时 input 收到 EOF 触发异常，被捕获后正常退出，不会卡住
+        if interactive:
+            try:
+                input("\n按回车键退出...")
+            except (EOFError, KeyboardInterrupt):
+                pass
 
 
 if __name__ == "__main__":
