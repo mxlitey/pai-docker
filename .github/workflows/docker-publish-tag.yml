@@ -1,17 +1,12 @@
-name: Build and Push Docker Image to GHCR
+name: Build and Push Docker Image to GHCR (Tag)
 
 # 触发条件：
-# - 推送到 main / master 分支：构建并推送，打 latest + sha 短标签
-#   ※ scripts/** 下的改动不触发构建（仅文档/脚本，与镜像构建无关）
-# - 打 v* 开头的 tag（如 v1.2.3）：见 docker-publish-tag.yml
-# - 手动触发（workflow_dispatch）：构建并推送，打 sha 短标签
-# 注意：Pull Request 等操作不触发本工作流
+# - 打 v* 开头的 tag（如 v1.2.3）：构建并推送，打语义化版本标签 + latest
+# 注意：tag 推送不应用 paths-ignore（GitHub Actions 限制：paths 过滤会使 tag 事件失效），
+#       故拆为独立 workflow 文件以同时满足「scripts/ 改动不触发分支构建」与「tag 推送仍触发构建」。
 on:
   push:
-    branches: [main, master]
-    paths-ignore:
-      - 'scripts/**'
-  workflow_dispatch:
+    tags: ['v*']
 
 # GHCR 推送需要 packages: write 权限；拉取代码需要 contents: read
 permissions:
@@ -19,9 +14,7 @@ permissions:
   packages: write
 
 env:
-  # 使用 docker/metadata-action 时镜像名建议小写；REGISTRY 固定 GHCR
   REGISTRY: ghcr.io
-  # github.repository 形如 "mxlitey/pai-docker"，metadata-action 会自动转小写
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
@@ -32,24 +25,22 @@ jobs:
         uses: actions/checkout@v4
 
       # 生成镜像标签与 labels，规则：
-      # - type=ref(>event=branch)         分支名标签（如 main）
       # - type=semver(>pattern={{version}})  完整版本号（如 1.2.3）
       # - type=semver(>pattern={{major}}.{{minor}})  主次版本（如 1.2）
       # - type=semver(>pattern={{major}})  主版本（如 1）
       # - type=sha,format=short            短 commit sha（如 c2689ee）
-      # - type=raw,value=latest,enable={{is_default_branch}}  默认分支打 latest
+      # - type=raw,value=latest            tag 触发时打 latest
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest
 
       - name: Set up QEMU（多架构支持）
         uses: docker/setup-qemu-action@v3
@@ -58,24 +49,21 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 构建并推送：
-      # - 所有触发场景均 push=true（PR 不再触发本工作流）
-      # - 多架构：linux/amd64 + linux/arm64，便于 ARM 服务器 / Apple Silicon 直接拉取
-      # - cache-to/cache-from 使用 GHCR 缓存加速后续构建
+      # 构建并推送：多架构 linux/amd64 + linux/arm64，便于 ARM 服务器 / Apple Silicon 直接拉取
+      # cache-to/cache-from 使用 GHCR 缓存加速后续构建
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
