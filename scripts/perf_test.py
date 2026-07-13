@@ -1686,30 +1686,39 @@ def main():
     print(f"  测试模式: {args.mode}")
     print("=" * 60)
 
-    # 测试前连通性检查
-    print("[连通性检查] 正在测试目标是否可达...")
-    t0 = time.perf_counter()
-    r, status = http("GET", "/api/config", timeout=5)
-    latency = (time.perf_counter() - t0) * 1000
-    if status == 0:
-        print(f"  ✗ 目标不可达: {r.get('message', '未知错误')}")
-        print("  请检查地址是否正确、服务是否启动、防火墙是否放行")
-        sys.exit(1)
-    print(f"  ✓ 目标可达，配置接口延迟 {latency:.0f}ms\n")
+    # 用 try/finally 包裹整个测试逻辑，确保交互式模式下无论成功/异常/中断都会等待用户确认
+    # 解决 Windows 双击 .py 运行时窗口直接关闭的问题
+    try:
+        # 测试前连通性检查
+        print("[连通性检查] 正在测试目标是否可达...")
+        t0 = time.perf_counter()
+        r, status = http("GET", "/api/config", timeout=5)
+        latency = (time.perf_counter() - t0) * 1000
+        if status == 0:
+            print(f"  ✗ 目标不可达: {r.get('message', '未知错误')}")
+            print("  请检查地址是否正确、服务是否启动、防火墙是否放行")
+            sys.exit(1)
+        print(f"  ✓ 目标可达，配置接口延迟 {latency:.0f}ms\n")
 
-    if args.mode == "quick":
-        run_quick()
-    elif args.mode == "stress":
-        run_stress()
-
-    # 交互式运行时（经过 input 选择），等待用户确认后再退出
-    # 注意：不能用 sys.stdin.isatty() 判断，Windows 双击运行 .py 时 stdin 非 tty
-    # 管道/重定向调用时 input 会收到 EOF 触发异常，被捕获后正常退出，不会卡住
-    if interactive:
-        try:
-            input("\n按回车键退出...")
-        except (EOFError, KeyboardInterrupt):
-            pass
+        if args.mode == "quick":
+            run_quick()
+        elif args.mode == "stress":
+            run_stress()
+    except SystemExit:
+        # sys.exit 触发，交互式模式下仍需等待
+        raise
+    except Exception as e:
+        print(f"\n[错误] 测试过程中发生异常: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        # 交互式运行时（经过 input 选择），无论成功/异常都等待用户确认后再退出
+        # 管道/重定向调用时 input 收到 EOF 触发异常，被捕获后正常退出，不会卡住
+        if interactive:
+            try:
+                input("\n按回车键退出...")
+            except (EOFError, KeyboardInterrupt):
+                pass
 
 
 if __name__ == "__main__":
