@@ -263,6 +263,14 @@ def error_rate(ok, err):
 ADMIN_USER = os.environ.get("PERF_USER", "admin")
 ADMIN_PASS = os.environ.get("PERF_PASS", "admin123")
 
+
+def _unique_test_date():
+    """生成唯一测试日期，避免与历史测试数据的时间冲突。
+    用当前时间戳（秒）对 36500 取模作为偏移，确保每次运行用不同日期段。"""
+    import datetime as _dt
+    offset = int(time.time()) % 36500
+    return (_dt.date(2020, 1, 1) + _dt.timedelta(days=offset)).strftime("%Y-%m-%d")
+
 def login(username=None, password=None):
     global TOKEN, ADMIN_ID
     u = username or ADMIN_USER
@@ -377,7 +385,7 @@ def create_feedback(student_id, schedule_id, teacher_id=""):
 def create_schedule(student_id, course_id, class_id="", date=None, course_name="性能测试课程", student_name=""):
     """创建单条排课"""
     if date is None:
-        date = time.strftime("%Y-%m-%d")
+        date = _unique_test_date()
     if not class_id:
         class_id = "none"
     if not student_name:
@@ -398,9 +406,9 @@ def create_schedule(student_id, course_id, class_id="", date=None, course_name="
 
 
 def batch_add_schedules(student_ids, course_id, dates, start_time="09:00", end_time="10:00", class_id="", course_name="性能测试课程", timeout=60):
-    """批量排课（一次 API 调用）"""
+    """批量排课（一次 API 调用），返回 (created_count, error_msg)"""
     if not student_ids or not dates:
-        return 0
+        return 0, "无学员或日期"
     if not class_id:
         class_id = "none"
     r, _ = http("POST", "/api/schedule-add-batch", {
@@ -413,8 +421,8 @@ def batch_add_schedules(student_ids, course_id, dates, start_time="09:00", end_t
         "endTime": end_time,
     }, token=TOKEN, timeout=timeout)
     if r.get("code") == 0:
-        return r["data"].get("created", 0)
-    return 0
+        return r["data"].get("created", 0), ""
+    return 0, r.get("message", str(r)[:200])
 
 
 def set_attendance(items, date=None):
@@ -824,7 +832,7 @@ def d13_attendance(student_ids, course_id):
         print("  [跳过] 缺数据")
         return results
 
-    today = time.strftime("%Y-%m-%d")
+    today = _unique_test_date()
     # 创建班级（schedule-add 要求 classId 在班级表中存在）
     class_id = ensure_class("点名测试班", course_id)
     if not class_id:
@@ -1440,7 +1448,7 @@ def s6_attendance_stress(student_ids, course_id):
         print("  [跳过] 缺数据")
         return results
 
-    today = time.strftime("%Y-%m-%d")
+    today = _unique_test_date()
     # 创建班级 + 报名 + 排课（前置条件）
     class_id = ensure_class("点名压测班", course_id)
     if not class_id:
@@ -1585,8 +1593,9 @@ def s7_schedule_volume_staircase(course_id, student_ids):
     for sid in batch_students:
         create_enrollment(sid, course_id, hours=99999)
 
-    # 生成不重复的日期序列（从 2020-01-01 开始，每天一个日期，避免时间冲突）
-    date_base = dt.date(2020, 1, 1)
+    # 生成不重复的日期序列：每次运行用不同日期段，避免与历史测试数据时间冲突
+    unique_offset = int(time.time()) % 36500
+    date_base = dt.date(2020, 1, 1) + dt.timedelta(days=unique_offset)
     date_cursor = [0]  # 已用于排课的天数偏移（用 list 包装以便闭包修改）
 
     def gen_dates(n):
@@ -1615,7 +1624,7 @@ def s7_schedule_volume_staircase(course_id, student_ids):
             dates = gen_dates(days)
 
             batch_start = time.perf_counter()
-            created = batch_add_schedules(batch_students, course_id, dates, class_id=class_id, timeout=120)
+            created, err = batch_add_schedules(batch_students, course_id, dates, class_id=class_id, timeout=120)
             batch_time = time.perf_counter() - batch_start
 
             created_total += created
@@ -1625,7 +1634,7 @@ def s7_schedule_volume_staircase(course_id, student_ids):
                 print(f"  [数据准备] 已创建 {created_total:,} 条排课（批次 {batch_count}，本次 {created} 条，耗时 {batch_time:.1f}s）")
 
             if created == 0:
-                print(f"  ⚠️ 批量排课返回 0 条（可能超时或冲突），跳过当前阶梯")
+                print(f"  ⚠️ 批量排课返回 0 条（可能超时或冲突），跳过当前阶梯。错误：{err}")
                 break
 
         if created_total < target:
@@ -1662,8 +1671,10 @@ def s7_schedule_volume_staircase(course_id, student_ids):
         # 4. 批量排课写入（N×M 冲突检测）—— 10学员 × 5天
         batch_dates = gen_dates(5)
         t0 = time.perf_counter()
-        batch_created = batch_add_schedules(batch_students[:10], course_id, batch_dates, class_id=class_id, timeout=120)
+        batch_created, batch_err = batch_add_schedules(batch_students[:10], course_id, batch_dates, class_id=class_id, timeout=120)
         batch_lat = (time.perf_counter() - t0) * 1000
+        if batch_created == 0 and batch_err:
+            print(f"  [诊断] 批量排课写入失败：{batch_err}")
         created_total += batch_created
 
         # 5. 点名加载（GET /api/attendance?date=xxx）—— 按日期查排课，数据量大时可能变慢
@@ -1686,8 +1697,10 @@ def s7_schedule_volume_staircase(course_id, student_ids):
         #    创建一批当日排课用于点名测试
         att_date = gen_dates(1)[0]
         att_students = batch_students[:50]
-        batch_add_schedules(att_students, course_id, [att_date], class_id=class_id, timeout=120)
-        created_total += len(att_students)
+        att_created, att_err = batch_add_schedules(att_students, course_id, [att_date], class_id=class_id, timeout=120)
+        if att_created == 0 and att_err:
+            print(f"  [诊断] 点名数据准备失败：{att_err}")
+        created_total += att_created
         # 获取刚创建的排课 ID（按学员查当月排课取最后一条）
         att_items = []
         for sid in att_students:
