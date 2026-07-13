@@ -2259,9 +2259,20 @@ def _build_detailed_verdicts(results):
     if "S7" in results and results["S7"]:
         failed = [r for r in results["S7"] if not r["达标"]]
         if failed:
-            verdicts.append(f"**📅 排课数据量边界**：排课记录达到 **{failed[0]['排课量']:,}** 条时，查询、写入或点名 P99 超过 1 秒。排课记录是增长最快的数据，建议：1）为 schedules 表的 student_id/course_id/class_id/date 字段建复合索引；2）按学年归档历史排课数据；3）如果使用 SQLite，数据量超百万后建议迁移到 PostgreSQL/MySQL。")
+            # 找到首个超标的指标，给出针对性建议
+            f = failed[0]
+            slow_metrics = []
+            if f.get("按学员查P99", 0) >= SLA_P99_MS: slow_metrics.append("按学员查排课")
+            if f.get("按课程查P99", 0) >= SLA_P99_MS: slow_metrics.append("按课程查排课")
+            if f.get("单条写入P99", 0) >= SLA_P99_MS: slow_metrics.append("单条排课写入")
+            if f.get("点名加载P99", 0) >= SLA_P99_MS: slow_metrics.append("点名加载")
+            if f.get("点名写入P99", 0) >= SLA_P99_MS: slow_metrics.append("点名写入")
+            if f.get("教师绩效P99", 0) >= SLA_P99_MS: slow_metrics.append("教师绩效查询")
+            if f.get("调课记录P99", 0) >= SLA_P99_MS: slow_metrics.append("调课记录查询")
+            slow_desc = "、".join(slow_metrics) if slow_metrics else "查询/写入"
+            verdicts.append(f"**📅 排课数据量边界**：排课记录达到 **{f['排课量']:,}** 条时，{slow_desc} P99 超过 1 秒。schedules 表已有 student_id/date/course_id/class_id 等索引，瓶颈主要在不分页的全量查询（如按课程查返回所有记录+JOIN）。建议：1）为按课程/日期查排课的接口加分页；2）按学年归档历史排课数据；3）如果使用 SQLite，数据量超百万后建议迁移到 PostgreSQL/MySQL。")
         else:
-            verdicts.append(f"**📅 排课数据量边界**：排课记录达到 **{results['S7'][-1]['排课量']:,}** 条时查询、写入和点名仍流畅（P99 < 1 秒），未找到瓶颈，可支撑大规模排课。")
+            verdicts.append(f"**📅 排课数据量边界**：排课记录达到 **{results['S7'][-1]['排课量']:,}** 条时查询、写入、点名、教师绩效和调课记录均流畅（P99 < 1 秒），未找到瓶颈，可支撑大规模排课。")
     return verdicts
 
 
