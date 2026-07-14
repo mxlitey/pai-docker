@@ -8,6 +8,11 @@
   python3 scripts/perf_test.py quick                        # 简易评估（D1-D16，约 4 分钟）
   python3 scripts/perf_test.py stress                       # 压力测试（S1-S7 + 评估报告，含大数据量测试）
 
+  # 指定压力测试数据量规模（仅 stress 模式生效，控制 S1/S7 阶梯上限）
+  python3 scripts/perf_test.py stress --scale small         # 小规模（S1: 100→1千学员，S7: 1万→10万排课）
+  python3 scripts/perf_test.py stress --scale medium        # 中规模（S1: 100→5千学员，S7: 1万→100万排课）
+  python3 scripts/perf_test.py stress --scale large         # 大规模（S1: 100→1万学员，S7: 1万→1000万排课，默认）
+
   # 指定测试目标环境（默认本机）
   python3 scripts/perf_test.py quick --local                # 本机 127.0.0.1:8788
   python3 scripts/perf_test.py quick --lan 192.168.1.100    # 局域网（默认端口 8788）
@@ -63,6 +68,12 @@
   S6 点名压力（50/100/200条批量扣课 + 并发点名）
   S7 排课数据量阶梯（1万→10万→100万→1000万排课记录，测大数据量下查询/写入/点名性能拐点）
 
+  数据量规模可选（--scale small|medium|large，默认 large）：
+  · small  —— S1: 100→1千学员，S7: 1万→10万排课（快速验证，约 5-10 分钟）
+  · medium —— S1: 100→5千学员，S7: 1万→100万排课（常规压测，约 15-30 分钟）
+  · large  —— S1: 100→1万学员，S7: 1万→1000万排课（深度压测，可能 30 分钟以上）
+  注：S2/S3/S4/S5/S6 不受 --scale 影响，规模固定。
+
   SLA 阈值：P99 > 1s 或 错误率 > 1% 或 CPU > 80% 判定「不好用」
 
 测试完成后输出评估报告（控制台 + scripts/reports/perf_report_YYYYMMDD_HHMMSS.html）
@@ -87,6 +98,29 @@ ADMIN_ID = None
 SLA_P99_MS = 1000        # P99 响应时间 > 1s 判定不达标
 SLA_ERROR_RATE = 0.01    # 错误率 > 1% 判定不达标
 SLA_CPU_PERCENT = 80     # CPU 占用 > 80% 判定不达标
+
+# 压力测试数据量预设（控制 S1 学员阶梯 / S7 排课记录阶梯的上限）
+# small  = 快速验证，跳过千万级数据生成，适合开发自测
+# medium = 常规压测，覆盖到百万级，平衡耗时与覆盖度
+# large  = 深度压测，覆盖到千万级排课，找极限瓶颈（原默认行为）
+SCALE_PRESETS = {
+    "small": {
+        "label": "小规模（快速验证，约 5-10 分钟）",
+        "s1_sizes": [100, 500, 1000],
+        "s7_sizes": [10000, 100000],
+    },
+    "medium": {
+        "label": "中规模（常规压测，约 15-30 分钟）",
+        "s1_sizes": [100, 500, 1000, 5000],
+        "s7_sizes": [10000, 100000, 1000000],
+    },
+    "large": {
+        "label": "大规模（深度压测，千万级数据，可能 30 分钟以上）",
+        "s1_sizes": [100, 500, 1000, 5000, 10000],
+        "s7_sizes": [10000, 100000, 1000000, 10000000],
+    },
+}
+DEFAULT_SCALE = "large"
 
 
 # ============ HTTP 工具 ============
@@ -1029,15 +1063,21 @@ def d16_optimized_tables(student_ids):
 
 # ============ S1-S4 压力测试（SLA 阶梯） ============
 
-def s1_data_volume_staircase(course_id):
-    """S1 数据量阶梯：逐步加学员，找查询变慢拐点"""
+def s1_data_volume_staircase(course_id, target_sizes=None):
+    """S1 数据量阶梯：逐步加学员，找查询变慢拐点
+
+    target_sizes: 学员规模阶梯列表，默认 [100, 500, 1000, 5000, 10000]
+                  可通过 SCALE_PRESETS 传入更小规模以加速测试
+    """
+    if target_sizes is None:
+        target_sizes = SCALE_PRESETS["large"]["s1_sizes"]
     print("\n" + "=" * 60)
     print("  S1 数据量阶梯测试（找查询变慢拐点）")
     print(f"  SLA: P99 > {SLA_P99_MS}ms 判定不达标")
-    print("  测什么：学员从 100 涨到 10000，查询会不会变慢。找「开始卡」的学员数。")
+    print(f"  阶梯: {' → '.join(str(s) for s in target_sizes)} 学员")
+    print(f"  测什么：学员从 {target_sizes[0]} 涨到 {target_sizes[-1]}，查询会不会变慢。找「开始卡」的学员数。")
     print("=" * 60)
     results = []
-    target_sizes = [100, 500, 1000, 5000, 10000]
 
     for target in target_sizes:
         # 补齐学员到目标数
@@ -1550,7 +1590,7 @@ def s6_attendance_stress(student_ids, course_id):
     return results
 
 
-def s7_schedule_volume_staircase(course_id, student_ids):
+def s7_schedule_volume_staircase(course_id, student_ids, target_sizes=None):
     """S7 排课数据量阶梯：逐步加排课记录到百万/千万级，找查询/写入/点名变慢拐点
 
     排课记录是系统中增长最快的业务数据之一。本测试通过批量创建排课记录，
@@ -1563,14 +1603,24 @@ def s7_schedule_volume_staircase(course_id, student_ids):
     - 批量点名写入（POST /api/attendance，主键查找+扣课时，测大数据量下是否仍快）
     - 教师绩效查询（多表聚合 schedules + feedback，大数据量下聚合可能变慢）
     - 调课记录查询（schedules + schedule_changes 双表查询，按学员查）
+
+    target_sizes: 排课记录阶梯列表，默认 [10000, 100000, 1000000, 10000000]
+                  可通过 SCALE_PRESETS 传入更小规模以加速测试
     """
     import datetime as dt
 
+    if target_sizes is None:
+        target_sizes = SCALE_PRESETS["large"]["s7_sizes"]
     print("\n" + "=" * 60)
     print("  S7 排课数据量阶梯测试（找排课查询/写入/点名变慢拐点）")
     print(f"  SLA: P99 > {SLA_P99_MS}ms 或 错误率 > {SLA_ERROR_RATE*100}% 判定不达标")
-    print("  测什么：排课记录从 1万 涨到 1000万，查询、写入（含冲突检测）、点名会不会变慢。")
-    print("  ⚠️  本测试会创建大量排课数据，千万级数据创建可能需要 30 分钟以上")
+    print(f"  阶梯: {' → '.join(f'{s:,}' for s in target_sizes)} 条排课记录")
+    print(f"  测什么：排课记录从 {target_sizes[0]:,} 涨到 {target_sizes[-1]:,}，查询、写入（含冲突检测）、点名会不会变慢。")
+    max_target = target_sizes[-1]
+    if max_target >= 10000000:
+        print("  ⚠️  本测试会创建大量排课数据，千万级数据创建可能需要 30 分钟以上")
+    elif max_target >= 1000000:
+        print("  ⚠️  本测试会创建百万级排课数据，可能需要数分钟")
     print("=" * 60)
     results = []
 
@@ -1607,7 +1657,6 @@ def s7_schedule_volume_staircase(course_id, student_ids):
         return dates
 
     # 阶梯目标（排课记录数）
-    target_sizes = [10000, 100000, 1000000, 10000000]
     created_total = 0  # 本次测试创建的排课总数
 
     # 每个批次：500学员 × 30天 = 15000 条
@@ -1885,7 +1934,7 @@ def _md_to_html(md_content):
     return '\n'.join(html_lines)
 
 
-def generate_report(mode, results, duration_s):
+def generate_report(mode, results, duration_s, scale=None):
     """生成 HTML 评估报告（含通俗说明，方便非技术人员阅读）"""
     ts = time.strftime("%Y%m%d_%H%M%S")
     report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
@@ -1904,6 +1953,11 @@ def generate_report(mode, results, duration_s):
     lines.append(f"# 性能测试评估报告\n")
     lines.append(f"- **测试时间**：{time.strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"- **测试模式**：{'简易评估 (quick)' if mode == 'quick' else '压力测试 (stress)'}")
+    if mode == "stress" and scale and scale in SCALE_PRESETS:
+        preset = SCALE_PRESETS[scale]
+        lines.append(f"- **数据量预设**：{scale}（{preset['label']}）")
+        lines.append(f"  - S1 学员阶梯：{' → '.join(str(s) for s in preset['s1_sizes'])}")
+        lines.append(f"  - S7 排课阶梯：{' → '.join(f'{s:,}' for s in preset['s7_sizes'])}")
     lines.append(f"- **测试耗时**：{duration_s:.0f} 秒")
     lines.append(f"- **测试环境**：{env_type}")
     lines.append(f"- **服务地址**：{BASE}\n")
@@ -2346,12 +2400,22 @@ def run_quick():
     return report_path
 
 
-def run_stress():
-    """压力测试：S1-S4 + 评估报告"""
+def run_stress(scale=None):
+    """压力测试：S1-S7 + 评估报告
+
+    scale: 数据量预设，可选 'small' / 'medium' / 'large'，默认 DEFAULT_SCALE
+           控制 S1 学员阶梯和 S7 排课记录阶梯的上限，影响测试耗时
+    """
+    if scale is None or scale not in SCALE_PRESETS:
+        scale = DEFAULT_SCALE
+    preset = SCALE_PRESETS[scale]
     print("=" * 60)
     print("  排课系统压力测试 (stress)")
     print("  时间: " + time.strftime("%Y-%m-%d %H:%M:%S"))
     print(f"  SLA: P99 > {SLA_P99_MS}ms 或 错误率 > {SLA_ERROR_RATE*100}% 判定不达标")
+    print(f"  数据量: {scale} - {preset['label']}")
+    print(f"    S1 学员阶梯: {preset['s1_sizes']}")
+    print(f"    S7 排课阶梯: {[f'{n:,}' for n in preset['s7_sizes']]}")
     print("  ⚠️  本测试会创建大量测试数据，建议在测试环境运行")
     print("=" * 60)
 
@@ -2369,7 +2433,7 @@ def run_stress():
     start = time.perf_counter()
     all_results = {}
     print("\n>>> S1 数据量阶梯测试 <<<")
-    all_results["S1"] = s1_data_volume_staircase(course_id)
+    all_results["S1"] = s1_data_volume_staircase(course_id, target_sizes=preset["s1_sizes"])
 
     # 刷新学员列表（S1 可能新增了大量学员）
     student_ids = [s["id"] for s in get_perf_students()]
@@ -2390,10 +2454,10 @@ def run_stress():
     all_results["S6"] = s6_attendance_stress(student_ids, course_id)
 
     print("\n>>> S7 排课数据量阶梯测试 <<<")
-    all_results["S7"] = s7_schedule_volume_staircase(course_id, student_ids)
+    all_results["S7"] = s7_schedule_volume_staircase(course_id, student_ids, target_sizes=preset["s7_sizes"])
 
     duration = time.perf_counter() - start
-    report_path = generate_report("stress", all_results, duration)
+    report_path = generate_report("stress", all_results, duration, scale=scale)
 
     print("\n" + "=" * 60)
     print("  压力测试完成")
@@ -2435,12 +2499,17 @@ def main():
   %(prog)s quick --lan 192.168.1.100 --lan-port 9000  指定局域网端口
   %(prog)s stress --wan https://api.example.com       公网测试
   %(prog)s quick --base http://10.0.0.5:9000          自定义地址
+  %(prog)s stress --scale small                     小规模压力测试（快速验证）
+  %(prog)s stress --scale medium --lan 192.168.1.100  中规模 + 局域网
 
 环境变量:
   PERF_BASE    默认测试目标（如 http://192.168.1.100:8788）
 """,
     )
     parser.add_argument("mode", nargs="?", choices=["quick", "stress"], help="测试模式：quick 或 stress")
+    parser.add_argument("--scale", choices=list(SCALE_PRESETS.keys()), default=None,
+                        help="压力测试数据量预设：small（快速验证）/ medium（常规）/ large（深度压测，默认）。"
+                             "仅 stress 模式生效，控制 S1 学员阶梯和 S7 排课记录阶梯上限")
     target_group = parser.add_argument_group("测试目标（互斥，按优先级：--base > --wan > --lan > --local）")
     target_group.add_argument("--local", action="store_true", help="本机 127.0.0.1:8788")
     target_group.add_argument("--lan", metavar="HOST", help="局域网地址（IP 或 host，默认端口 8788）")
@@ -2463,6 +2532,33 @@ def main():
         choice = input("\n输入 1 或 2: ").strip()
         args.mode = "quick" if choice == "1" else "stress"
         interactive = True
+
+    # 交互式选择数据量预设（仅 stress 模式，且未通过 --scale 指定时）
+    if args.mode == "stress" and not args.scale:
+        print("\n请选择压力测试数据量规模：")
+        for idx, key in enumerate(SCALE_PRESETS.keys(), start=1):
+            preset = SCALE_PRESETS[key]
+            default_tag = "（默认）" if key == DEFAULT_SCALE else ""
+            print(f"  {idx}. {key:<6s} - {preset['label']}{default_tag}")
+            print(f"     S1 学员阶梯: {preset['s1_sizes']}")
+            print(f"     S7 排课阶梯: {[f'{n:,}' for n in preset['s7_sizes']]}")
+        scale_choice = input(f"\n输入 1-{len(SCALE_PRESETS)}（回车默认 {DEFAULT_SCALE}）: ").strip()
+        scale_keys = list(SCALE_PRESETS.keys())
+        if not scale_choice:
+            args.scale = DEFAULT_SCALE
+        elif scale_choice.isdigit() and 1 <= int(scale_choice) <= len(scale_keys):
+            args.scale = scale_keys[int(scale_choice) - 1]
+        elif scale_choice in SCALE_PRESETS:
+            args.scale = scale_choice
+        else:
+            print(f"未知选项: {scale_choice}，使用默认 {DEFAULT_SCALE}")
+            args.scale = DEFAULT_SCALE
+        interactive = True
+    elif args.mode == "stress" and args.scale:
+        # 命令行已指定 --scale，无需交互
+        pass
+    elif args.mode == "quick" and args.scale:
+        print(f"  [提示] --scale 仅对 stress 模式生效，quick 模式将忽略")
 
     # 交互式选择目标环境（未显式指定时）
     if not (args.local or args.lan or args.wan or args.base):
@@ -2517,6 +2613,9 @@ def main():
     print("=" * 60)
     print(f"  测试目标: {BASE}")
     print(f"  测试模式: {args.mode}")
+    if args.mode == "stress":
+        scale = args.scale or DEFAULT_SCALE
+        print(f"  数据量预设: {scale}（{SCALE_PRESETS[scale]['label']}）")
     print(f"  登录账号: {ADMIN_USER}")
     print("=" * 60)
 
@@ -2575,7 +2674,7 @@ def main():
         if args.mode == "quick":
             run_quick()
         elif args.mode == "stress":
-            run_stress()
+            run_stress(scale=args.scale or DEFAULT_SCALE)
     except SystemExit:
         # sys.exit 触发，交互式模式下仍需等待
         raise
