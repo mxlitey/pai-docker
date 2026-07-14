@@ -58,7 +58,7 @@
 【流程测试 flow】
   调用内联的 13 个流程测试组（原 test_suite.py 已内联，单文件零外部依赖），验证系统功能正确性：
   组1 完整业务流程 / 组2 安全性 / 组3 业务流程 / 组4 非流程拦截
-  组5 Bug修复 / 组6 严重Bug / 组7 退课与流水 / 组8 CRUD改删
+  组5 业务规则 / 组6 课时与排课规则 / 组7 退课与流水 / 组8 CRUD改删
   组9 报表与审计 / 组10 批量与成员 / 组11 灾备 / 组12 多角色 / 组13 错误边界
 
   报告输出：scripts/reports/flow_report_YYYYMMDD_HHMMSS.html（独立于压力测试报告）
@@ -503,584 +503,6 @@ def create_transfer(student_id, from_enrollment_id, reason="测试退课"):
         "reason": reason,
     }}, token=TOKEN)
     return r.get("code") == 0
-
-
-# ============ D1-D9 简易评估（固定规模快照） ============
-
-def d1_basic_latency():
-    print("\n" + "=" * 60)
-    print("  D1 基础响应延迟（冷/热、公开/鉴权）")
-    print("  测什么：点开页面/刷新列表时，系统多快能响应。越快越流畅。")
-    print("=" * 60)
-    results = {}
-
-    lats_cold, _, _ = measure(lambda: http("GET", "/api/config"), 1)
-    lats_hot, _, _ = measure(lambda: http("GET", "/api/config"), 100)
-    lats_ann, _, _ = measure(lambda: http("GET", "/api/announcement"), 100)
-    lats_auth, _, _ = measure(lambda: http("GET", "/api/auth", token=TOKEN), 100)
-    lats_students, _, _ = measure(lambda: http("GET", "/api/students", token=TOKEN), 50)
-
-    s_hot = stats(lats_hot)
-    s_ann = stats(lats_ann)
-    s_auth = stats(lats_auth)
-    s_stu = stats(lats_students)
-
-    print(f"  配置接口(冷)    {stats(lats_cold)['avg_ms']} ms")
-    print(f"  配置接口(热)    {s_hot}")
-    print(f"  公告接口        {s_ann}")
-    print(f"  鉴权校验(/auth) {s_auth}")
-    print(f"  学员列表        {s_stu}")
-
-    results["配置接口P95"] = s_hot["p95_ms"]
-    results["鉴权P95"] = s_auth["p95_ms"]
-    results["学员列表P95"] = s_stu["p95_ms"]
-    return results
-
-
-def d2_concurrency():
-    print("\n" + "=" * 60)
-    print("  D2 并发吞吐量（不同并发数）")
-    print("  测什么：同时有很多人用时，系统一秒能处理多少请求、会不会卡。")
-    print("=" * 60)
-    results = {}
-
-    for conc in [1, 5, 10, 20, 50]:
-        lats, ok, err, wall = measure_concurrent(
-            lambda: http("GET", "/api/config"), concurrency=conc, total=200,
-        )
-        s = stats(lats)
-        q = qps(lats, wall)
-        er = error_rate(ok, err)
-        print(f"  并发={conc:3d}  QPS={q:6.1f}  P50={s['p50_ms']:6.2f}ms  P95={s['p95_ms']:6.2f}ms  P99={s['p99_ms']:6.2f}ms  错误率={er}%")
-        results[f"公开接口并发{conc}_QPS"] = q
-        results[f"公开接口并发{conc}_P99"] = s["p99_ms"]
-
-    print("\n  --- 鉴权接口并发 ---")
-    for conc in [1, 10, 20]:
-        lats, ok, err, wall = measure_concurrent(
-            lambda: http("GET", "/api/auth", token=TOKEN), concurrency=conc, total=100,
-        )
-        s = stats(lats)
-        q = qps(lats, wall)
-        er = error_rate(ok, err)
-        print(f"  鉴权并发={conc:3d}  QPS={q:6.1f}  P50={s['p50_ms']:6.2f}ms  P95={s['p95_ms']:6.2f}ms  错误率={er}%")
-        results[f"鉴权并发{conc}_QPS"] = q
-        results[f"鉴权并发{conc}_P95"] = s["p95_ms"]
-
-    return results
-
-
-def d3_db_query(student_ids):
-    print("\n" + "=" * 60)
-    print("  D3 数据库查询性能（按学员查排课）")
-    print("  测什么：查某个学员的排课时，数据库查得多快。这是最常用的操作之一。")
-    print("=" * 60)
-    results = {}
-    if not student_ids:
-        print("  [跳过] 无学员数据")
-        return results
-
-    import random
-    lats, _, _ = measure(lambda: http("GET", f"/api/schedules?studentId={student_ids[0]}"), 50)
-    s = stats(lats)
-    print(f"  单学员排课  {s}")
-    results["单学员排课P95"] = s["p95_ms"]
-
-    lats, ok, err, wall = measure_concurrent(
-        lambda: http("GET", f"/api/schedules?studentId={random.choice(student_ids)}"),
-        concurrency=20, total=200,
-    )
-    s = stats(lats)
-    print(f"  并发20查排课  QPS={qps(lats, wall):.1f}  {s}")
-    results["并发20查排课QPS"] = qps(lats, wall)
-    return results
-
-
-def d4_business_tx(student_ids, course_id):
-    print("\n" + "=" * 60)
-    print("  D4 业务事务性能（报名/点名/退课）")
-    print("  测什么：给学员报名这种「写操作」要多快。涉及多张表，比纯查询慢。")
-    print("=" * 60)
-    results = {}
-    if not student_ids or not course_id:
-        print("  [跳过] 缺数据")
-        return results
-
-    sample = student_ids[:20]
-    lats = []
-    for sid in sample:
-        t0 = time.perf_counter()
-        create_enrollment(sid, course_id, hours=20)
-        lats.append((time.perf_counter() - t0) * 1000)
-    s = stats(lats)
-    print(f"  创建报名(单条)  {s}")
-    results["创建报名P95"] = s["p95_ms"]
-    return results
-
-
-def d5_reports():
-    print("\n" + "=" * 60)
-    print("  D5 报表聚合性能（6 种报表）")
-    print("  测什么：月底看营收/课时/出勤等报表时，系统算得快不快。")
-    print("=" * 60)
-    results = {}
-    today = time.strftime("%Y-%m-%d")
-    month_start = today[:8] + "01"
-    for rtype, label in [
-        ("revenue", "营收"), ("hours-consumption", "课时消耗"),
-        ("hours-balance", "课时余额"), ("attendance-rate", "出勤率"),
-        ("transfers", "结转"), ("enrollment-stats", "报名统计"),
-    ]:
-        params = urlencode({"type": rtype, "startDate": month_start, "endDate": today})
-        lats, ok, err = measure(lambda: http("GET", f"/api/reports?{params}", token=TOKEN), 10)
-        s = stats(lats)
-        print(f"  {label:6s}  P50={s['p50_ms']:.2f}ms  P95={s['p95_ms']:.2f}ms  错误率={error_rate(ok,err)}%")
-        results[f"{label}报表P95"] = s["p95_ms"]
-    return results
-
-
-def d6_search(student_ids):
-    print("\n" + "=" * 60)
-    print("  D6 搜索性能")
-    print("  测什么：在搜索框输入名字找学员时，多快能出结果。")
-    print("=" * 60)
-    results = {}
-    if not student_ids:
-        print("  [跳过] 无数据")
-        return results
-
-    lats, _, _ = measure(lambda: http("GET", "/api/students?q=perf_00000"), 50)
-    s = stats(lats)
-    print(f"  精确搜索      {s}")
-    results["精确搜索P95"] = s["p95_ms"]
-
-    lats, _, _ = measure(lambda: http("GET", "/api/students?q=perf_0"), 50)
-    s = stats(lats)
-    print(f"  模糊前缀搜索  {s}")
-    results["模糊搜索P95"] = s["p95_ms"]
-
-    lats, _, _ = measure(lambda: http("GET", "/api/students?q="), 20)
-    s = stats(lats)
-    print(f"  全量学员列表  {s}")
-    results["全量列表P95"] = s["p95_ms"]
-    return results
-
-
-def d7_auth():
-    print("\n" + "=" * 60)
-    print("  D7 鉴权性能")
-    print("  测什么：每次操作都要校验登录状态，这个校验本身会不会拖慢系统。")
-    print("=" * 60)
-    results = {}
-    lats, _, _ = measure(lambda: http("GET", "/api/auth", token=TOKEN), 200)
-    s = stats(lats)
-    print(f"  /api/auth(查库)  {s}")
-    results["鉴权P99"] = s["p99_ms"]
-
-    lats, _, _ = measure(lambda: http("GET", "/api/auth", token="invalid.token"), 50)
-    s = stats(lats)
-    print(f"  错误token拒绝   {s}")
-    results["错误token拒绝P95"] = s["p95_ms"]
-    return results
-
-
-def d8_write_throughput(course_id):
-    print("\n" + "=" * 60)
-    print("  D8 写操作吞吐量")
-    print("  测什么：连续新增学员时，一秒能写多少条。反映系统的写入能力。")
-    print("=" * 60)
-    results = {}
-    lats = []
-    for i in range(50):
-        t0 = time.perf_counter()
-        http("POST", "/api/student-add", {"student": {"name": f"write_{i:04d}", "phone": f"139{i:07d}", "grade": "一年级"}}, token=TOKEN)
-        lats.append((time.perf_counter() - t0) * 1000)
-    s = stats(lats)
-    ops = qps(lats, sum(lats) / 1000)
-    print(f"  串行新增学员(50)  P50={s['p50_ms']:.2f}ms  吞吐={ops:.1f} ops/s")
-    results["串行写吞吐"] = ops
-    return results
-
-
-def d9_system():
-    print("\n" + "=" * 60)
-    print("  D9 系统资源占用")
-    print("  测什么：跑业务时服务器 CPU/内存占用多少。太高说明要加配置。")
-    print("=" * 60)
-    results = {}
-    is_remote = not BASE.startswith("http://127.0.0.1") and not BASE.startswith("http://localhost")
-
-    if is_remote:
-        # 远程测试：无法直接读进程/数据库，用 API 延迟推断负载
-        print("  [远程测试] 无法直接采集服务器资源，改用 API 延迟推断")
-        lats, _, _ = measure(lambda: http("GET", "/api/config"), 30)
-        s = stats(lats)
-        print(f"  配置接口延迟  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms")
-        # 延迟显著高于本机基线（>100ms）可能意味着高负载
-        if s["p99_ms"] > 100:
-            results["远程延迟告警"] = s["p99_ms"]
-            print(f"  ⚠ P99={s['p99_ms']:.0f}ms 高于 100ms，服务器可能高负载")
-        results["配置接口P99"] = s["p99_ms"]
-        return results
-
-    # 本机测试：直接采集进程/数据库资源
-    import subprocess
-    try:
-        result = subprocess.run(["ps", "aux"], capture_output=True, text=True, timeout=5)
-        for line in result.stdout.split("\n"):
-            if "node server" in line and "grep" not in line:
-                parts = line.split()
-                if len(parts) >= 6:
-                    cpu, mem, rss = parts[2], parts[3], parts[5]
-                    print(f"  node 进程  CPU={cpu}%  MEM={mem}%  RSS={rss}KB")
-                    results["CPU占用"] = float(cpu)
-                    results["内存占用"] = float(mem)
-    except Exception:
-        pass
-
-    db_path = "/workspace/data/pai.db"
-    if os.path.exists(db_path):
-        size = os.path.getsize(db_path)
-        print(f"  数据库文件  {size / 1024:.1f} KB")
-        results["DB大小KB"] = round(size / 1024, 1)
-    return results
-
-
-# ============ D10-D12 其他表性能测试 ============
-
-def d10_courses_classes(student_ids, course_id):
-    """D10 课程/班级/班级成员查询性能"""
-    print("\n" + "=" * 60)
-    print("  D10 课程/班级/班级成员查询性能")
-    print("  测什么：查课程、班级、班级成员、按课程/班级查排课，快不快。")
-    print("=" * 60)
-    results = {}
-    if not course_id:
-        print("  [跳过] 无课程数据")
-        return results
-
-    # 课程列表
-    lats, _, _ = measure(lambda: http("GET", "/api/courses", token=TOKEN), 50)
-    s = stats(lats)
-    print(f"  课程列表        {s}")
-    results["课程列表P95"] = s["p95_ms"]
-
-    # 班级列表
-    lats, _, _ = measure(lambda: http("GET", "/api/classes", token=TOKEN), 50)
-    s = stats(lats)
-    print(f"  班级列表        {s}")
-    results["班级列表P95"] = s["p95_ms"]
-
-    # 按课程查排课（schedules-search?courseId=）
-    lats, _, _ = measure(lambda: http("GET", f"/api/schedules-search?courseId={course_id}", token=TOKEN), 30)
-    s = stats(lats)
-    print(f"  按课程查排课    {s}")
-    results["按课程查排课P95"] = s["p95_ms"]
-
-    # 班级成员查询（如果有班级）
-    r, _ = http("GET", "/api/classes", token=TOKEN)
-    classes = r.get("data", {}).get("classes", []) if r.get("code") == 0 else []
-    if classes:
-        class_id = classes[0]["id"]
-        lats, _, _ = measure(lambda: http("GET", f"/api/class-members?classId={class_id}", token=TOKEN), 30)
-        s = stats(lats)
-        print(f"  班级成员查询    {s}")
-        results["班级成员查询P95"] = s["p95_ms"]
-
-        # 按班级查排课
-        lats, _, _ = measure(lambda: http("GET", f"/api/schedules-search?classId={class_id}", token=TOKEN), 30)
-        s = stats(lats)
-        print(f"  按班级查排课    {s}")
-        results["按班级查排课P95"] = s["p95_ms"]
-    else:
-        print("  [跳过] 无班级数据，未测班级成员/按班级查排课")
-    return results
-
-
-def d11_audit_logs():
-    """D11 审计日志查询性能"""
-    print("\n" + "=" * 60)
-    print("  D11 审计日志查询性能")
-    print("  测什么：查「谁在什么时候做了什么」的操作记录，快不快。日志会越积越多。")
-    print("=" * 60)
-    results = {}
-
-    # 全量查询（第一页）
-    lats, _, _ = measure(lambda: http("GET", "/api/audit-logs?page=1&pageSize=20", token=TOKEN), 30)
-    s = stats(lats)
-    print(f"  审计日志(首页20条)  {s}")
-    results["审计首页P95"] = s["p95_ms"]
-
-    # 按模块查询
-    lats, _, _ = measure(lambda: http("GET", "/api/audit-logs?module=students&page=1&pageSize=20", token=TOKEN), 30)
-    s = stats(lats)
-    print(f"  按模块查询(students) {s}")
-    results["按模块查询P95"] = s["p95_ms"]
-
-    # 按操作人查询
-    lats, _, _ = measure(lambda: http("GET", f"/api/audit-logs?actorId={ADMIN_ID}&page=1&pageSize=20", token=TOKEN), 30)
-    s = stats(lats)
-    print(f"  按操作人查询        {s}")
-    results["按操作人查询P95"] = s["p95_ms"]
-
-    # 大页查询（pageSize=100）
-    lats, _, _ = measure(lambda: http("GET", "/api/audit-logs?page=1&pageSize=100", token=TOKEN), 20)
-    s = stats(lats)
-    print(f"  大页查询(100条)     {s}")
-    results["大页查询P95"] = s["p95_ms"]
-
-    # 深翻页（第 100 页）
-    lats, _, _ = measure(lambda: http("GET", "/api/audit-logs?page=100&pageSize=20", token=TOKEN), 20)
-    s = stats(lats)
-    print(f"  深翻页(第100页)     {s}")
-    results["深翻页P95"] = s["p95_ms"]
-    return results
-
-
-def d12_feedback_perf(student_ids, course_id):
-    """D12 课后反馈查询 + 教师绩效性能"""
-    print("\n" + "=" * 60)
-    print("  D12 课后反馈查询 + 教师绩效性能")
-    print("  测什么：查课后反馈和老师绩效报表，快不快。")
-    print("=" * 60)
-    results = {}
-    if not student_ids or not course_id:
-        print("  [跳过] 缺数据")
-        return results
-
-    # 反馈列表查询
-    lats, _, _ = measure(lambda: http("GET", "/api/feedback", token=TOKEN), 30)
-    s = stats(lats)
-    print(f"  反馈列表查询        {s}")
-    results["反馈列表P95"] = s["p95_ms"]
-
-    # 按课程查反馈
-    lats, _, _ = measure(lambda: http("GET", f"/api/feedback?courseId={course_id}", token=TOKEN), 30)
-    s = stats(lats)
-    print(f"  按课程查反馈        {s}")
-    results["按课程查反馈P95"] = s["p95_ms"]
-
-    # 按学员查反馈
-    lats, _, _ = measure(lambda: http("GET", f"/api/feedback?studentId={student_ids[0]}", token=TOKEN), 30)
-    s = stats(lats)
-    print(f"  按学员查反馈        {s}")
-    results["按学员查反馈P95"] = s["p95_ms"]
-
-    # 教师绩效
-    today = time.strftime("%Y-%m-%d")
-    month_start = today[:8] + "01"
-    params = urlencode({"startDate": month_start, "endDate": today})
-    lats, _, _ = measure(lambda: http("GET", f"/api/teacher-performance?{params}", token=TOKEN), 20)
-    s = stats(lats)
-    print(f"  教师绩效            {s}")
-    results["教师绩效P95"] = s["p95_ms"]
-    return results
-
-
-def d13_attendance(student_ids, course_id):
-    """D13 点名性能（读点名列表 + 批量点名扣课）"""
-    print("\n" + "=" * 60)
-    print("  D13 点名性能（读列表 + 批量扣课）")
-    print("  测什么：上课点名时，读名单、批量扣课时、改缺勤退课时，要多快。")
-    print("=" * 60)
-    results = {}
-    if not student_ids or not course_id:
-        print("  [跳过] 缺数据")
-        return results
-
-    today = _unique_test_date()
-    # 创建班级（schedule-add 要求 classId 在班级表中存在）
-    class_id = ensure_class("点名测试班", course_id)
-    if not class_id:
-        print("  [跳过] 班级创建失败")
-        return results
-
-    # 先为部分学员创建报名 + 今天的排课，供点名用
-    sample = student_ids[:50]
-    print(f"  准备：为 {len(sample)} 个学员创建报名+今日排课...")
-    for sid in sample:
-        create_enrollment(sid, course_id, hours=20)
-    sched_ids = []
-    for sid in sample:
-        sid_sched = create_schedule(sid, course_id, class_id=class_id, date=today)
-        if sid_sched:
-            sched_ids.append((sid, sid_sched))
-
-    if not sched_ids:
-        print("  [跳过] 排课创建失败")
-        return results
-
-    # 1. 点名 GET（读取当日点名列表）
-    lats, _, _ = measure(lambda: http("GET", f"/api/attendance?date={today}", token=TOKEN), 30)
-    s = stats(lats)
-    print(f"  点名列表GET(50条)   {s}")
-    results["点名列表GET_P95"] = s["p95_ms"]
-
-    # 2. 点名 POST（批量扣课，50条）—— items 需含 scheduleId + studentId + attended
-    items = [{"scheduleId": sid_sched, "studentId": sid, "attended": True, "date": today}
-             for sid, sid_sched in sched_ids]
-    lats = []
-    for _ in range(5):
-        t0 = time.perf_counter()
-        set_attendance(items, date=today)
-        lats.append((time.perf_counter() - t0) * 1000)
-    s = stats(lats)
-    print(f"  批量点名POST(50条)  {s}")
-    results["批量点名50条_P95"] = s["p95_ms"]
-
-    # 3. 改缺勤（回退课时）
-    undo_items = [{"scheduleId": sid_sched, "studentId": sid, "attended": False, "date": today}
-                  for sid, sid_sched in sched_ids[:20]]
-    lats = []
-    for _ in range(5):
-        t0 = time.perf_counter()
-        set_attendance(undo_items, date=today)
-        lats.append((time.perf_counter() - t0) * 1000)
-    s = stats(lats)
-    print(f"  改缺勤POST(20条)    {s}")
-    results["改缺勤20条_P95"] = s["p95_ms"]
-
-    return results
-
-
-def d14_schedule_write(student_ids, course_id):
-    """D14 排课写入性能（单条 + 批量 + 冲突检测）"""
-    print("\n" + "=" * 60)
-    print("  D14 排课写入性能（单条/批量/冲突检测）")
-    print("  测什么：排一节课、批量排多节课、检测时间冲突，要多快。")
-    print("=" * 60)
-    results = {}
-    if not student_ids or not course_id:
-        print("  [跳过] 缺数据")
-        return results
-
-    # 创建班级 + 报名（排课前置条件）
-    class_id = ensure_class("排课测试班", course_id)
-    sample = student_ids[:50]
-    for sid in sample:
-        create_enrollment(sid, course_id, hours=20)
-    # 后端 /api/schedule-add-batch 校验学员必须是班级成员，先加入班级
-    add_class_members(class_id, sample)
-
-    tomorrow = time.strftime("%Y-%m-%d", time.localtime(time.time() + 86400))
-
-    # 1. 单条排课（含冲突检测）
-    single_sample = sample[:20]
-    lats = []
-    for sid in single_sample:
-        t0 = time.perf_counter()
-        create_schedule(sid, course_id, class_id=class_id, date=tomorrow)
-        lats.append((time.perf_counter() - t0) * 1000)
-    s = stats(lats)
-    print(f"  单条排课(含冲突检测)  {s}")
-    results["单条排课P95"] = s["p95_ms"]
-
-    # 2. 批量排课（50学员 × 1天）
-    lats = []
-    for i in range(3):
-        day = time.strftime("%Y-%m-%d", time.localtime(time.time() + 86400 * (2 + i)))
-        t0 = time.perf_counter()
-        batch_add_schedules(sample, course_id, [day], class_id=class_id)
-        lats.append((time.perf_counter() - t0) * 1000)
-    s = stats(lats)
-    print(f"  批量排课(50人×1天)    {s}")
-    results["批量排课50人_P95"] = s["p95_ms"]
-
-    # 3. 批量排课（50学员 × 10天，N×M 冲突检测）
-    dates = [time.strftime("%Y-%m-%d", time.localtime(time.time() + 86400 * (5 + i))) for i in range(10)]
-    t0 = time.perf_counter()
-    batch_add_schedules(sample, course_id, dates, class_id=class_id)
-    lat = (time.perf_counter() - t0) * 1000
-    print(f"  批量排课(50人×10天)   {lat:.2f}ms")
-    results["批量排课50人10天"] = round(lat, 2)
-
-    return results
-
-
-def d15_transfer(student_ids, course_id):
-    """D15 退课性能（多表事务）"""
-    print("\n" + "=" * 60)
-    print("  D15 退课性能（多表事务）")
-    print("  测什么：退课要同时改报名、账户余额、排课等多张表，测这个事务快不快。")
-    print("=" * 60)
-    results = {}
-    if not student_ids or not course_id:
-        print("  [跳过] 缺数据")
-        return results
-
-    # 先为测试学员创建报名（带课时）
-    sample = student_ids[:10]
-    enr_ids = []
-    for sid in sample:
-        r, _ = http("POST", "/api/enrollment-add", {"enrollment": {
-            "studentId": sid, "courseId": course_id,
-            "purchasedHours": 10, "giftHours": 2,
-            "unitPrice": 100, "totalAmount": 1000, "paidAmount": 1000,
-        }}, token=TOKEN)
-        if r.get("code") == 0:
-            enr_ids.append((sid, r["data"]["enrollment"]["id"]))
-
-    if not enr_ids:
-        print("  [跳过] 报名创建失败")
-        return results
-
-    # 退课（多表事务：transfers + enrollments + account_transactions + schedules）
-    lats = []
-    for sid, eid in enr_ids:
-        t0 = time.perf_counter()
-        create_transfer(sid, eid)
-        lats.append((time.perf_counter() - t0) * 1000)
-    s = stats(lats)
-    print(f"  退课(多表事务)  {s}")
-    results["退课P95"] = s["p95_ms"]
-
-    return results
-
-
-def d16_optimized_tables(student_ids):
-    """D16 优化后的表查询性能（验证 datetime() 修复效果）"""
-    print("\n" + "=" * 60)
-    print("  D16 优化表查询（报名/账户流水/退课/调课/管理员）")
-    print("  测什么：查报名记录、账户流水、退课流水、调课记录、管理员列表，快不快。")
-    print("=" * 60)
-    results = {}
-    if not student_ids:
-        print("  [跳过] 缺数据")
-        return results
-
-    sid = student_ids[0]
-
-    # 1. 报名记录查询
-    lats, _, _ = measure(lambda: http("GET", f"/api/enrollments?studentId={sid}", token=TOKEN), 30)
-    s = stats(lats)
-    print(f"  报名记录查询        {s}")
-    results["报名记录P95"] = s["p95_ms"]
-
-    # 2. 账户流水查询
-    lats, _, _ = measure(lambda: http("GET", f"/api/account-transactions?studentId={sid}", token=TOKEN), 30)
-    s = stats(lats)
-    print(f"  账户流水查询        {s}")
-    results["账户流水P95"] = s["p95_ms"]
-
-    # 3. 退课流水查询
-    lats, _, _ = measure(lambda: http("GET", f"/api/transfers?studentId={sid}", token=TOKEN), 30)
-    s = stats(lats)
-    print(f"  退课流水查询        {s}")
-    results["退课流水P95"] = s["p95_ms"]
-
-    # 4. 调课记录查询
-    lats, _, _ = measure(lambda: http("GET", f"/api/schedule-changes?studentId={sid}", token=TOKEN), 30)
-    s = stats(lats)
-    print(f"  调课记录查询        {s}")
-    results["调课记录P95"] = s["p95_ms"]
-
-    # 5. 管理员列表
-    lats, _, _ = measure(lambda: http("GET", "/api/admins", token=TOKEN), 30)
-    s = stats(lats)
-    print(f"  管理员列表          {s}")
-    results["管理员列表P95"] = s["p95_ms"]
-
-    return results
 
 
 # ============ S1-S4 压力测试（SLA 阶梯） ============
@@ -3008,8 +2430,8 @@ _FLOW_GROUP_DESCRIPTIONS = {
     "组2安全性": "鉴权、权限、密码策略、越权、token 失效、SQL 注入",
     "组3业务流程": "补课（插班）、调课、退课流程",
     "组4非流程拦截": "缺少前置条件应被拒绝（不存在的年级/课程/班级/学员、参数缺失、格式错误）",
-    "组5Bug修复": "Bug3/5/6/9/10 修复验证（超管不可降级、报名不可删除、有课时不可删学员等）",
-    "组6严重Bug": "回退课时精准回退、金额保留、排课冲突检测、删除课程保护",
+    "组5业务规则": "核心业务规则验证：超管权限不可降级、报名记录不可删除、有剩余课时不可删除学员、报名有效期处理、有课时不可直接结转",
+    "组6课时与排课规则": "课时扣减精准回退、退课金额保留、排课时间冲突检测、有报名时课程删除保护",
     "组7退课与流水": "transfer-add 真正退课流程、退课后排课取消、流水记录查询、重复退课拒绝",
     "组8CRUD改删": "学员/课程/班级/排课/年级/管理员/反馈/配置的 PUT 修改 + DELETE 删除",
     "组9报表与审计": "6 类报表 + 审计日志 7 种过滤维度 + 调课历史 + 教师绩效",
@@ -3200,8 +2622,11 @@ def generate_flow_report(results, duration_s, errors=None):
     return report_path
 
 
-def generate_report(mode, results, duration_s, scale=None):
-    """生成 HTML 评估报告（含通俗说明，方便非技术人员阅读）"""
+def generate_report(results, duration_s, scale=None):
+    """生成压力测试 HTML 评估报告（含通俗说明，方便非技术人员阅读）
+
+    注：流程测试（flow）报告由 generate_flow_report 独立生成，本函数仅服务 stress。
+    """
     ts = time.strftime("%Y%m%d_%H%M%S")
     report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
     os.makedirs(report_dir, exist_ok=True)
@@ -3216,10 +2641,10 @@ def generate_report(mode, results, duration_s, scale=None):
         env_type = "局域网"
 
     lines = []
-    lines.append(f"# 性能测试评估报告\n")
+    lines.append(f"# 压力测试评估报告\n")
     lines.append(f"- **测试时间**：{time.strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append(f"- **测试模式**：{'流程测试 (flow)' if mode == 'flow' else '压力测试 (stress)'}")
-    if mode == "stress" and scale and scale in SCALE_PRESETS:
+    lines.append(f"- **测试模式**：压力测试 (stress)")
+    if scale and scale in SCALE_PRESETS:
         preset = SCALE_PRESETS[scale]
         lines.append(f"- **数据量预设**：{scale}（{preset['label']}）")
         lines.append(f"  - S1 学员阶梯：{' → '.join(str(s) for s in preset['s1_sizes'])}")
@@ -3249,217 +2674,201 @@ def generate_report(mode, results, duration_s, scale=None):
 
     # ===== 测试结果速读（先给结论） =====
     lines.append("## 🎯 测试结果速读（一句话结论）\n")
-    quick_verdicts = _build_quick_verdicts(mode, results)
-    for v in quick_verdicts:
+    stress_verdicts = _build_stress_verdicts(results)
+    for v in stress_verdicts:
         lines.append(f"- {v}")
     lines.append("")
 
-    if mode == "flow":
-        # flow 模式已改用独立的 generate_flow_report，本函数仅处理 stress
-        # 若误入此分支，给出提示并返回
-        lines.append("## ⚠️ 流程测试报告应通过 generate_flow_report 生成\n")
-        lines.append("flow 模式已独立，本函数（generate_report）仅用于压力测试。\n")
-        for dim, data in results.items():
-            lines.append(f"### {dim}\n")
-            lines.append("| 指标 | 值 |")
-            lines.append("|------|-----|")
-            for k, v in data.items():
-                if isinstance(v, float):
-                    lines.append(f"| {k} | {v:.2f} |")
-                else:
-                    lines.append(f"| {k} | {v} |")
-            lines.append("")
-    else:
-        # 压力测试报告
-        lines.append("## 压力测试结果（详细数据）\n")
+    # 压力测试报告
+    lines.append("## 压力测试结果（详细数据）\n")
 
-        # S1 数据量
-        if "S1" in results:
-            lines.append("### S1 数据量阶梯 —— 学员越多查询会不会变慢\n")
-            lines.append("> 测什么：学员从 100 涨到 10000，看查询/搜索/报表/审计日志会不会变卡。找「开始卡」的学员数。\n")
-            lines.append("| 学员规模 | 全量列表P99 | 模糊搜索P99 | 报表P99 | 审计P99 | 错误率 | 达标 |")
-            lines.append("|----------|-------------|-------------|---------|---------|--------|------|")
-            for r in results["S1"]:
-                mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                audit_p99 = r.get("审计P99", 0)
-                lines.append(f"| {r['规模']} | {r['全量列表P99']:.2f}ms | {r['模糊搜索P99']:.2f}ms | {r['报表P99']:.2f}ms | {audit_p99:.2f}ms | {r['错误率']}% | {mark} |")
-            lines.append("")
-
-        # S2 并发
-        if "S2" in results:
-            lines.append("### S2 并发阶梯 —— 同时多少人用会崩\n")
-            lines.append("> 测什么：同时 10/50/100/200/500 人操作，看系统会不会出错或变慢。找「开始出错」的人数。\n")
-            lines.append("| 并发人数 | 每秒处理(QPS) | P99响应 | 错误率 | 达标 |")
-            lines.append("|----------|---------------|---------|--------|------|")
-            for r in results["S2"]:
-                mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                lines.append(f"| {r['并发']} | {r['QPS']:.1f} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
-            lines.append("")
-
-        # S3 持续负载
-        if "S3" in results:
-            s3 = results["S3"]
-            lines.append("### S3 持续负载 —— 连续运行会不会越来越慢\n")
-            lines.append("> 测什么：固定压力连续跑 3 分钟，看系统会不会越跑越慢（内存泄漏/卡顿）。\n")
-            lines.append(f"- 起始 P99：{s3['首段P99']:.2f}ms")
-            lines.append(f"- 结束 P99：{s3['末段P99']:.2f}ms")
-            deg = s3['衰减率%']
-            if deg > 50:
-                deg_desc = f"衰减 {deg}%，**明显变慢**（疑似内存泄漏）"
-            elif deg > 20:
-                deg_desc = f"衰减 {deg}%，轻微变慢"
-            else:
-                deg_desc = f"衰减 {'+' if deg>0 else ''}{deg}%，**性能稳定**"
-            lines.append(f"- 趋势：{deg_desc}\n")
-            lines.append("| 运行时间(s) | QPS | P99 | 错误率 | 达标 |")
-            lines.append("|-------------|-----|-----|--------|------|")
-            for s in s3["samples"]:
-                mark = "✓ 正常" if s["达标"] else "✗ 异常"
-                lines.append(f"| {s['时间s']} | {s['QPS']:.1f} | {s['P99']:.2f}ms | {s['错误率']}% | {mark} |")
-            lines.append("")
-
-        # S4 混合负载
-        if "S4" in results:
-            s4 = results["S4"]
-            lines.append("### S4 混合负载 —— 真实使用场景（7 成看、3 成写）\n")
-            lines.append("> 测什么：模拟真实场景——大部分人查看、少部分人新增，看系统扛不扛得住混合操作。\n")
-            lines.append(f"- 读操作：每秒 {s4['读QPS']:.1f} 次，P99={s4['读P99']:.2f}ms，错误率={s4['读错误率']}%")
-            lines.append(f"- 写操作：每秒 {s4['写QPS']:.1f} 次，P99={s4['写P99']:.2f}ms，错误率={s4['写错误率']}%\n")
-
-        # S5 审计日志
-        if "S5" in results and results["S5"]:
-            lines.append("### S5 审计日志查询 —— 日志多了会不会卡\n")
-            lines.append("> 测什么：操作记录会越积越多，翻到很后面会不会变卡。找「开始卡」的页数。\n")
-            lines.append("| 阶梯 | P99 | 错误率 | 达标 |")
-            lines.append("|------|-----|--------|------|")
-            for r in results["S5"]:
-                mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
-            lines.append("")
-
-        # S6 点名压力
-        if "S6" in results and results["S6"]:
-            lines.append("### S6 点名压力 —— 批量点名 + 多人同时点名\n")
-            lines.append("> 测什么：一次点名 50/100/200 个学员，还有多个老师同时点名，看扣课快不快。\n")
-            lines.append("| 阶梯 | P99 | 错误率 | 达标 |")
-            lines.append("|------|-----|--------|------|")
-            for r in results["S6"]:
-                mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
-            lines.append("")
-
-        # S7 排课数据量阶梯
-        if "S7" in results and results["S7"]:
-            lines.append("### S7 排课数据量阶梯 —— 百万/千万级排课记录会不会卡\n")
-            lines.append("> 测什么：排课记录从 1万 涨到 1000万，查排课、排课写入（含冲突检测）、点名、教师绩效、调课记录、大批量冲突检测、多表查询会不会变卡。找「开始卡」的数据量。\n")
-            lines.append("| 排课记录量 | 按学员查P99 | 按课程查P99 | 单条写入P99 | 批量写入耗时 | 点名加载P99 | 点名写入P99 | 教师绩效P99 | 调课记录P99 | 大批量冲突耗时 | 多表查询P99 | 错误率 | 达标 |")
-            lines.append("|-----------|------------|------------|------------|-------------|------------|------------|------------|------------|---------------|------------|--------|------|")
-            for r in results["S7"]:
-                mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                lines.append(f"| {r['排课量']:,} | {r['按学员查P99']:.2f}ms | {r['按课程查P99']:.2f}ms | {r['单条写入P99']:.2f}ms | {r['批量写入ms']:.2f}ms | {r.get('点名加载P99', 0):.2f}ms | {r.get('点名写入P99', 0):.2f}ms | {r.get('教师绩效P99', 0):.2f}ms | {r.get('调课记录P99', 0):.2f}ms | {r.get('大批量冲突ms', 0):.2f}ms | {r.get('多表查询P99', 0):.2f}ms | {r['错误率']}% | {mark} |")
-            lines.append("")
-
-        # S8 鉴权性能
-        if "S8" in results and results["S8"]:
-            lines.append("### S8 鉴权性能 —— 每次操作都要做的 token 校验会不会拖慢\n")
-            lines.append("> 测什么：正确 token 校验（查库）、错误 token 拒绝（快速失败）、鉴权并发阶梯。鉴权是所有接口的基础，慢了全系统都慢。\n")
-            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
-            lines.append("|---------|-----|--------|------|")
-            for r in results["S8"]:
-                mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
-            lines.append("")
-
-        # S9 系统资源
-        if "S9" in results and isinstance(results["S9"], dict):
-            lines.append("### S9 系统资源 —— 服务器负载和数据库大小\n")
-            lines.append("> 测什么：跑业务时 node 进程 CPU/内存占用、数据库文件多大。远程测试时改用 API 延迟推断负载。\n")
-            lines.append("| 指标 | 值 |")
-            lines.append("|------|-----|")
-            s9 = results["S9"]
-            for k, v in s9.items():
-                if k == "达标":
-                    continue
-                if isinstance(v, float):
-                    lines.append(f"| {k} | {v:.2f} |")
-                else:
-                    lines.append(f"| {k} | {v} |")
-            mark = "✓ 正常" if s9.get("达标", True) else "✗ 异常"
-            lines.append(f"| 达标 | {mark} |")
-            lines.append("")
-
-        # S10 退课事务
-        if "S10" in results and results["S10"]:
-            lines.append("### S10 退课事务 —— 多表事务（改报名+账户+排课）会不会慢\n")
-            lines.append("> 测什么：退课要同时改报名、账户余额、排课等多张表。测串行退课性能、较大批量退课、并发退课（事务锁竞争）。\n")
-            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
-            lines.append("|---------|-----|--------|------|")
-            for r in results["S10"]:
-                mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
-            lines.append("")
-
-        # S11 调课/补课
-        if "S11" in results and results["S11"]:
-            lines.append("### S11 调课/补课 —— 排课系统核心写操作\n")
-            lines.append("> 测什么：调课（取消原排课+新建+写变更记录）和补课（保留缺勤+新建关联排课）是排课系统最频繁的写操作。测串行和并发调课/补课性能。\n")
-            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
-            lines.append("|---------|-----|--------|------|")
-            for r in results["S11"]:
-                mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
-            lines.append("")
-
-        # S12 CRUD 改删
-        if "S12" in results and results["S12"]:
-            lines.append("### S12 CRUD 改删 —— 课程/班级/学员/排课/报名/管理员/年级/配置\n")
-            lines.append("> 测什么：之前只测了查和增，现在补齐改（PUT）和删（DELETE）。用临时资源测，不破坏主数据。\n")
-            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
-            lines.append("|---------|-----|--------|------|")
-            for r in results["S12"]:
-                mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
-            lines.append("")
-
-        # S13 反馈 CRUD
-        if "S13" in results and results["S13"]:
-            lines.append("### S13 反馈 CRUD —— 课后反馈增删改查\n")
-            lines.append("> 测什么：课后反馈的 POST 创建、GET 查询（列表/按学员/按课程）、PUT 修改、DELETE 删除全套操作。\n")
-            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
-            lines.append("|---------|-----|--------|------|")
-            for r in results["S13"]:
-                mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
-            lines.append("")
-
-        # S14 错误路径与边界
-        if "S14" in results and results["S14"]:
-            lines.append("### S14 错误路径与边界 —— 异常输入抗压能力\n")
-            lines.append("> 测什么：传错参数、查不存在资源、重复操作、超大页、SQL 注入字符、emoji 等异常情况，系统应快速拒绝不该卡。\n")
-            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
-            lines.append("|---------|-----|--------|------|")
-            for r in results["S14"]:
-                mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
-            lines.append("")
-
-        # S15 灾备与多角色
-        if "S15" in results and results["S15"]:
-            lines.append("### S15 灾备与多角色 —— 备份/归档/教师视角/家长端\n")
-            lines.append("> 测什么：备份列表、审计归档创建、权限定义、教师列表、公告读写、家长端访问、教师绩效、年级升级等运维和多角色场景。\n")
-            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
-            lines.append("|---------|-----|--------|------|")
-            for r in results["S15"]:
-                mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
-            lines.append("")
-
-        # ===== 综合评估（大白话） =====
-        lines.append("## 📋 综合评估（详细解读）\n")
-        verdicts = _build_detailed_verdicts(results)
-        for v in verdicts:
-            lines.append(f"- {v}")
+    # S1 数据量
+    if "S1" in results:
+        lines.append("### S1 数据量阶梯 —— 学员越多查询会不会变慢\n")
+        lines.append("> 测什么：学员从 100 涨到 10000，看查询/搜索/报表/审计日志会不会变卡。找「开始卡」的学员数。\n")
+        lines.append("| 学员规模 | 全量列表P99 | 模糊搜索P99 | 报表P99 | 审计P99 | 错误率 | 达标 |")
+        lines.append("|----------|-------------|-------------|---------|---------|--------|------|")
+        for r in results["S1"]:
+            mark = "✓ 正常" if r["达标"] else "✗ 异常"
+            audit_p99 = r.get("审计P99", 0)
+            lines.append(f"| {r['规模']} | {r['全量列表P99']:.2f}ms | {r['模糊搜索P99']:.2f}ms | {r['报表P99']:.2f}ms | {audit_p99:.2f}ms | {r['错误率']}% | {mark} |")
         lines.append("")
+
+    # S2 并发
+    if "S2" in results:
+        lines.append("### S2 并发阶梯 —— 同时多少人用会崩\n")
+        lines.append("> 测什么：同时 10/50/100/200/500 人操作，看系统会不会出错或变慢。找「开始出错」的人数。\n")
+        lines.append("| 并发人数 | 每秒处理(QPS) | P99响应 | 错误率 | 达标 |")
+        lines.append("|----------|---------------|---------|--------|------|")
+        for r in results["S2"]:
+            mark = "✓ 正常" if r["达标"] else "✗ 异常"
+            lines.append(f"| {r['并发']} | {r['QPS']:.1f} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+        lines.append("")
+
+    # S3 持续负载
+    if "S3" in results:
+        s3 = results["S3"]
+        lines.append("### S3 持续负载 —— 连续运行会不会越来越慢\n")
+        lines.append("> 测什么：固定压力连续跑 3 分钟，看系统会不会越跑越慢（内存泄漏/卡顿）。\n")
+        lines.append(f"- 起始 P99：{s3['首段P99']:.2f}ms")
+        lines.append(f"- 结束 P99：{s3['末段P99']:.2f}ms")
+        deg = s3['衰减率%']
+        if deg > 50:
+            deg_desc = f"衰减 {deg}%，**明显变慢**（疑似内存泄漏）"
+        elif deg > 20:
+            deg_desc = f"衰减 {deg}%，轻微变慢"
+        else:
+            deg_desc = f"衰减 {'+' if deg>0 else ''}{deg}%，**性能稳定**"
+        lines.append(f"- 趋势：{deg_desc}\n")
+        lines.append("| 运行时间(s) | QPS | P99 | 错误率 | 达标 |")
+        lines.append("|-------------|-----|-----|--------|------|")
+        for s in s3["samples"]:
+            mark = "✓ 正常" if s["达标"] else "✗ 异常"
+            lines.append(f"| {s['时间s']} | {s['QPS']:.1f} | {s['P99']:.2f}ms | {s['错误率']}% | {mark} |")
+        lines.append("")
+
+    # S4 混合负载
+    if "S4" in results:
+        s4 = results["S4"]
+        lines.append("### S4 混合负载 —— 真实使用场景（7 成看、3 成写）\n")
+        lines.append("> 测什么：模拟真实场景——大部分人查看、少部分人新增，看系统扛不扛得住混合操作。\n")
+        lines.append(f"- 读操作：每秒 {s4['读QPS']:.1f} 次，P99={s4['读P99']:.2f}ms，错误率={s4['读错误率']}%")
+        lines.append(f"- 写操作：每秒 {s4['写QPS']:.1f} 次，P99={s4['写P99']:.2f}ms，错误率={s4['写错误率']}%\n")
+
+    # S5 审计日志
+    if "S5" in results and results["S5"]:
+        lines.append("### S5 审计日志查询 —— 日志多了会不会卡\n")
+        lines.append("> 测什么：操作记录会越积越多，翻到很后面会不会变卡。找「开始卡」的页数。\n")
+        lines.append("| 阶梯 | P99 | 错误率 | 达标 |")
+        lines.append("|------|-----|--------|------|")
+        for r in results["S5"]:
+            mark = "✓ 正常" if r["达标"] else "✗ 异常"
+            lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+        lines.append("")
+
+    # S6 点名压力
+    if "S6" in results and results["S6"]:
+        lines.append("### S6 点名压力 —— 批量点名 + 多人同时点名\n")
+        lines.append("> 测什么：一次点名 50/100/200 个学员，还有多个老师同时点名，看扣课快不快。\n")
+        lines.append("| 阶梯 | P99 | 错误率 | 达标 |")
+        lines.append("|------|-----|--------|------|")
+        for r in results["S6"]:
+            mark = "✓ 正常" if r["达标"] else "✗ 异常"
+            lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+        lines.append("")
+
+    # S7 排课数据量阶梯
+    if "S7" in results and results["S7"]:
+        lines.append("### S7 排课数据量阶梯 —— 百万/千万级排课记录会不会卡\n")
+        lines.append("> 测什么：排课记录从 1万 涨到 1000万，查排课、排课写入（含冲突检测）、点名、教师绩效、调课记录、大批量冲突检测、多表查询会不会变卡。找「开始卡」的数据量。\n")
+        lines.append("| 排课记录量 | 按学员查P99 | 按课程查P99 | 单条写入P99 | 批量写入耗时 | 点名加载P99 | 点名写入P99 | 教师绩效P99 | 调课记录P99 | 大批量冲突耗时 | 多表查询P99 | 错误率 | 达标 |")
+        lines.append("|-----------|------------|------------|------------|-------------|------------|------------|------------|------------|---------------|------------|--------|------|")
+        for r in results["S7"]:
+            mark = "✓ 正常" if r["达标"] else "✗ 异常"
+            lines.append(f"| {r['排课量']:,} | {r['按学员查P99']:.2f}ms | {r['按课程查P99']:.2f}ms | {r['单条写入P99']:.2f}ms | {r['批量写入ms']:.2f}ms | {r.get('点名加载P99', 0):.2f}ms | {r.get('点名写入P99', 0):.2f}ms | {r.get('教师绩效P99', 0):.2f}ms | {r.get('调课记录P99', 0):.2f}ms | {r.get('大批量冲突ms', 0):.2f}ms | {r.get('多表查询P99', 0):.2f}ms | {r['错误率']}% | {mark} |")
+        lines.append("")
+
+    # S8 鉴权性能
+    if "S8" in results and results["S8"]:
+        lines.append("### S8 鉴权性能 —— 每次操作都要做的 token 校验会不会拖慢\n")
+        lines.append("> 测什么：正确 token 校验（查库）、错误 token 拒绝（快速失败）、鉴权并发阶梯。鉴权是所有接口的基础，慢了全系统都慢。\n")
+        lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+        lines.append("|---------|-----|--------|------|")
+        for r in results["S8"]:
+            mark = "✓ 正常" if r["达标"] else "✗ 异常"
+            lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+        lines.append("")
+
+    # S9 系统资源
+    if "S9" in results and isinstance(results["S9"], dict):
+        lines.append("### S9 系统资源 —— 服务器负载和数据库大小\n")
+        lines.append("> 测什么：跑业务时 node 进程 CPU/内存占用、数据库文件多大。远程测试时改用 API 延迟推断负载。\n")
+        lines.append("| 指标 | 值 |")
+        lines.append("|------|-----|")
+        s9 = results["S9"]
+        for k, v in s9.items():
+            if k == "达标":
+                continue
+            if isinstance(v, float):
+                lines.append(f"| {k} | {v:.2f} |")
+            else:
+                lines.append(f"| {k} | {v} |")
+        mark = "✓ 正常" if s9.get("达标", True) else "✗ 异常"
+        lines.append(f"| 达标 | {mark} |")
+        lines.append("")
+
+    # S10 退课事务
+    if "S10" in results and results["S10"]:
+        lines.append("### S10 退课事务 —— 多表事务（改报名+账户+排课）会不会慢\n")
+        lines.append("> 测什么：退课要同时改报名、账户余额、排课等多张表。测串行退课性能、较大批量退课、并发退课（事务锁竞争）。\n")
+        lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+        lines.append("|---------|-----|--------|------|")
+        for r in results["S10"]:
+            mark = "✓ 正常" if r["达标"] else "✗ 异常"
+            lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+        lines.append("")
+
+    # S11 调课/补课
+    if "S11" in results and results["S11"]:
+        lines.append("### S11 调课/补课 —— 排课系统核心写操作\n")
+        lines.append("> 测什么：调课（取消原排课+新建+写变更记录）和补课（保留缺勤+新建关联排课）是排课系统最频繁的写操作。测串行和并发调课/补课性能。\n")
+        lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+        lines.append("|---------|-----|--------|------|")
+        for r in results["S11"]:
+            mark = "✓ 正常" if r["达标"] else "✗ 异常"
+            lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+        lines.append("")
+
+    # S12 CRUD 改删
+    if "S12" in results and results["S12"]:
+        lines.append("### S12 CRUD 改删 —— 课程/班级/学员/排课/报名/管理员/年级/配置\n")
+        lines.append("> 测什么：之前只测了查和增，现在补齐改（PUT）和删（DELETE）。用临时资源测，不破坏主数据。\n")
+        lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+        lines.append("|---------|-----|--------|------|")
+        for r in results["S12"]:
+            mark = "✓ 正常" if r["达标"] else "✗ 异常"
+            lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+        lines.append("")
+
+    # S13 反馈 CRUD
+    if "S13" in results and results["S13"]:
+        lines.append("### S13 反馈 CRUD —— 课后反馈增删改查\n")
+        lines.append("> 测什么：课后反馈的 POST 创建、GET 查询（列表/按学员/按课程）、PUT 修改、DELETE 删除全套操作。\n")
+        lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+        lines.append("|---------|-----|--------|------|")
+        for r in results["S13"]:
+            mark = "✓ 正常" if r["达标"] else "✗ 异常"
+            lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+        lines.append("")
+
+    # S14 错误路径与边界
+    if "S14" in results and results["S14"]:
+        lines.append("### S14 错误路径与边界 —— 异常输入抗压能力\n")
+        lines.append("> 测什么：传错参数、查不存在资源、重复操作、超大页、SQL 注入字符、emoji 等异常情况，系统应快速拒绝不该卡。\n")
+        lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+        lines.append("|---------|-----|--------|------|")
+        for r in results["S14"]:
+            mark = "✓ 正常" if r["达标"] else "✗ 异常"
+            lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+        lines.append("")
+
+    # S15 灾备与多角色
+    if "S15" in results and results["S15"]:
+        lines.append("### S15 灾备与多角色 —— 备份/归档/教师视角/家长端\n")
+        lines.append("> 测什么：备份列表、审计归档创建、权限定义、教师列表、公告读写、家长端访问、教师绩效、年级升级等运维和多角色场景。\n")
+        lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+        lines.append("|---------|-----|--------|------|")
+        for r in results["S15"]:
+            mark = "✓ 正常" if r["达标"] else "✗ 异常"
+            lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+        lines.append("")
+
+    # ===== 综合评估（大白话） =====
+    lines.append("## 📋 综合评估（详细解读）\n")
+    verdicts = _build_detailed_verdicts(results)
+    for v in verdicts:
+        lines.append(f"- {v}")
+    lines.append("")
 
     content = "\n".join(lines)
     # 将 Markdown 内容转换为带样式的 HTML 文档
@@ -3546,151 +2955,143 @@ def generate_report(mode, results, duration_s, scale=None):
     return report_path
 
 
-def _build_quick_verdicts(mode, results):
-    """生成「测试结果速读」——一句话结论，用大白话告诉用户系统好不好用
+def _build_stress_verdicts(results):
+    """生成压力测试「测试结果速读」——一句话结论，用大白话告诉用户系统好不好用
 
-    注：flow 模式已改用 generate_flow_report 自带的速读逻辑，本函数仅处理 stress。
+    flow 模式的速读逻辑在 generate_flow_report 内部实现，本函数仅服务 stress。
     """
     verdicts = []
-    if mode == "flow":
-        # flow 模式已独立，若误入此分支给出提示
-        verdicts.append("✅ 流程测试已完成（注：flow 报告应通过 generate_flow_report 生成）")
-        total_pass = sum(d.get("通过", 0) for d in results.values() if isinstance(d, dict))
-        total_fail = sum(d.get("失败", 0) for d in results.values() if isinstance(d, dict))
-        if total_pass + total_fail > 0:
-            verdicts.append(f"**总计**：{total_pass} 通过 / {total_fail} 失败")
-    else:
-        # 压力测试：汇总各阶梯结论
-        verdicts.append(f"✅ 压力测试已完成")
-        all_pass = True
-        # S1 数据量
-        if "S1" in results:
-            failed = [r for r in results["S1"] if not r["达标"]]
-            if failed:
-                all_pass = False
-                verdicts.append(f"⚠️ **数据量**：学员达到 {failed[0]['规模']} 时查询开始变慢（P99 超过 1 秒）")
-            else:
-                verdicts.append(f"✅ **数据量**：学员达到 {results['S1'][-1]['规模']} 人查询仍流畅")
-        # S2 并发
-        if "S2" in results:
-            failed = [r for r in results["S2"] if not r["达标"]]
-            if failed:
-                all_pass = False
-                verdicts.append(f"⚠️ **并发**：同时 {failed[0]['并发']} 人时系统开始出错或变慢")
-            else:
-                verdicts.append(f"✅ **并发**：同时 {results['S2'][-1]['并发']} 人系统仍稳定")
-        # S3 持续负载
-        if "S3" in results:
-            deg = results["S3"]["衰减率%"]
-            if deg > 50:
-                all_pass = False
-                verdicts.append(f"⚠️ **稳定性**：连续运行后性能衰减 {deg}%，明显变慢（疑似内存泄漏）")
-            elif deg > 20:
-                verdicts.append(f"⚠️ **稳定性**：连续运行后性能衰减 {deg}%，轻微变慢")
-            else:
-                verdicts.append(f"✅ **稳定性**：连续运行 3 分钟性能稳定（衰减 {'+' if deg>0 else ''}{deg}%）")
-        # S4 混合负载
-        if "S4" in results:
-            s4 = results["S4"]
-            if s4["写错误率"] > SLA_ERROR_RATE * 100 or s4["读错误率"] > SLA_ERROR_RATE * 100:
-                all_pass = False
-                verdicts.append(f"⚠️ **混合负载**：写错误率 {s4['写错误率']}%、读错误率 {s4['读错误率']}%，超标")
-            else:
-                verdicts.append(f"✅ **混合负载**：读写混合场景正常（读 {s4['读QPS']:.0f}/秒，写 {s4['写QPS']:.0f}/秒）")
-        # S5 审计日志
-        if "S5" in results and results["S5"]:
-            failed = [r for r in results["S5"] if not r["达标"]]
-            if failed:
-                all_pass = False
-                verdicts.append(f"⚠️ **审计日志**：{failed[0]['阶梯']} 时查询变慢（建议按月归档旧日志）")
-            else:
-                verdicts.append(f"✅ **审计日志**：所有翻页查询均流畅")
-        # S6 点名
-        if "S6" in results and results["S6"]:
-            failed = [r for r in results["S6"] if not r["达标"]]
-            if failed:
-                all_pass = False
-                verdicts.append(f"⚠️ **点名**：{failed[0]['阶梯']} 时点名变慢或出错")
-            else:
-                verdicts.append(f"✅ **点名**：批量点名和并发点名均正常")
-        # S7 排课数据量
-        if "S7" in results and results["S7"]:
-            failed = [r for r in results["S7"] if not r["达标"]]
-            if failed:
-                all_pass = False
-                verdicts.append(f"⚠️ **排课数据量**：排课记录达到 {failed[0]['排课量']:,} 条时查询或写入变慢（P99 超过 1 秒）")
-            else:
-                verdicts.append(f"✅ **排课数据量**：排课记录达到 {results['S7'][-1]['排课量']:,} 条查询和写入仍流畅")
-        # S8 鉴权
-        if "S8" in results and results["S8"]:
-            failed = [r for r in results["S8"] if not r["达标"]]
-            if failed:
-                all_pass = False
-                verdicts.append(f"⚠️ **鉴权**：{failed[0]['阶梯']} 时变慢或出错（每次操作都要鉴权，这会拖慢所有接口）")
-            else:
-                verdicts.append(f"✅ **鉴权**：正确/错误 token 校验和并发鉴权均正常")
-        # S9 系统资源
-        if "S9" in results and isinstance(results["S9"], dict):
-            if not results["S9"].get("达标", True):
-                all_pass = False
-                cpu = results["S9"].get("CPU占用", 0)
-                verdicts.append(f"⚠️ **系统资源**：CPU={cpu}% 超标，服务器负载过高")
-            else:
-                cpu = results["S9"].get("CPU占用", "N/A")
-                verdicts.append(f"✅ **系统资源**：CPU={cpu}% 在合理范围")
-        # S10 退课事务
-        if "S10" in results and results["S10"]:
-            failed = [r for r in results["S10"] if not r["达标"]]
-            if failed:
-                all_pass = False
-                verdicts.append(f"⚠️ **退课事务**：{failed[0]['阶梯']} 时变慢或出错（多表事务可能存在锁竞争）")
-            else:
-                verdicts.append(f"✅ **退课事务**：串行和并发退课均正常")
-        # S11 调课/补课
-        if "S11" in results and results["S11"]:
-            failed = [r for r in results["S11"] if not r["达标"]]
-            if failed:
-                all_pass = False
-                verdicts.append(f"⚠️ **调课/补课**：{failed[0]['阶梯']} 时变慢或出错（排课核心写操作）")
-            else:
-                verdicts.append(f"✅ **调课/补课**：调课、补课和并发调课均正常")
-        # S12 CRUD 改删
-        if "S12" in results and results["S12"]:
-            failed = [r for r in results["S12"] if not r["达标"]]
-            if failed:
-                all_pass = False
-                verdicts.append(f"⚠️ **CRUD 改删**：{failed[0]['阶梯']} 时变慢或出错")
-            else:
-                verdicts.append(f"✅ **CRUD 改删**：课程/班级/学员/排课/报名/管理员/年级/配置的 PUT/DELETE 均正常")
-        # S13 反馈 CRUD
-        if "S13" in results and results["S13"]:
-            failed = [r for r in results["S13"] if not r["达标"]]
-            if failed:
-                all_pass = False
-                verdicts.append(f"⚠️ **反馈 CRUD**：{failed[0]['阶梯']} 时变慢或出错")
-            else:
-                verdicts.append(f"✅ **反馈 CRUD**：反馈增删改查全套操作均正常")
-        # S14 错误路径
-        if "S14" in results and results["S14"]:
-            failed = [r for r in results["S14"] if not r["达标"]]
-            if failed:
-                all_pass = False
-                verdicts.append(f"⚠️ **错误路径**：{failed[0]['阶梯']} 时响应过慢（异常输入应快速拒绝）")
-            else:
-                verdicts.append(f"✅ **错误路径**：404/400/重复/超大页/SQL字符/emoji 等异常输入均快速响应")
-        # S15 灾备与多角色
-        if "S15" in results and results["S15"]:
-            failed = [r for r in results["S15"] if not r["达标"]]
-            if failed:
-                all_pass = False
-                verdicts.append(f"⚠️ **灾备与多角色**：{failed[0]['阶梯']} 时变慢或出错")
-            else:
-                verdicts.append(f"✅ **灾备与多角色**：备份/归档/教师/家长端/公告/年级升级均正常")
-        # 总结论
-        if all_pass:
-            verdicts.append("\n🎉 **总结**：系统在所有测试场景下均表现良好，可以放心使用。")
+    # 压力测试：汇总各阶梯结论
+    verdicts.append(f"✅ 压力测试已完成")
+    all_pass = True
+    # S1 数据量
+    if "S1" in results:
+        failed = [r for r in results["S1"] if not r["达标"]]
+        if failed:
+            all_pass = False
+            verdicts.append(f"⚠️ **数据量**：学员达到 {failed[0]['规模']} 时查询开始变慢（P99 超过 1 秒）")
         else:
-            verdicts.append("\n📋 **总结**：部分场景需要关注，详见下方「综合评估」的逐项解读。")
+            verdicts.append(f"✅ **数据量**：学员达到 {results['S1'][-1]['规模']} 人查询仍流畅")
+    # S2 并发
+    if "S2" in results:
+        failed = [r for r in results["S2"] if not r["达标"]]
+        if failed:
+            all_pass = False
+            verdicts.append(f"⚠️ **并发**：同时 {failed[0]['并发']} 人时系统开始出错或变慢")
+        else:
+            verdicts.append(f"✅ **并发**：同时 {results['S2'][-1]['并发']} 人系统仍稳定")
+    # S3 持续负载
+    if "S3" in results:
+        deg = results["S3"]["衰减率%"]
+        if deg > 50:
+            all_pass = False
+            verdicts.append(f"⚠️ **稳定性**：连续运行后性能衰减 {deg}%，明显变慢（疑似内存泄漏）")
+        elif deg > 20:
+            verdicts.append(f"⚠️ **稳定性**：连续运行后性能衰减 {deg}%，轻微变慢")
+        else:
+            verdicts.append(f"✅ **稳定性**：连续运行 3 分钟性能稳定（衰减 {'+' if deg>0 else ''}{deg}%）")
+    # S4 混合负载
+    if "S4" in results:
+        s4 = results["S4"]
+        if s4["写错误率"] > SLA_ERROR_RATE * 100 or s4["读错误率"] > SLA_ERROR_RATE * 100:
+            all_pass = False
+            verdicts.append(f"⚠️ **混合负载**：写错误率 {s4['写错误率']}%、读错误率 {s4['读错误率']}%，超标")
+        else:
+            verdicts.append(f"✅ **混合负载**：读写混合场景正常（读 {s4['读QPS']:.0f}/秒，写 {s4['写QPS']:.0f}/秒）")
+    # S5 审计日志
+    if "S5" in results and results["S5"]:
+        failed = [r for r in results["S5"] if not r["达标"]]
+        if failed:
+            all_pass = False
+            verdicts.append(f"⚠️ **审计日志**：{failed[0]['阶梯']} 时查询变慢（建议按月归档旧日志）")
+        else:
+            verdicts.append(f"✅ **审计日志**：所有翻页查询均流畅")
+    # S6 点名
+    if "S6" in results and results["S6"]:
+        failed = [r for r in results["S6"] if not r["达标"]]
+        if failed:
+            all_pass = False
+            verdicts.append(f"⚠️ **点名**：{failed[0]['阶梯']} 时点名变慢或出错")
+        else:
+            verdicts.append(f"✅ **点名**：批量点名和并发点名均正常")
+    # S7 排课数据量
+    if "S7" in results and results["S7"]:
+        failed = [r for r in results["S7"] if not r["达标"]]
+        if failed:
+            all_pass = False
+            verdicts.append(f"⚠️ **排课数据量**：排课记录达到 {failed[0]['排课量']:,} 条时查询或写入变慢（P99 超过 1 秒）")
+        else:
+            verdicts.append(f"✅ **排课数据量**：排课记录达到 {results['S7'][-1]['排课量']:,} 条查询和写入仍流畅")
+    # S8 鉴权
+    if "S8" in results and results["S8"]:
+        failed = [r for r in results["S8"] if not r["达标"]]
+        if failed:
+            all_pass = False
+            verdicts.append(f"⚠️ **鉴权**：{failed[0]['阶梯']} 时变慢或出错（每次操作都要鉴权，这会拖慢所有接口）")
+        else:
+            verdicts.append(f"✅ **鉴权**：正确/错误 token 校验和并发鉴权均正常")
+    # S9 系统资源
+    if "S9" in results and isinstance(results["S9"], dict):
+        if not results["S9"].get("达标", True):
+            all_pass = False
+            cpu = results["S9"].get("CPU占用", 0)
+            verdicts.append(f"⚠️ **系统资源**：CPU={cpu}% 超标，服务器负载过高")
+        else:
+            cpu = results["S9"].get("CPU占用", "N/A")
+            verdicts.append(f"✅ **系统资源**：CPU={cpu}% 在合理范围")
+    # S10 退课事务
+    if "S10" in results and results["S10"]:
+        failed = [r for r in results["S10"] if not r["达标"]]
+        if failed:
+            all_pass = False
+            verdicts.append(f"⚠️ **退课事务**：{failed[0]['阶梯']} 时变慢或出错（多表事务可能存在锁竞争）")
+        else:
+            verdicts.append(f"✅ **退课事务**：串行和并发退课均正常")
+    # S11 调课/补课
+    if "S11" in results and results["S11"]:
+        failed = [r for r in results["S11"] if not r["达标"]]
+        if failed:
+            all_pass = False
+            verdicts.append(f"⚠️ **调课/补课**：{failed[0]['阶梯']} 时变慢或出错（排课核心写操作）")
+        else:
+            verdicts.append(f"✅ **调课/补课**：调课、补课和并发调课均正常")
+    # S12 CRUD 改删
+    if "S12" in results and results["S12"]:
+        failed = [r for r in results["S12"] if not r["达标"]]
+        if failed:
+            all_pass = False
+            verdicts.append(f"⚠️ **CRUD 改删**：{failed[0]['阶梯']} 时变慢或出错")
+        else:
+            verdicts.append(f"✅ **CRUD 改删**：课程/班级/学员/排课/报名/管理员/年级/配置的 PUT/DELETE 均正常")
+    # S13 反馈 CRUD
+    if "S13" in results and results["S13"]:
+        failed = [r for r in results["S13"] if not r["达标"]]
+        if failed:
+            all_pass = False
+            verdicts.append(f"⚠️ **反馈 CRUD**：{failed[0]['阶梯']} 时变慢或出错")
+        else:
+            verdicts.append(f"✅ **反馈 CRUD**：反馈增删改查全套操作均正常")
+    # S14 错误路径
+    if "S14" in results and results["S14"]:
+        failed = [r for r in results["S14"] if not r["达标"]]
+        if failed:
+            all_pass = False
+            verdicts.append(f"⚠️ **错误路径**：{failed[0]['阶梯']} 时响应过慢（异常输入应快速拒绝）")
+        else:
+            verdicts.append(f"✅ **错误路径**：404/400/重复/超大页/SQL字符/emoji 等异常输入均快速响应")
+    # S15 灾备与多角色
+    if "S15" in results and results["S15"]:
+        failed = [r for r in results["S15"] if not r["达标"]]
+        if failed:
+            all_pass = False
+            verdicts.append(f"⚠️ **灾备与多角色**：{failed[0]['阶梯']} 时变慢或出错")
+        else:
+            verdicts.append(f"✅ **灾备与多角色**：备份/归档/教师/家长端/公告/年级升级均正常")
+    # 总结论
+    if all_pass:
+        verdicts.append("\n🎉 **总结**：系统在所有测试场景下均表现良好，可以放心使用。")
+    else:
+        verdicts.append("\n📋 **总结**：部分场景需要关注，详见下方「综合评估」的逐项解读。")
     return verdicts
 
 
@@ -3825,43 +3226,9 @@ def _build_detailed_verdicts(results):
     return verdicts
 
 
-# ============ 主流程 ============
-
-def run_process_tests(student_ids, course_id):
-    """流程测试：D1-D16 业务流程功能+性能基线
-
-    在固定 200+ 学员规模下，逐项跑通系统的核心业务流程并采集性能快照。
-    既作为 quick 模式的主体，也作为 stress 模式的前置流程基线（冒烟+基线）。
-    返回 dict: {维度名: {指标: 值}}
-    """
-    print("\n" + "=" * 60)
-    print("  流程测试 (D1-D16)：业务流程功能 + 性能基线")
-    print("  测什么：在固定规模下跑通每个核心业务流程，确认功能正常并采集基线性能。")
-    print("=" * 60)
-
-    results = {}
-    results["D1基础延迟"] = d1_basic_latency()
-    results["D2并发吞吐"] = d2_concurrency()
-    results["D3DB查询"] = d3_db_query(student_ids)
-    results["D4业务事务"] = d4_business_tx(student_ids, course_id)
-    results["D5报表聚合"] = d5_reports()
-    results["D6搜索性能"] = d6_search(student_ids)
-    results["D7鉴权性能"] = d7_auth()
-    results["D8写吞吐"] = d8_write_throughput(course_id)
-    results["D9系统资源"] = d9_system()
-    results["D10课程班级"] = d10_courses_classes(student_ids, course_id)
-    results["D11审计日志"] = d11_audit_logs()
-    results["D12反馈绩效"] = d12_feedback_perf(student_ids, course_id)
-    results["D13点名性能"] = d13_attendance(student_ids, course_id)
-    results["D14排课写入"] = d14_schedule_write(student_ids, course_id)
-    results["D15退课性能"] = d15_transfer(student_ids, course_id)
-    results["D16优化表查询"] = d16_optimized_tables(student_ids)
-    return results
-
-
 # ============================================================
 # 内联测试框架（原 test_suite.py —— 已内联以消除外部文件依赖）
-# quick 模式直接调用以下 TestRunner + 辅助函数 + 13 个测试组，
+# flow 模式直接调用以下 TestRunner + 辅助函数 + 13 个测试组，
 # 无需 test_suite.py 即可单文件运行。
 # ============================================================
 
@@ -3998,7 +3365,7 @@ def gen_phone():
 # ============================================================
 def test_full_flow(t, prefix):
     """完整业务流程: 年级→课程→班级→学员→报名→排课→点名→反馈
-    重点验证课时扣减与回退逻辑(回退课时 bug 专项检测)"""
+    重点验证课时扣减与回退逻辑"""
     print('\n[测试组 1] 完整业务流程 (含课时扣减/回退验证)')
     grade_name = f'{prefix}一年级'
 
@@ -4098,7 +3465,7 @@ def test_full_flow(t, prefix):
     t.assert_eq(enr['remainingPaidHours'], 9, '到课扣付费课时(10→9)')
     t.assert_eq(enr['remainingGiftHours'], 2, '赠课不变(2)')
 
-    # 3. 改回缺勤 (true→false): 回退 1 付费课时 (回退课时 bug 专项)
+    # 3. 改回缺勤 (true→false): 回退 1 付费课时
     t.assert_ok(
         t.post('/api/attendance', {'date': yesterday, 'items': [
             {'scheduleId': sched_id, 'studentId': stu['id'], 'attended': False}
@@ -4513,11 +3880,11 @@ def test_business_flow(t, prefix, ctx):
     )
     refund_enr = body['data']['enrollment']
 
-    # Bug10 验证: 有剩余课时不能直接 settled
+    # 有剩余课时不能直接 settled
     resp = t.put('/api/enrollment-update', {'enrollment': {
         'id': refund_enr['id'], 'status': 'settled'
     }})
-    t.assert_fail(resp, '有剩余课时不能直接结转(Bug10)', '剩余课时')
+    t.assert_fail(resp, '有剩余课时不能直接结转', '剩余课时')
 
     # 退课流程: 先把课时调整为 0（相当于退回所有课时），再改 settled
     t.assert_ok(
@@ -4715,18 +4082,18 @@ def test_non_flow_intercept(t, prefix, ctx):
 
 
 # ============================================================
-# 测试组 5: Bug 修复验证
+# 测试组 5: 核心业务规则验证
 # ============================================================
-def test_bug_fixes(t, prefix, ctx):
-    """验证 Bug3/5/6/9/10 修复"""
-    print('\n[测试组 5] Bug 修复验证')
+def test_business_rules(t, prefix, ctx):
+    """验证核心业务规则：权限保护、数据完整性、课时与报名状态约束"""
+    print('\n[测试组 5] 核心业务规则验证')
 
     stu = ctx['stu']
     math = ctx['math']
     grade_name = ctx['grade_name']
 
-    # === Bug3: 超管不可降级 ===
-    print('  --- Bug3: 超管不可降级 ---')
+    # === 超管权限保护 ===
+    print('  --- 超管权限保护 ---')
     # 获取超管账号 ID（当前登录的 admin）
     body = t.assert_ok(t.get('/api/admins'), '查询管理员列表')
     superadmin = next((a for a in body['data']['admins'] if a['role'] == 'superadmin'), None)
@@ -4735,7 +4102,7 @@ def test_bug_fixes(t, prefix, ctx):
         resp = t.put('/api/admin-update', {'admin': {
             'id': superadmin['id'], 'role': 'admin'
         }})
-        t.assert_fail(resp, '超管降级应被拒(Bug3)', '不可降级')
+        t.assert_fail(resp, '超管降级应被拒', '不可降级')
 
         # 尝试修改超管权限
         resp = t.put('/api/admin-update', {'admin': {
@@ -4748,201 +4115,201 @@ def test_bug_fixes(t, prefix, ctx):
         superadmin_after = next(a for a in body['data']['admins'] if a['role'] == 'superadmin')
         t.assert_eq(superadmin_after['role'], 'superadmin', '超管角色未变')
 
-    # === Bug5: 报名记录不可删除 ===
-    print('  --- Bug5: 报名记录不可删除 ---')
+    # === 报名记录完整性保护 ===
+    print('  --- 报名记录完整性保护 ---')
     # 用 ctx 中学员的报名尝试删除
     resp = t.delete('/api/enrollment-delete', {'id': ctx['enr_id']})
-    t.assert_fail(resp, '删除报名应被拒(Bug5)', '不可删除')
+    t.assert_fail(resp, '删除报名应被拒', '不可删除')
 
-    # === Bug6: 有剩余课时不能删除学员 ===
-    print('  --- Bug6: 有剩余课时不能删除学员 ---')
+    # === 有剩余课时不可删除学员 ===
+    print('  --- 有剩余课时不可删除学员 ---')
     # ctx['stu'] 有剩余课时（之前流程可能耗尽，创建新学员测试）
     name = gen_name()
     body = t.assert_ok(
         t.post('/api/student-add', {'student': {
             'name': name, 'grade': grade_name, 'phone': gen_phone(),
-            'status': 'active', 'source': 'bug6-test'
+            'status': 'active', 'source': 'rules-test'
         }}),
-        '创建有课时学员(Bug6)'
+        '创建有课时学员'
     )
-    bug6_stu = body['data']['student']
+    rule6_stu = body['data']['student']
     t.assert_ok(
         t.post('/api/enrollment-add', {'enrollment': {
-            'studentId': bug6_stu['id'], 'courseId': math['id'],
+            'studentId': rule6_stu['id'], 'courseId': math['id'],
             'purchasedHours': 10, 'giftHours': 2, 'unitPrice': 200,
             'totalAmount': 2000, 'paidAmount': 2000
         }}),
         '报名(有课时)'
     )
     # 尝试删除有剩余课时的学员
-    resp = t.delete('/api/student-delete', {'studentId': bug6_stu['id']})
-    t.assert_fail(resp, '有剩余课时删除学员应被拒(Bug6)', '剩余课时')
+    resp = t.delete('/api/student-delete', {'studentId': rule6_stu['id']})
+    t.assert_fail(resp, '有剩余课时删除学员应被拒', '剩余课时')
 
     # 清理: 把课时改为 0 后可以删除
-    body = t.assert_ok(t.get(f'/api/enrollments?studentId={bug6_stu["id"]}'), '查询报名(Bug6清理)')
-    bug6_enr = body['data']['enrollments'][0]
+    body = t.assert_ok(t.get(f'/api/enrollments?studentId={rule6_stu["id"]}'), '查询报名(清理)')
+    rule6_enr = body['data']['enrollments'][0]
     t.assert_ok(
         t.put('/api/enrollment-update', {'enrollment': {
-            'id': bug6_enr['id'], 'purchasedHours': 0, 'giftHours': 0
+            'id': rule6_enr['id'], 'purchasedHours': 0, 'giftHours': 0
         }}),
-        '课时清零(Bug6清理)'
+        '课时清零(清理)'
     )
     t.assert_ok(
         t.put('/api/enrollment-update', {'enrollment': {
-            'id': bug6_enr['id'], 'status': 'settled'
+            'id': rule6_enr['id'], 'status': 'settled'
         }}),
-        '结转报名(Bug6清理)'
+        '结转报名(清理)'
     )
     # 无课时后可以删除
     t.assert_ok(
-        t.delete('/api/student-delete', {'studentId': bug6_stu['id']}),
-        '无课时后删除学员(Bug6)'
+        t.delete('/api/student-delete', {'studentId': rule6_stu['id']}),
+        '无课时后删除学员'
     )
 
-    # === Bug9: 报名不再设置有效期 ===
-    print('  --- Bug9: 报名不再设置有效期 ---')
+    # === 报名有效期处理 ===
+    print('  --- 报名有效期处理 ---')
     name = gen_name()
     body = t.assert_ok(
         t.post('/api/student-add', {'student': {
             'name': name, 'grade': grade_name, 'phone': gen_phone(),
-            'status': 'active', 'source': 'bug9-test'
+            'status': 'active', 'source': 'rules-test'
         }}),
-        '创建学员(Bug9)'
+        '创建学员'
     )
-    bug9_stu = body['data']['student']
+    rule9_stu = body['data']['student']
     # 报名时传入 expiredAt，后端应忽略（强制清空）
     body = t.assert_ok(
         t.post('/api/enrollment-add', {'enrollment': {
-            'studentId': bug9_stu['id'], 'courseId': math['id'],
+            'studentId': rule9_stu['id'], 'courseId': math['id'],
             'purchasedHours': 5, 'unitPrice': 200,
             'totalAmount': 1000, 'paidAmount': 1000,
             'expiredAt': date_offset(-1)  # 传入已过期日期
         }}),
         '报名(传入过期日期)'
     )
-    bug9_enr = body['data']['enrollment']
+    rule9_enr = body['data']['enrollment']
     # 验证 expiredAt 被强制清空
-    t.assert_eq(bug9_enr['expiredAt'], '', 'expiredAt 被强制清空(Bug9)')
+    t.assert_eq(rule9_enr['expiredAt'], '', 'expiredAt 被强制清空')
 
     # 验证即使传入过期日期，状态仍为 active（不自动过期）
-    body = t.assert_ok(t.get(f'/api/enrollments?studentId={bug9_stu["id"]}'), '查询报名(Bug9)')
-    bug9_enr_after = body['data']['enrollments'][0]
-    t.assert_eq(bug9_enr_after['status'], 'active', '状态仍为 active(Bug9)')
-    t.assert_eq(bug9_enr_after['expiredAt'], '', 'expiredAt 仍为空(Bug9)')
+    body = t.assert_ok(t.get(f'/api/enrollments?studentId={rule9_stu["id"]}'), '查询报名')
+    rule9_enr_after = body['data']['enrollments'][0]
+    t.assert_eq(rule9_enr_after['status'], 'active', '状态仍为 active')
+    t.assert_eq(rule9_enr_after['expiredAt'], '', 'expiredAt 仍为空')
 
-    # === Bug10: 有剩余课时不能直接 settled ===
-    print('  --- Bug10: 有剩余课时不能直接 settled ---')
-    # bug9_enr 有 5 课时，尝试直接 settled
+    # === 有剩余课时不可直接结转 ===
+    print('  --- 有剩余课时不可直接结转 ---')
+    # rule9_enr 有 5 课时，尝试直接 settled
     resp = t.put('/api/enrollment-update', {'enrollment': {
-        'id': bug9_enr['id'], 'status': 'settled'
+        'id': rule9_enr['id'], 'status': 'settled'
     }})
-    t.assert_fail(resp, '有课时直接结转应被拒(Bug10)', '剩余课时')
+    t.assert_fail(resp, '有课时直接结转应被拒', '剩余课时')
 
-    # 清理 bug9 学员
+    # 清理 rule9 学员
     t.assert_ok(
         t.put('/api/enrollment-update', {'enrollment': {
-            'id': bug9_enr['id'], 'purchasedHours': 0, 'giftHours': 0
+            'id': rule9_enr['id'], 'purchasedHours': 0, 'giftHours': 0
         }}),
-        '课时清零(Bug10清理)'
+        '课时清零(清理)'
     )
     t.assert_ok(
         t.put('/api/enrollment-update', {'enrollment': {
-            'id': bug9_enr['id'], 'status': 'settled'
+            'id': rule9_enr['id'], 'status': 'settled'
         }}),
-        '结转(Bug10清理)'
+        '结转(清理)'
     )
-    t.delete('/api/student-delete', {'studentId': bug9_stu['id']})
+    t.delete('/api/student-delete', {'studentId': rule9_stu['id']})
 
 
 # ============================================================
-# 测试组 6: 严重 Bug 修复验证（回退课时精准回退等）
+# 测试组 6: 课时与排课规则验证
 # ============================================================
-def test_severe_bugs(t, prefix, ctx):
-    """验证 6 个严重 bug 修复：回退课时精准回退、并发更新、金额保留、退课取消补课排课、排课冲突检测、删除课程保护"""
-    print('\n[测试组 6] 严重 Bug 修复验证')
+def test_hours_schedule_rules(t, prefix, ctx):
+    """验证课时与排课规则：扣减精准回退、退课金额保留、排课时间冲突检测、课程删除保护"""
+    print('\n[测试组 6] 课时与排课规则验证')
 
     math = ctx['math']
     cls = ctx['cls']
     grade_name = ctx['grade_name']
 
-    # === BugA: 点名回退课时精准回退（多条报名记录） ===
-    print('  --- BugA: 回退课时精准回退到原报名记录 ---')
+    # === 课时扣减精准回退 ===
+    print('  --- 课时扣减精准回退到原报名记录 ---')
     # 创建学员 + 两条同课程报名记录（A: 10课时先报名，B: 5课时后报名）
     name = gen_name()
     body = t.assert_ok(
         t.post('/api/student-add', {'student': {
             'name': name, 'grade': grade_name, 'phone': gen_phone(),
-            'status': 'active', 'source': 'buga-test'
+            'status': 'active', 'source': 'hours-rules-test'
         }}),
-        '创建学员(BugA)'
+        '创建学员'
     )
-    buga_stu = body['data']['student']
+    rule_a_stu = body['data']['student']
     # 报名 A（10付费，先报名）
     body = t.assert_ok(
         t.post('/api/enrollment-add', {'enrollment': {
-            'studentId': buga_stu['id'], 'courseId': math['id'],
+            'studentId': rule_a_stu['id'], 'courseId': math['id'],
             'purchasedHours': 10, 'unitPrice': 200,
             'totalAmount': 2000, 'paidAmount': 2000,
             'enrolledAt': date_offset(-10)
         }}),
-        '报名A(10课时,BugA)'
+        '报名A(10课时)'
     )
     enr_a = body['data']['enrollment']
     # 报名 B（5付费，后报名）
     body = t.assert_ok(
         t.post('/api/enrollment-add', {'enrollment': {
-            'studentId': buga_stu['id'], 'courseId': math['id'],
+            'studentId': rule_a_stu['id'], 'courseId': math['id'],
             'purchasedHours': 5, 'unitPrice': 200,
             'totalAmount': 1000, 'paidAmount': 1000,
             'enrolledAt': date_offset(-5)
         }}),
-        '报名B(5课时,BugA)'
+        '报名B(5课时)'
     )
     enr_b = body['data']['enrollment']
 
     # 排 11 节课并全部到课：前 10 节扣 A，第 11 节扣 B
-    sched_ids_buga = []
+    sched_ids_rule_a = []
     for i in range(11):
         d = date_offset(-(20 + i))
         body = t.assert_ok(
             t.post('/api/schedule-add', {'schedule': {
-                'studentId': buga_stu['id'], 'studentName': buga_stu['name'],
+                'studentId': rule_a_stu['id'], 'studentName': rule_a_stu['name'],
                 'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
                 'teacher': cls['teacher'], 'location': cls['location'],
                 'date': d, 'startTime': '09:00', 'endTime': '10:30',
                 'color': math['color'], 'status': 'scheduled'
             }}),
-            f'排课 #{i+1}(BugA)'
+            f'排课 #{i+1}'
         )
-        sched_ids_buga.append((body['data']['schedule']['id'], d))
+        sched_ids_rule_a.append((body['data']['schedule']['id'], d))
 
     # 全部点到课
     date_groups = {}
-    for sid, d in sched_ids_buga:
+    for sid, d in sched_ids_rule_a:
         date_groups.setdefault(d, []).append(
-            {'scheduleId': sid, 'studentId': buga_stu['id'], 'attended': True})
+            {'scheduleId': sid, 'studentId': rule_a_stu['id'], 'attended': True})
     for d, its in date_groups.items():
-        t.assert_ok(t.post('/api/attendance', {'date': d, 'items': its}), f'点名到课 {d}(BugA)')
+        t.assert_ok(t.post('/api/attendance', {'date': d, 'items': its}), f'点名到课 {d}')
 
     # 验证 A 扣完（0），B 扣 1（4）
-    body = t.assert_ok(t.get(f'/api/enrollments?studentId={buga_stu["id"]}'), '查询报名(BugA扣减后)')
+    body = t.assert_ok(t.get(f'/api/enrollments?studentId={rule_a_stu["id"]}'), '查询报名(扣减后)')
     enrs = {e['id']: e for e in body['data']['enrollments']}
-    t.assert_eq(enrs[enr_a['id']]['remainingPaidHours'], 0, '报名A扣完(BugA)')
-    t.assert_eq(enrs[enr_b['id']]['remainingPaidHours'], 4, '报名B扣1(BugA)')
+    t.assert_eq(enrs[enr_a['id']]['remainingPaidHours'], 0, '报名A扣完')
+    t.assert_eq(enrs[enr_b['id']]['remainingPaidHours'], 4, '报名B扣1')
 
     # 回退第 1 节课（当初扣的是 A 的付费）
-    first_sid, first_date = sched_ids_buga[0]
+    first_sid, first_date = sched_ids_rule_a[0]
     t.assert_ok(
         t.post('/api/attendance', {'date': first_date, 'items': [
-            {'scheduleId': first_sid, 'studentId': buga_stu['id'], 'attended': False}
+            {'scheduleId': first_sid, 'studentId': rule_a_stu['id'], 'attended': False}
         ]}),
-        '回退第1节(BugA)'
+        '回退第1节'
     )
     # 验证回退到 A（A 从 0 变 1），而不是 B（B 仍为 4）
-    body = t.assert_ok(t.get(f'/api/enrollments?studentId={buga_stu["id"]}'), '查询报名(BugA回退后)')
+    body = t.assert_ok(t.get(f'/api/enrollments?studentId={rule_a_stu["id"]}'), '查询报名(回退后)')
     enrs = {e['id']: e for e in body['data']['enrollments']}
-    t.assert_eq(enrs[enr_a['id']]['remainingPaidHours'], 1, '回退到报名A(BugA,精准回退)')
-    t.assert_eq(enrs[enr_b['id']]['remainingPaidHours'], 4, '报名B不变(BugA,未误退)')
+    t.assert_eq(enrs[enr_a['id']]['remainingPaidHours'], 1, '回退到报名A(精准回退)')
+    t.assert_eq(enrs[enr_b['id']]['remainingPaidHours'], 4, '报名B不变(未误退)')
 
     # 清理
     for e in enrs.values():
@@ -4950,141 +4317,141 @@ def test_severe_bugs(t, prefix, ctx):
             'id': e['id'], 'purchasedHours': 0, 'giftHours': 0
         }})
         t.put('/api/enrollment-update', {'enrollment': {'id': e['id'], 'status': 'settled'}})
-    t.delete('/api/student-delete', {'studentId': buga_stu['id']})
+    t.delete('/api/student-delete', {'studentId': rule_a_stu['id']})
 
-    # === BugB: 金额字段不被退课清零 ===
-    print('  --- BugB: 退课不清零金额字段 ---')
+    # === 退课金额保留 ===
+    print('  --- 退课不清零金额字段 ---')
     name = gen_name()
     body = t.assert_ok(
         t.post('/api/student-add', {'student': {
             'name': name, 'grade': grade_name, 'phone': gen_phone(),
-            'status': 'active', 'source': 'bugb-test'
+            'status': 'active', 'source': 'hours-rules-test'
         }}),
-        '创建学员(BugB)'
+        '创建学员'
     )
-    bugb_stu = body['data']['student']
+    rule_b_stu = body['data']['student']
     body = t.assert_ok(
         t.post('/api/enrollment-add', {'enrollment': {
-            'studentId': bugb_stu['id'], 'courseId': math['id'],
+            'studentId': rule_b_stu['id'], 'courseId': math['id'],
             'purchasedHours': 10, 'unitPrice': 200,
             'totalAmount': 2000, 'paidAmount': 2000
         }}),
-        '报名(BugB)'
+        '报名'
     )
-    bugb_enr = body['data']['enrollment']
+    rule_b_enr = body['data']['enrollment']
     # 退课：把课时改为 0
     t.assert_ok(
         t.put('/api/enrollment-update', {'enrollment': {
-            'id': bugb_enr['id'], 'purchasedHours': 0, 'giftHours': 0
+            'id': rule_b_enr['id'], 'purchasedHours': 0, 'giftHours': 0
         }}),
-        '退课课时清零(BugB)'
+        '退课课时清零'
     )
     # 验证 totalAmount 和 paidAmount 仍为 2000（未被重算为 0）
-    body = t.assert_ok(t.get(f'/api/enrollments?studentId={bugb_stu["id"]}'), '查询报名(BugB退课后)')
-    bugb_enr_after = body['data']['enrollments'][0]
-    t.assert_eq(bugb_enr_after['totalAmount'], 2000, 'totalAmount 保留(BugB)')
-    t.assert_eq(bugb_enr_after['paidAmount'], 2000, 'paidAmount 保留(BugB)')
+    body = t.assert_ok(t.get(f'/api/enrollments?studentId={rule_b_stu["id"]}'), '查询报名(退课后)')
+    rule_b_enr_after = body['data']['enrollments'][0]
+    t.assert_eq(rule_b_enr_after['totalAmount'], 2000, 'totalAmount 保留')
+    t.assert_eq(rule_b_enr_after['paidAmount'], 2000, 'paidAmount 保留')
     # 清理
-    t.put('/api/enrollment-update', {'enrollment': {'id': bugb_enr['id'], 'status': 'settled'}})
-    t.delete('/api/student-delete', {'studentId': bugb_stu['id']})
+    t.put('/api/enrollment-update', {'enrollment': {'id': rule_b_enr['id'], 'status': 'settled'}})
+    t.delete('/api/student-delete', {'studentId': rule_b_stu['id']})
 
-    # === BugD: 排课时间冲突检测 ===
-    print('  --- BugD: 排课时间冲突检测 ---')
+    # === 排课时间冲突检测 ===
+    print('  --- 排课时间冲突检测 ---')
     name = gen_name()
     body = t.assert_ok(
         t.post('/api/student-add', {'student': {
             'name': name, 'grade': grade_name, 'phone': gen_phone(),
-            'status': 'active', 'source': 'bugd-test'
+            'status': 'active', 'source': 'hours-rules-test'
         }}),
-        '创建学员(BugD)'
+        '创建学员'
     )
-    bugd_stu = body['data']['student']
+    rule_d_stu = body['data']['student']
     t.assert_ok(
         t.post('/api/enrollment-add', {'enrollment': {
-            'studentId': bugd_stu['id'], 'courseId': math['id'],
+            'studentId': rule_d_stu['id'], 'courseId': math['id'],
             'purchasedHours': 10, 'unitPrice': 200,
             'totalAmount': 2000, 'paidAmount': 2000
         }}),
-        '报名(BugD)'
+        '报名'
     )
     conflict_date = date_offset(7)
     # 排第一节课 09:00-10:30
     t.assert_ok(
         t.post('/api/schedule-add', {'schedule': {
-            'studentId': bugd_stu['id'], 'studentName': bugd_stu['name'],
+            'studentId': rule_d_stu['id'], 'studentName': rule_d_stu['name'],
             'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
             'teacher': cls['teacher'], 'location': cls['location'],
             'date': conflict_date, 'startTime': '09:00', 'endTime': '10:30',
             'color': math['color'], 'status': 'scheduled'
         }}),
-        '排课1(BugD)'
+        '排课1'
     )
     # 排重叠时间 10:00-11:30 应被拒
     resp = t.post('/api/schedule-add', {'schedule': {
-        'studentId': bugd_stu['id'], 'studentName': bugd_stu['name'],
+        'studentId': rule_d_stu['id'], 'studentName': rule_d_stu['name'],
         'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
         'teacher': cls['teacher'], 'location': cls['location'],
         'date': conflict_date, 'startTime': '10:00', 'endTime': '11:30',
         'color': math['color'], 'status': 'scheduled'
     }})
-    t.assert_fail(resp, '时间冲突排课应被拒(BugD)', '时间冲突')
+    t.assert_fail(resp, '时间冲突排课应被拒', '时间冲突')
     # 不重叠时间 11:00-12:30 应成功
     t.assert_ok(
         t.post('/api/schedule-add', {'schedule': {
-            'studentId': bugd_stu['id'], 'studentName': bugd_stu['name'],
+            'studentId': rule_d_stu['id'], 'studentName': rule_d_stu['name'],
             'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
             'teacher': cls['teacher'], 'location': cls['location'],
             'date': conflict_date, 'startTime': '11:00', 'endTime': '12:30',
             'color': math['color'], 'status': 'scheduled'
         }}),
-        '不重叠排课成功(BugD)'
+        '不重叠排课成功'
     )
     # 清理
-    body = t.assert_ok(t.get(f'/api/enrollments?studentId={bugd_stu["id"]}'), '查询报名(BugD清理)')
+    body = t.assert_ok(t.get(f'/api/enrollments?studentId={rule_d_stu["id"]}'), '查询报名(清理)')
     for e in body['data']['enrollments']:
         t.put('/api/enrollment-update', {'enrollment': {'id': e['id'], 'purchasedHours': 0, 'giftHours': 0}})
         t.put('/api/enrollment-update', {'enrollment': {'id': e['id'], 'status': 'settled'}})
-    t.delete('/api/student-delete', {'studentId': bugd_stu['id']})
+    t.delete('/api/student-delete', {'studentId': rule_d_stu['id']})
 
-    # === BugF: 删除课程有 active 报名应被拒 ===
-    print('  --- BugF: 删除课程保护 ---')
+    # === 有报名时课程删除保护 ===
+    print('  --- 有报名时课程删除保护 ---')
     body = t.assert_ok(
         t.post('/api/course-add', {'course': {
             'name': f'{prefix}待删课程', 'color': '#999999', 'category': '测试',
             'grade': grade_name, 'billingType': 'per_lesson', 'status': 'active'
         }}),
-        '创建待删课程(BugF)'
+        '创建待删课程'
     )
-    bugf_course = body['data']['course']
+    rule_f_course = body['data']['course']
     name = gen_name()
     body = t.assert_ok(
         t.post('/api/student-add', {'student': {
             'name': name, 'grade': grade_name, 'phone': gen_phone(),
-            'status': 'active', 'source': 'bugf-test'
+            'status': 'active', 'source': 'hours-rules-test'
         }}),
-        '创建学员(BugF)'
+        '创建学员'
     )
-    bugf_stu = body['data']['student']
+    rule_f_stu = body['data']['student']
     t.assert_ok(
         t.post('/api/enrollment-add', {'enrollment': {
-            'studentId': bugf_stu['id'], 'courseId': bugf_course['id'],
+            'studentId': rule_f_stu['id'], 'courseId': rule_f_course['id'],
             'purchasedHours': 5, 'unitPrice': 100,
             'totalAmount': 500, 'paidAmount': 500
         }}),
-        '报名待删课程(BugF)'
+        '报名待删课程'
     )
     # 有 active 报名时删除应被拒
-    resp = t.delete('/api/course-delete', {'courseId': bugf_course['id']})
-    t.assert_fail(resp, '有报名时删课程应被拒(BugF)', '进行中的报名')
+    resp = t.delete('/api/course-delete', {'courseId': rule_f_course['id']})
+    t.assert_fail(resp, '有报名时删课程应被拒', '进行中的报名')
     # 退课后可以删除
-    body = t.assert_ok(t.get(f'/api/enrollments?studentId={bugf_stu["id"]}'), '查询报名(BugF清理)')
-    bugf_enr = body['data']['enrollments'][0]
-    t.put('/api/enrollment-update', {'enrollment': {'id': bugf_enr['id'], 'purchasedHours': 0, 'giftHours': 0}})
-    t.put('/api/enrollment-update', {'enrollment': {'id': bugf_enr['id'], 'status': 'settled'}})
-    t.delete('/api/student-delete', {'studentId': bugf_stu['id']})
+    body = t.assert_ok(t.get(f'/api/enrollments?studentId={rule_f_stu["id"]}'), '查询报名(清理)')
+    rule_f_enr = body['data']['enrollments'][0]
+    t.put('/api/enrollment-update', {'enrollment': {'id': rule_f_enr['id'], 'purchasedHours': 0, 'giftHours': 0}})
+    t.put('/api/enrollment-update', {'enrollment': {'id': rule_f_enr['id'], 'status': 'settled'}})
+    t.delete('/api/student-delete', {'studentId': rule_f_stu['id']})
     t.assert_ok(
-        t.delete('/api/course-delete', {'courseId': bugf_course['id']}),
-        '退课后删课程成功(BugF)'
+        t.delete('/api/course-delete', {'courseId': rule_f_course['id']}),
+        '退课后删课程成功'
     )
 
 
@@ -5902,7 +5269,7 @@ def run_flow():
     """流程测试：调用内联的 13 个流程测试组，验证系统功能正确性
 
     flow 模式调用内联的 13 个流程测试组（原 test_suite.py，已内联消除外部依赖），
-    覆盖完整业务流程、安全性、Bug 修复验证、退课与流水、CRUD 改删、
+    覆盖完整业务流程、安全性、业务规则、退课与流水、CRUD 改删、
     报表与审计、批量与成员、灾备、多角色、错误边界等场景。
 
     与 stress（压力测试）完全独立：flow 关注「功能对不对」，stress 关注「扛不扛得住」。
@@ -5931,8 +5298,8 @@ def run_flow():
         ("组2安全性",      lambda t, p, ctx: test_security(t, p)),
         ("组3业务流程",    lambda t, p, ctx: test_business_flow(t, p, ctx)),
         ("组4非流程拦截",  lambda t, p, ctx: test_non_flow_intercept(t, p, ctx)),
-        ("组5Bug修复",     lambda t, p, ctx: test_bug_fixes(t, p, ctx)),
-        ("组6严重Bug",     lambda t, p, ctx: test_severe_bugs(t, p, ctx)),
+        ("组5业务规则",     lambda t, p, ctx: test_business_rules(t, p, ctx)),
+        ("组6课时排课规则", lambda t, p, ctx: test_hours_schedule_rules(t, p, ctx)),
         ("组7退课与流水",  lambda t, p, ctx: test_transfer_and_flow(t, p, ctx)),
         ("组8CRUD改删",    lambda t, p, ctx: test_crud_update_delete(t, p, ctx)),
         ("组9报表与审计",  lambda t, p, ctx: test_reports_and_audit(t, p, ctx)),
@@ -6074,7 +5441,7 @@ def run_stress(scale=None):
     all_results["S15"] = s15_disaster_recovery_multirole(student_ids, course_id)
 
     duration = time.perf_counter() - start
-    report_path = generate_report("stress", all_results, duration, scale=scale)
+    report_path = generate_report(all_results, duration, scale=scale)
 
     print("\n" + "=" * 60)
     print("  压力测试完成")
