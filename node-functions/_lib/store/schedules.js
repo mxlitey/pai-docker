@@ -74,7 +74,7 @@ export async function getSchedulesByDateRange(studentId, startDate, endDate) {
   return rows.map(rowToSchedule)
 }
 
-export async function searchSchedules({ startDate, endDate, courseId, grade, teacher, teacherId, classId } = {}) {
+export async function searchSchedules({ startDate, endDate, courseId, grade, teacher, teacherId, classId, attended } = {}) {
   const db = getDb()
   // 未传日期范围时默认查当月，避免全表扫描返回太多数据
   if (!startDate && !endDate) {
@@ -99,6 +99,10 @@ export async function searchSchedules({ startDate, endDate, courseId, grade, tea
   if (teacherId) { sql += ' AND s.teacher_id=?'; params.push(teacherId) }
   else if (teacher) { sql += ' AND s.teacher=?'; params.push(teacher) }
   if (classId) { sql += ' AND s.class_id=?'; params.push(classId) }
+  // 到课状态过滤：attended=true 只查到课(1)，attended=false 只查缺勤(0)，未传不过滤
+  // 注意：未点名的排课 attended 为 NULL，不会匹配 true/false 任一过滤
+  if (attended === true) { sql += ' AND s.attended=1' }
+  else if (attended === false) { sql += ' AND s.attended=0' }
   sql += ' ORDER BY s.date, s.start_time LIMIT 5000'
   const rows = db.prepare(sql).all(...params)
   return rows.map(rowToSchedule)

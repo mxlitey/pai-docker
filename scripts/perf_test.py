@@ -3631,6 +3631,13 @@ def test_full_flow(t, prefix):
     t.assert_eq(enr['remainingGiftHours'], 2, '赠课恢复(1→2)')
 
     # 7. 反馈
+    # 业务规则：课后反馈只能针对已到课的学员，先点名到课再提交反馈
+    t.assert_ok(
+        t.post('/api/attendance', {'date': yesterday, 'items': [
+            {'scheduleId': sched_id, 'studentId': stu['id'], 'attended': True}
+        ]}),
+        '反馈前点名到课(满足反馈前置条件)'
+    )
     t.assert_ok(
         t.post('/api/feedback', {
             'scheduleId': sched_id, 'studentId': stu['id'],
@@ -5118,6 +5125,13 @@ def test_crud_update_delete(t, prefix, ctx):
         'date': fb_date, 'startTime': '10:00', 'endTime': '11:00',
     })
     if fb_resp[1].get('code') == 0 and fb_sched_id:
+        # 业务规则：反馈只能针对已到课学员，先点名到课
+        t.assert_ok(
+            t.post('/api/attendance', {'date': fb_date, 'items': [
+                {'scheduleId': fb_sched_id, 'studentId': ctx['stu']['id'], 'attended': True}
+            ]}),
+            '反馈前排课点名到课'
+        )
         _, fb_create = t.post('/api/feedback', {
             'scheduleId': fb_sched_id, 'studentId': ctx['stu']['id'],
             'content': '测试反馈内容', 'rating': 5,

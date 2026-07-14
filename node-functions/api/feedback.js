@@ -87,6 +87,11 @@ async function handlePost(context) {
           return json({ code: 1, message: '无权为其他教师的排课添加反馈', data: null }, 403)
         }
       }
+      // 业务规则：课后反馈只能针对到课的学员，未到课/未点名不允许反馈
+      // 防止绕过前端选课界面直接 POST 反馈到未到课的排课
+      if (schedule.attended !== true) {
+        return json({ code: 1, message: '只能为已到课的学员添加课后反馈', data: null }, 400)
+      }
       // 自动补全 studentId/studentName/courseId/date 从排课记录
       fb.studentId = fb.studentId || schedule.studentId
       fb.studentName = fb.studentName || schedule.studentName

@@ -424,10 +424,13 @@ function AddFeedbackModal({
     setLoadingSchedules(true)
     setSelectedId('')
     try {
+      // 业务规则：课后反馈只能针对到课的学员
+      // 因此只拉取 attended=true 的排课，未到课/未点名的不展示
       const result = await searchSchedules({
         startDate: d,
         endDate: d,
         classId: cid || undefined,
+        attended: true,
       })
       if (result.code === 0) {
         setSchedules(result.data.schedules || [])
@@ -602,7 +605,7 @@ function AddFeedbackModal({
             <div className="text-sm text-muted-foreground/70 py-2">加载排课中…</div>
           ) : schedules.length === 0 ? (
             <div className="text-sm text-muted-foreground/70 py-2">
-              {loaded ? '该条件下暂无排课记录' : '请先选择日期'}
+              {loaded ? '该条件下暂无已到课的排课记录（仅可对已到课学员反馈）' : '请先选择日期'}
             </div>
           ) : (
             <div className="border border-border rounded max-h-56 overflow-y-auto divide-y divide-border">

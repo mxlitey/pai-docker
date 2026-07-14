@@ -29,6 +29,12 @@ export default async function onRequestGet(context) {
     teacher = url.searchParams.get('teacher') || ''
   }
   const classId = url.searchParams.get('classId') || ''
+  // attended 过滤：'true' → 只查到课，'false' → 只查缺勤，其他/未传 → 不过滤
+  // 用于教师新增反馈场景只展示到课排课
+  const attendedRaw = url.searchParams.get('attended') || ''
+  let attended
+  if (attendedRaw === 'true') attended = true
+  else if (attendedRaw === 'false') attended = false
 
   // 日期格式校验：传了就必须合法，避免脏输入触发异常分支
   if (startDate && !DATE_RE.test(startDate)) {
@@ -59,6 +65,7 @@ export default async function onRequestGet(context) {
       teacher,
       teacherId,
       classId,
+      attended,
     })
     // 批量标记哪些缺勤排课已安排补课（补课按钮隐藏依据）
     const idsWithMakeup = await getScheduleIdsWithMakeup(schedules.map((s) => s.id))
