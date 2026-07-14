@@ -997,6 +997,8 @@ def s6_attendance_stress(student_ids, course_id):
         else:
             enr_fail += 1
     print(f"  报名创建: 成功 {enr_ok} 失败 {enr_fail}")
+    # 学员加入班级（排课要求学员须为班级成员）
+    http("POST", "/api/class-members", {"classId": class_id, "studentIds": sample}, token=TOKEN)
     if enr_ok == 0 and sample:
         # 诊断首个报名失败原因
         r, _ = http("POST", "/api/enrollment-add", {"enrollment": {
@@ -3405,6 +3407,12 @@ def test_full_flow(t, prefix):
     )
     stu = body['data']['student']
 
+    # 学员加入班级（排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': cls['id'], 'studentIds': [stu['id']]}),
+        '学员加入班级'
+    )
+
     # 报名: 10 付费 + 2 赠课
     body = t.assert_ok(
         t.post('/api/enrollment-add', {'enrollment': {
@@ -3742,6 +3750,12 @@ def test_business_flow(t, prefix, ctx):
     )
     eng_cls = body['data']['class']
 
+    # 学员加入英语班级（插班补课到英语班时需为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': eng_cls['id'], 'studentIds': [stu['id']]}),
+        '学员加入英语班级'
+    )
+
     # === 3.1 插班补课流程 ===
     # 排一堂数学课→缺勤→插班补课到英语班→点名到课→验证数学课时扣减
     print('  --- 3.1 插班补课(扣原课程课时) ---')
@@ -3993,6 +4007,12 @@ def test_non_flow_intercept(t, prefix, ctx):
     )
     nf_eng_cls = body['data']['class']
 
+    # 学员加入 NF 英语班（使成员校验通过，从而测到后续的"班级与课程不匹配"/"未报名"校验）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': nf_eng_cls['id'], 'studentIds': [stu['id']]}),
+        '学员加入NF英语班级'
+    )
+
     resp = t.post('/api/schedule-add', {'schedule': {
         'studentId': stu['id'], 'classId': nf_eng_cls['id'],
         'courseId': math['id'], 'courseName': math['name'],
@@ -4231,6 +4251,11 @@ def test_hours_schedule_rules(t, prefix, ctx):
         '创建学员'
     )
     rule_a_stu = body['data']['student']
+    # 学员加入班级（排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': cls['id'], 'studentIds': [rule_a_stu['id']]}),
+        '学员A加入班级'
+    )
     # 报名 A（10付费，先报名）
     body = t.assert_ok(
         t.post('/api/enrollment-add', {'enrollment': {
@@ -4353,6 +4378,11 @@ def test_hours_schedule_rules(t, prefix, ctx):
         '创建学员'
     )
     rule_d_stu = body['data']['student']
+    # 学员加入班级（排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': cls['id'], 'studentIds': [rule_d_stu['id']]}),
+        '学员D加入班级'
+    )
     t.assert_ok(
         t.post('/api/enrollment-add', {'enrollment': {
             'studentId': rule_d_stu['id'], 'courseId': math['id'],
@@ -4481,6 +4511,12 @@ def test_transfer_and_flow(t, prefix, ctx):
     t.assert_ok((200, rf_cls_body), '创建退课测试班级')
     rf_cls = rf_cls_body['data'].get('class') or rf_cls_body['data']
 
+    # 学员加入班级（排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': rf_cls['id'], 'studentIds': [stu_id]}),
+        '退课测试学员加入班级'
+    )
+
     # 创建未来排课（退课时应被取消）
     future_date = date_offset(7)
     _, sched_body = t.post('/api/schedule-add', {'schedule': {
@@ -4556,6 +4592,12 @@ def test_crud_update_delete(t, prefix, ctx):
     t.assert_ok((200, stu_body), '创建改删测试学员')
     stu = stu_body['data'].get('student') or stu_body['data']
     stu_id = stu['id']
+
+    # 学员加入班级（排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': ctx['cls']['id'], 'studentIds': [stu_id]}),
+        '改删测试学员加入班级'
+    )
 
     # 改
     _, upd_body = t.put('/api/student-update', {'student': {
@@ -4654,6 +4696,12 @@ def test_crud_update_delete(t, prefix, ctx):
     }})
     t.assert_ok((200, stu2_body), '创建排课改删测试学员')
     stu2 = stu2_body['data'].get('student') or stu2_body['data']
+
+    # 学员加入班级（排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': ctx['cls']['id'], 'studentIds': [stu2['id']]}),
+        '排课改删学员加入班级'
+    )
 
     _, enr2 = t.post('/api/enrollment-add', {'enrollment': {
         'studentId': stu2['id'], 'courseId': ctx['math']['id'],
@@ -5214,6 +5262,12 @@ def test_error_boundary(t, prefix, ctx):
     }})
     t.assert_ok((200, stu_body), '创建状态机测试学员')
     stu = stu_body['data'].get('student') or stu_body['data']
+
+    # 学员加入班级（排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': ctx['cls']['id'], 'studentIds': [stu['id']]}),
+        '状态机测试学员加入班级'
+    )
 
     _, enr_body = t.post('/api/enrollment-add', {'enrollment': {
         'studentId': stu['id'], 'courseId': ctx['math']['id'],

@@ -1,7 +1,7 @@
 // 新增排课 API
 // POST /api/schedule-add  body: { schedule: Schedule }
 // 用于后台少量新增排课，无需走完整的 JSON 导入流程
-import { addSchedule, getStudentById, getEnrollments, getCourseById, getClassById, findScheduleConflicts, json } from '../_lib/store.js'
+import { addSchedule, getStudentById, getEnrollments, getCourseById, getClassById, getClassMembers, findScheduleConflicts, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -83,6 +83,14 @@ export default async function onRequestPost(context) {
     if (cls.courseId && cls.courseId !== schedule.courseId) {
       return json(
         { code: 1, message: `班级「${cls.name}」关联的课程与排课课程不一致`, data: null },
+        400,
+      )
+    }
+    // 班级成员校验（与 schedule-add-batch 一致）：学员必须属于该班级
+    const members = await getClassMembers(schedule.classId)
+    if (!members.some((m) => m.id === schedule.studentId)) {
+      return json(
+        { code: 1, message: `学员「${student.name}」不属于班级「${cls.name}」，请先在班级管理中将其加入班级`, data: null },
         400,
       )
     }

@@ -308,6 +308,11 @@ export async function batchSetAttendance(items) {
         errors.push(`排课 ${item.scheduleId} 在 ${item.studentId} 中未找到`)
         continue
       }
+      // 已取消的排课不允许点名（避免误扣课时）
+      if (row.status === 'cancelled') {
+        errors.push(`排课 ${item.scheduleId} 已取消，不可点名`)
+        continue
+      }
       const oldAttended = row.attended === null ? undefined : !!row.attended
       const newAttended = !!item.attended
       if (oldAttended === newAttended) continue

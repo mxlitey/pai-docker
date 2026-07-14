@@ -1,7 +1,7 @@
 // 排课修改 API
 // PUT /api/schedule  body: { old: Schedule, new: Schedule }
 // 处理跨月/跨学员的存储路径迁移
-import { updateSchedule, getScheduleById, getStudentById, getCourseById, getClassById, json } from '../_lib/store.js'
+import { updateSchedule, getScheduleById, getStudentById, getCourseById, getClassById, getClassMembers, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit, buildUpdateSummary } from '../_lib/audit.js'
 
@@ -90,6 +90,11 @@ export default async function onRequestPut(context) {
       const cls = await getClassById(newSchedule.classId)
       if (!cls) {
         return json({ code: 1, message: `classId="${newSchedule.classId}" 在班级表中不存在`, data: null }, 400)
+      }
+      // 班级成员校验（与 schedule-add-batch 一致）：学员必须属于该班级
+      const members = await getClassMembers(newSchedule.classId)
+      if (!members.some((m) => m.id === newSchedule.studentId)) {
+        return json({ code: 1, message: `学员「${student.name}」不属于班级「${cls.name}」，请先在班级管理中将其加入班级`, data: null }, 400)
       }
     }
 
