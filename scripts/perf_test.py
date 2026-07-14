@@ -3794,15 +3794,7 @@ def test_business_flow(t, prefix, ctx):
         t.post('/api/class-members', {'classId': eng_cls['id'], 'studentIds': [stu['id']]}),
         '学员加入英语班级'
     )
-    # 学员报名英语（插班补课到英语班需有英语报名记录）
-    t.assert_ok(
-        t.post('/api/enrollment-add', {'enrollment': {
-            'studentId': stu['id'], 'courseId': english['id'],
-            'purchasedHours': 10, 'unitPrice': 100,
-            'totalAmount': 1000, 'paidAmount': 1000
-        }}),
-        '学员报名英语(插班补课前置)'
-    )
+    # 注：插班补课只校验原报名（数学），不要求报名英语；扣课时也扣原报名（数学）
 
     # === 3.1 插班补课流程 ===
     # 排一堂数学课→缺勤→插班补课到英语班→点名到课→验证数学课时扣减
@@ -3867,16 +3859,15 @@ def test_business_flow(t, prefix, ctx):
         '补课点名到课'
     )
 
-    # 验证: 英语课时应扣减（补课插班到英语课，点名按补课排课的 courseId 扣课时）
-    body = t.assert_ok(t.get(f'/api/enrollments?studentId={stu["id"]}'), '查询英语报名(补课后)')
-    eng_enr = next(e for e in body['data']['enrollments'] if e['courseId'] == english['id'])
-    eng_hours_after = eng_enr['remainingPaidHours'] + eng_enr['remainingGiftHours']
-    t.assert_eq(eng_hours_after, 10 - 1, f'插班补课扣英语课时(10→{eng_hours_after})')
-
-    # 验证: 数学课时不变（补课点名按补课排课的课程扣，不扣原排课课程）
+    # 验证: 补课插班到英语课，点名按原报名（数学）扣课时
+    body = t.assert_ok(t.get(f'/api/enrollments?studentId={stu["id"]}'), '查询数学报名(补课后)')
     math_enr = next(e for e in body['data']['enrollments'] if e['courseId'] == math['id'])
     math_hours_after = math_enr['remainingPaidHours'] + math_enr['remainingGiftHours']
-    t.assert_eq(math_hours_after, hours_before, f'数学课时不变({hours_before}→{math_hours_after})')
+    t.assert_eq(math_hours_after, hours_before - 1, f'插班补课扣原报名数学课时({hours_before}→{math_hours_after})')
+
+    # 验证: 学员没有英语报名记录（插班补课不要求报名目标课程）
+    eng_enr = next((e for e in body['data']['enrollments'] if e['courseId'] == english['id']), None)
+    t.assert_true(eng_enr is None, '英语无报名记录(插班补课不要求报名目标课程)')
 
     # === 3.2 调课流程 ===
     print('  --- 3.2 调课 ---')

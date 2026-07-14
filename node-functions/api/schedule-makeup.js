@@ -3,7 +3,7 @@
 // body: { scheduleId, newDate, newStartTime?, newEndTime?, reason? }
 // 逻辑：保留原缺勤排课（不取消） → 生成新排课（设 makeup_for）
 // 约束：原排课必须 attended===false（已缺勤）；已取消的排课不允许补课
-import { getScheduleById, makeupSchedule, getClassById, getClassMembers, getEnrollments, getStudentById, json } from '../_lib/store.js'
+import { getScheduleById, makeupSchedule, getEnrollments, getStudentById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -79,24 +79,14 @@ export default async function onRequestPost(context) {
     if (timeSame && !insertChanged) {
       return json({ code: 1, message: '新日期/时间与原排课相同，无需补课', data: null }, 400)
     }
-    // 若改了班级，校验新班级存在 + 学员是新班级成员（与 schedule-add-batch 一致）
-    if (newClassId !== undefined && newClassId !== (original.classId || '')) {
-      const cls = await getClassById(newClassId)
-      if (!cls) {
-        return json({ code: 1, message: `班级 id="${newClassId}" 不存在`, data: null }, 404)
-      }
-      const members = await getClassMembers(newClassId)
-      if (!members.some((m) => m.id === original.studentId)) {
-        return json({ code: 1, message: `学员不属于班级「${cls.name}」，请先在班级管理中将其加入班级`, data: null }, 400)
-      }
-    }
-    // 若改了课程，校验学员已报名新课程（补课改课程=插班到另一门课，须先报名）
-    if (newCourseId !== undefined && newCourseId !== (original.courseId || '')) {
-      const enrs = await getEnrollments({ studentId: original.studentId, courseId: newCourseId, status: 'active' })
+    // 补课/插班校验：学员须有原排课课程的 active 报名（点名扣课时按原报名扣）
+    // 插班到其他班级/课程属于临时补课，不要求学员是目标班级成员、也不要求报名目标课程
+    if (original.courseId) {
+      const enrs = await getEnrollments({ studentId: original.studentId, courseId: original.courseId, status: 'active' })
       if (!enrs || enrs.length === 0) {
         const stu = await getStudentById(original.studentId)
         const stuName = stu?.name || original.studentId
-        return json({ code: 1, message: `学员「${stuName}」未报名该课程，请先报名`, data: { noEnrollment: true } }, 400)
+        return json({ code: 1, message: `学员「${stuName}」未报名原排课课程，无法补课`, data: { noEnrollment: true } }, 400)
       }
     }
 
