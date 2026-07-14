@@ -945,6 +945,21 @@ export async function deleteFeedback(id: string): Promise<ApiResult<{ ok: boolea
   return resp.json()
 }
 
+// 上传反馈图片（multipart/form-data）
+// 返回 { url: "/uploads/feedback/..." }，前端将 url 存入 feedback.images 数组
+export async function uploadFeedbackImage(feedbackId: string, file: File): Promise<ApiResult<{ url: string }>> {
+  const fd = new FormData()
+  fd.append('feedbackId', feedbackId)
+  fd.append('file', file)
+  const resp = await fetch(`${API_BASE}/upload`, {
+    method: 'POST',
+    headers: { ...authHeaders() }, // multipart 不设 Content-Type，让浏览器自动带 boundary
+    body: fd,
+    signal: AbortSignal.timeout(30000),
+  })
+  return resp.json()
+}
+
 // 教师绩效（支持按 teacher 教师姓名过滤，仅显示该教师本人绩效）
 export async function getTeacherPerformance(params?: {
   startDate?: string; endDate?: string; teacher?: string

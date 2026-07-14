@@ -348,6 +348,9 @@ export function getDb() {
   dropColumnIfExists(db, 'schedules', 'room')
   dropColumnIfExists(db, 'admins', 'teacher_id')
 
+  // feedback 表加 images 字段：JSON 数组存图片路径（如 ["/uploads/feedback/stu1/fb1/xxx.jpg"]）
+  ensureColumn(db, 'feedback', 'images', "TEXT NOT NULL DEFAULT '[]'")
+
   dbInstance = db
   return db
 }

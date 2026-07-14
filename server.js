@@ -22,7 +22,7 @@ import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { readFile, stat } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, extname, normalize } from 'node:path'
 import {
@@ -37,6 +37,10 @@ const ROOT = __dirname
 
 const PORT = Number(process.env.PORT) || 8788
 const STATIC_DIR = join(ROOT, 'dist')
+// 上传文件存储根目录：uploads/feedback/{studentId}/{feedbackId}/{file}
+const UPLOADS_DIR = join(ROOT, 'uploads')
+// 启动时确保上传目录存在
+mkdirSync(UPLOADS_DIR, { recursive: true })
 
 // 动态加载所有 API 处理器：/api/students -> node-functions/api/students.js
 const apiModules = {}
@@ -149,6 +153,53 @@ async function serveStatic(req, res) {
   }
 }
 
+// 上传文件静态访问：/uploads/* → UPLOADS_DIR/*
+// 仅允许图片扩展名（.jpg/.jpeg/.png/.gif/.webp），其他一律 404
+// 防止上传的 HTML/SVG 等被浏览器当页面执行（XSS）
+async function serveUploads(req, res) {
+  let pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname)
+  pathname = normalize(pathname).replace(/^(\.\.[\/\\])+/, '')
+
+  // 去掉 /uploads/ 前缀，拼接到 UPLOADS_DIR
+  const rel = pathname.replace(/^\/uploads\//, '')
+  const filePath = join(UPLOADS_DIR, rel)
+
+  // 安全：防止路径遍历（必须落在 UPLOADS_DIR 内）
+  if (!filePath.startsWith(UPLOADS_DIR)) {
+    res.statusCode = 403
+    res.end('Forbidden')
+    return
+  }
+
+  const ext = extname(filePath).toLowerCase()
+  const allowedExt = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+  if (!allowedExt.includes(ext)) {
+    res.statusCode = 404
+    res.end('Not Found')
+    return
+  }
+
+  try {
+    const s = await stat(filePath)
+    if (s.isDirectory()) {
+      res.statusCode = 404
+      res.end('Not Found')
+      return
+    }
+    const data = await readFile(filePath)
+    res.setHeader('Content-Type', MIME[ext] || 'application/octet-stream')
+    // 缓存 30 天（图片内容不变，文件名含时间戳防冲突）
+    res.setHeader('Cache-Control', 'public, max-age=2592000, immutable')
+    // 安全头：防止图片被嵌入 iframe（点击劫持）
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.statusCode = 200
+    res.end(data)
+  } catch {
+    res.statusCode = 404
+    res.end('Not Found')
+  }
+}
+
 // 把 Node 原生 IncomingMessage 转成 Web Request（Edge Function 标准）
 function toWebRequest(req) {
   const host = req.headers.host || `localhost:${PORT}`
@@ -218,10 +269,19 @@ async function handleRequest(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`)
   const pathname = url.pathname
 
+  // 上传文件静态访问：/uploads/* → UPLOADS_DIR/*
+  // 用于反馈图片等静态资源访问（图片在 UPLOADS_DIR/feedback/{studentId}/{feedbackId}/ 下）
+  if (pathname.startsWith('/uploads/')) {
+    await serveUploads(req, res)
+    return
+  }
+
   // API 路由
   if (pathname.startsWith('/api/')) {
     // 请求体大小限制：防止超大 JSON body 拖垮内存（DoS 防护）
-    const MAX_BODY = 2 * 1024 * 1024 // 2MB
+    // 文件上传 API（/api/upload）放宽到 20MB，其他 API 保持 2MB
+    const isUpload = pathname === '/api/upload'
+    const MAX_BODY = isUpload ? 20 * 1024 * 1024 : 2 * 1024 * 1024
     const contentLength = Number(req.headers['content-length'] || 0)
     if (contentLength > MAX_BODY) {
       res.setHeader('Content-Type', 'application/json; charset=utf-8')

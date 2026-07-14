@@ -1,5 +1,5 @@
 // 教师端管理页 —— 课后反馈 + 教师绩效 两个 Tab
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ClassInfo, Feedback, TeacherPerformance, Schedule } from '@/types'
 import {
   getFeedback,
@@ -10,6 +10,7 @@ import {
   getTeacherPerformance,
   listClasses,
   getCurrentAdmin,
+  uploadFeedbackImage,
 } from '@/api/admin'
 import { todayLocal, currentMonthRangeLocal } from '@/utils/date'
 import {
@@ -26,7 +27,7 @@ import {
   confirmDialog,
 } from '@/components/ui'
 import { cn } from '@/utils/cn'
-import { Plus, Check } from 'lucide-react'
+import { Plus, Check, ImagePlus, X, Loader2 } from 'lucide-react'
 
 interface TeacherAdminProps {
   onBack: () => void
@@ -99,6 +100,10 @@ function FeedbackPanel() {
   const [editRating, setEditRating] = useState(5)
   const [saving, setSaving] = useState(false)
   const [adding, setAdding] = useState(false)
+  // 编辑弹窗：图片列表、图片上传中标记、列表预览大图
+  const [editImages, setEditImages] = useState<string[]>([])
+  const [editUploading, setEditUploading] = useState(false)
+  const [previewImage, setPreviewImage] = useState<string>('')
 
   const totalPages = Math.max(1, Math.ceil(list.length / FEEDBACK_PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -126,9 +131,13 @@ function FeedbackPanel() {
     setEditing(fb)
     setEditContent(fb.content || '')
     setEditRating(fb.rating ?? 5)
+    setEditImages(fb.images || [])
   }
 
-  const closeEdit = () => setEditing(null)
+  const closeEdit = () => {
+    setEditing(null)
+    setEditImages([])
+  }
 
   const saveEdit = async () => {
     if (!editing) return
@@ -137,6 +146,7 @@ function FeedbackPanel() {
       const result = await updateFeedback(editing.id, {
         content: editContent,
         rating: editRating,
+        images: editImages,
       })
       if (result.code === 0) {
         toast.success('反馈已更新')
@@ -217,6 +227,25 @@ function FeedbackPanel() {
                     </td>
                     <td className="py-2 px-2 text-muted-foreground max-w-xs" title={fb.content}>
                       {fb.content ? truncate(fb.content) : <span className="text-muted-foreground/40">—</span>}
+                      {/* 图片缩略图行：最多显示前 4 张，超出显示 +N */}
+                      {fb.images && fb.images.length > 0 && (
+                        <div className="flex gap-1 mt-1">
+                          {fb.images.slice(0, 4).map((url, idx) => (
+                            <img
+                              key={idx}
+                              src={url}
+                              alt={`图片${idx + 1}`}
+                              className="w-10 h-10 object-cover rounded border border-border cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => setPreviewImage(url)}
+                            />
+                          ))}
+                          {fb.images.length > 4 && (
+                            <div className="w-10 h-10 rounded border border-border flex items-center justify-center text-xs text-muted-foreground bg-muted/50">
+                              +{fb.images.length - 4}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="py-2 px-2 text-right whitespace-nowrap">
                       <button
@@ -260,6 +289,7 @@ function FeedbackPanel() {
               onCancel={closeEdit}
               onConfirm={saveEdit}
               confirmText={'保存'}
+              confirmDisabled={editUploading}
             />
           }
         >
@@ -290,6 +320,15 @@ function FeedbackPanel() {
                 ))}
               </select>
             </Field>
+            <Field label={'图片'}>
+              <FeedbackImageUploader
+                feedbackId={editing.id}
+                images={editImages}
+                onChange={setEditImages}
+                disabled={saving}
+                onUploadingChange={setEditUploading}
+              />
+            </Field>
           </div>
         </Modal>
       )}
@@ -303,6 +342,29 @@ function FeedbackPanel() {
             load()
           }}
         />
+      )}
+
+      {/* 图片预览大图遮罩：点击空白或关闭按钮关闭 */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+          onClick={() => setPreviewImage('')}
+        >
+          <img
+            src={previewImage}
+            alt="预览"
+            className="max-w-full max-h-full object-contain rounded"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30"
+            onClick={() => setPreviewImage('')}
+            aria-label="关闭"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       )}
     </>
   )
@@ -329,6 +391,9 @@ function AddFeedbackModal({
   const [rating, setRating] = useState(5)
   const [saving, setSaving] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  // 提交前暂存的图片文件（含本地预览 URL），提交时先创建反馈再上传
+  const [pendingFiles, setPendingFiles] = useState<{ file: File; url: string }[]>([])
+  const pendingInputRef = useRef<HTMLInputElement>(null)
 
   // 加载班级列表（用于按班级过滤排课）
   useEffect(() => {
@@ -388,6 +453,32 @@ function AddFeedbackModal({
 
   const canSubmit = !!selected && !saving
 
+  // 新增反馈时暂存图片：限制最多 9 张
+  const addPendingFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    const remaining = 9 - pendingFiles.length
+    if (remaining <= 0) {
+      toast.error('最多只能选 9 张图片')
+      return
+    }
+    const arr = Array.from(files).slice(0, remaining)
+    if (arr.length < Array.from(files).length) {
+      toast.error(`最多只能选 9 张图片，已截取前 ${arr.length} 张`)
+    }
+    setPendingFiles([
+      ...pendingFiles,
+      ...arr.map((file) => ({ file, url: URL.createObjectURL(file) })),
+    ])
+    if (pendingInputRef.current) pendingInputRef.current.value = ''
+  }
+
+  // 移除暂存图片并释放本地预览 URL
+  const removePendingFile = (idx: number) => {
+    const item = pendingFiles[idx]
+    if (item) URL.revokeObjectURL(item.url)
+    setPendingFiles(pendingFiles.filter((_, i) => i !== idx))
+  }
+
   const handleSubmit = async () => {
     if (!selected) {
       toast.error('请先选择一条排课记录')
@@ -403,6 +494,7 @@ function AddFeedbackModal({
     }
     setSaving(true)
     try {
+      // 第一步：先创建无图反馈，拿到 feedbackId
       const result = await addFeedback({
         scheduleId: selected.id,
         courseId: selected.courseId || '',
@@ -413,13 +505,44 @@ function AddFeedbackModal({
         date: selected.date,
         content,
         rating,
+        images: [],
       })
-      if (result.code === 0) {
-        toast.success('反馈已提交')
-        onCreated()
-      } else {
+      if (result.code !== 0) {
         toast.error(result.message || '提交失败')
+        return
       }
+      const newId = result.data?.id
+      if (!newId) {
+        toast.error('反馈已创建但未返回 id，图片未能上传')
+        onCreated()
+        return
+      }
+      // 第二步：如果用户选了图片，逐个上传
+      if (pendingFiles.length > 0) {
+        const uploadedUrls: string[] = []
+        for (const item of pendingFiles) {
+          try {
+            const upRes = await uploadFeedbackImage(newId, item.file)
+            if (upRes.code === 0 && upRes.data?.url) {
+              uploadedUrls.push(upRes.data.url)
+            } else {
+              toast.error(upRes.message || `图片上传失败：${item.file.name}`)
+            }
+          } catch (e) {
+            toast.error((e as Error).message || `图片上传失败：${item.file.name}`)
+          }
+        }
+        // 第三步：把图片 url 写回反馈
+        if (uploadedUrls.length > 0) {
+          try {
+            await updateFeedback(newId, { images: uploadedUrls })
+          } catch (e) {
+            toast.error((e as Error).message || '图片地址保存失败')
+          }
+        }
+      }
+      toast.success('反馈已提交')
+      onCreated()
     } catch (e) {
       toast.error((e as Error).message || '提交失败')
     } finally {
@@ -546,6 +669,52 @@ function AddFeedbackModal({
               </option>
             ))}
           </select>
+        </Field>
+
+        {/* 图片：提交前仅暂存 File 并显示本地预览，提交时先创建反馈再上传 */}
+        <Field label={'图片'} hint="可选，最多 9 张，提交后上传">
+          <div className="space-y-2">
+            {pendingFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {pendingFiles.map((item, idx) => (
+                  <div key={idx} className="relative w-20 h-20 group">
+                    <img
+                      src={item.url}
+                      alt={`预览${idx + 1}`}
+                      className="w-20 h-20 object-cover rounded-md border border-border"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePendingFile(idx)}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-white flex items-center justify-center hover:bg-destructive/80 opacity-0 group-hover:opacity-100 transition-opacity"
+                      aria-label="删除图片"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {pendingFiles.length < 9 && (
+              <button
+                type="button"
+                onClick={() => pendingInputRef.current?.click()}
+                disabled={saving}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-dashed border-border rounded-md text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ImagePlus className="w-4 h-4" />
+                添加图片
+              </button>
+            )}
+            <input
+              ref={pendingInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => addPendingFiles(e.target.files)}
+            />
+          </div>
         </Field>
       </div>
     </Modal>
@@ -688,5 +857,127 @@ function PerformancePanel() {
         </section>
       )}
     </>
+  )
+}
+
+// ============ 可复用图片上传组件 ============
+// 用于编辑反馈弹窗：已存在 feedbackId，逐张上传并把 url 追加到 images
+function FeedbackImageUploader({
+  feedbackId,
+  images,
+  onChange,
+  disabled,
+  onUploadingChange,
+}: {
+  feedbackId: string
+  images: string[]
+  onChange: (images: string[]) => void
+  disabled?: boolean
+  onUploadingChange?: (uploading: boolean) => void
+}) {
+  const [uploading, setUploading] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // 逐张上传：成功后把 url 追加到 images，超过 9 张提示
+  const handleFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    const remaining = 9 - images.length
+    if (remaining <= 0) {
+      toast.error('最多只能上传 9 张图片')
+      return
+    }
+    const fileArr = Array.from(files).slice(0, remaining)
+    if (fileArr.length < Array.from(files).length) {
+      toast.error(`最多只能上传 9 张图片，已截取前 ${fileArr.length} 张`)
+    }
+    setUploading(true)
+    onUploadingChange?.(true)
+    const newUrls: string[] = []
+    for (const file of fileArr) {
+      try {
+        const result = await uploadFeedbackImage(feedbackId, file)
+        if (result.code === 0 && result.data?.url) {
+          newUrls.push(result.data.url)
+        } else {
+          toast.error(result.message || `上传失败：${file.name}`)
+        }
+      } catch (e) {
+        toast.error((e as Error).message || `上传失败：${file.name}`)
+      }
+    }
+    if (newUrls.length > 0) {
+      onChange([...images, ...newUrls])
+      toast.success(`已上传 ${newUrls.length} 张图片`)
+    }
+    setUploading(false)
+    onUploadingChange?.(false)
+    // 清空 input，便于重复选择同一文件
+    if (inputRef.current) inputRef.current.value = ''
+  }
+
+  // 删除图片：仅从 images 数组移除引用（物理文件不删）
+  const removeImage = (idx: number) => {
+    onChange(images.filter((_, i) => i !== idx))
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* 当前图片缩略图网格，每张 80x80 圆角，hover 显示删除按钮 */}
+      {images.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {images.map((url, idx) => (
+            <div key={idx} className="relative w-20 h-20 group">
+              <img
+                src={url}
+                alt={`图片${idx + 1}`}
+                className="w-20 h-20 object-cover rounded-md border border-border"
+              />
+              {!disabled && (
+                <button
+                  type="button"
+                  onClick={() => removeImage(idx)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-white flex items-center justify-center hover:bg-destructive/80 opacity-0 group-hover:opacity-100 transition-opacity"
+                  aria-label="删除图片"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {/* 添加图片按钮：隐藏 file input，支持多选 */}
+      {!disabled && (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading || images.length >= 9}
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-dashed border-border rounded-md text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {uploading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              上传中…
+            </>
+          ) : (
+            <>
+              <ImagePlus className="w-4 h-4" />
+              添加图片
+            </>
+          )}
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => handleFiles(e.target.files)}
+      />
+      {images.length >= 9 && !disabled && (
+        <div className="text-xs text-muted-foreground/70">已达上限 9 张</div>
+      )}
+    </div>
   )
 }

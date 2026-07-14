@@ -1,11 +1,14 @@
 // 课后反馈 API
 // GET    /api/feedback?scheduleId=&teacherId=&studentId=&courseId= -> 查询反馈列表，需 feedback:view
 // POST   /api/feedback  body: fb                                     -> 新增反馈，需 feedback:create
-// PUT    /api/feedback  body: { id, ...patch }                       -> 更新反馈(content/rating)，需 feedback:update
+// PUT    /api/feedback  body: { id, ...patch }                       -> 更新反馈(content/rating/images)，需 feedback:update
 // DELETE /api/feedback?id=                                            -> 删除反馈，需 feedback:delete
 import { getFeedback, addFeedback, updateFeedback, deleteFeedback, getScheduleById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
+import { unlink } from 'node:fs/promises'
+import { join, dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 async function readBody(request) {
   try {
@@ -57,6 +60,20 @@ async function handlePost(context) {
   if (fb.content.length > 2000) {
     return json({ code: 1, message: '反馈内容不能超过2000字', data: null }, 400)
   }
+  // images 校验：必须是字符串数组，每项以 /uploads/ 开头，最多 9 张
+  if (fb.images !== undefined) {
+    if (!Array.isArray(fb.images)) {
+      return json({ code: 1, message: 'images 必须是数组', data: null }, 400)
+    }
+    if (fb.images.length > 9) {
+      return json({ code: 1, message: '图片不能超过 9 张', data: null }, 400)
+    }
+    for (const img of fb.images) {
+      if (typeof img !== 'string' || !img.startsWith('/uploads/feedback/')) {
+        return json({ code: 1, message: '图片路径非法', data: null }, 400)
+      }
+    }
+  }
 
   try {
     // 校验排课归属并自动补全关联字段
@@ -93,13 +110,27 @@ async function handlePost(context) {
   }
 }
 
-// 更新反馈（仅 content / rating）
+// 更新反馈（content / rating / images）
 async function handlePut(context) {
   const { request } = context
   const body = await readBody(request)
   const { id, ...patch } = body
   if (!id) {
     return json({ code: 1, message: '缺少 id', data: null }, 400)
+  }
+  // images 校验（与 POST 一致）
+  if (patch.images !== undefined) {
+    if (!Array.isArray(patch.images)) {
+      return json({ code: 1, message: 'images 必须是数组', data: null }, 400)
+    }
+    if (patch.images.length > 9) {
+      return json({ code: 1, message: '图片不能超过 9 张', data: null }, 400)
+    }
+    for (const img of patch.images) {
+      if (typeof img !== 'string' || !img.startsWith('/uploads/feedback/')) {
+        return json({ code: 1, message: '图片路径非法', data: null }, 400)
+      }
+    }
   }
 
   try {
@@ -125,7 +156,7 @@ async function handlePut(context) {
   }
 }
 
-// 删除反馈
+// 删除反馈（同时清理物理图片文件）
 async function handleDelete(context) {
   const { request } = context
   const url = new URL(request.url)
@@ -135,7 +166,19 @@ async function handleDelete(context) {
   }
 
   try {
-    await deleteFeedback(id, context.admin)
+    const result = await deleteFeedback(id, context.admin)
+    // 清理物理图片文件（失败不阻断删除流程，仅记录日志）
+    if (result.images && result.images.length > 0) {
+      const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+      for (const imgPath of result.images) {
+        try {
+          const fsPath = join(rootDir, imgPath)
+          await unlink(fsPath)
+        } catch (e) {
+          console.warn('[feedback] 清理图片文件失败:', imgPath, e?.message)
+        }
+      }
+    }
     await writeAudit(context, {
       action: 'delete',
       module: 'feedback',

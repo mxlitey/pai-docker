@@ -17,7 +17,7 @@ import { WeekView } from '../Calendar/WeekView'
 import { DayView } from '../Calendar/DayView'
 import { ScheduleDetail } from '../ScheduleDetail'
 import type { Schedule, Feedback, ViewMode } from '@/types'
-import { AlertTriangle, Lock, Loader2, Star, Megaphone } from 'lucide-react'
+import { AlertTriangle, Lock, Loader2, Star, Megaphone, X } from 'lucide-react'
 
 type Phase = 'loading' | 'verify' | 'verified' | 'error'
 
@@ -255,8 +255,15 @@ export function ParentH5({ appName }: { appName: string }) {
   }
 
   // ===== 已验证：学员信息主页 =====
-  // 学员概览信息（姓名/年级 + 课时余额 + 总排课）统一收纳到页眉，
-  // 避免日历顶部重复展示学员信息；电脑端页眉较宽，信息左对齐连续展示而非一左一右割裂
+  // 日历视图状态提升到外层，供"教师课后反馈"区块按视图范围过滤
+  const [view, setView] = useState<ViewMode>('month')
+  const [currentDate, setCurrentDate] = useState(new Date())
+  // 图片预览（点击反馈缩略图放大查看）
+  const [previewImage, setPreviewImage] = useState<string>('')
+
+  // 按当前日历视图过滤反馈：月→当月，周→当周，日→当天
+  const visibleFeedback = filterFeedbackByView(data.feedback, view, currentDate)
+
   return (
     <div className="min-h-screen bg-background">
       {showAnnouncement && data?.announcement && (
@@ -309,18 +316,24 @@ export function ParentH5({ appName }: { appName: string }) {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-4 space-y-4">
-        {/* 日历视图 */}
-        <ParentCalendar schedules={data.schedules} />
+        {/* 日历视图（view/currentDate 受控提升到外层） */}
+        <ParentCalendar
+          schedules={data.schedules}
+          view={view}
+          currentDate={currentDate}
+          onViewChange={setView}
+          onCurrentDateChange={setCurrentDate}
+        />
 
-        {/* 教师课后反馈 */}
-        {data.feedback.length > 0 && (
+        {/* 教师课后反馈（按日历视图范围过滤） */}
+        {visibleFeedback.length > 0 && (
           <section className="card p-4">
             <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-1.5">
               <Star className="w-4 h-4 text-amber-500" />
-              教师课后反馈（{data.feedback.length}）
+              教师课后反馈（{viewLabel(view)} · {visibleFeedback.length}）
             </h2>
             <div className="space-y-3">
-              {data.feedback.map((fb: Feedback) => (
+              {visibleFeedback.map((fb: Feedback) => (
                 <div key={fb.id} className="border-b border-slate-50 last:border-0 pb-3 last:pb-0">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs text-muted-foreground">{fb.date || '—'}</span>
@@ -328,6 +341,20 @@ export function ParentH5({ appName }: { appName: string }) {
                   </div>
                   {fb.content && (
                     <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{fb.content}</p>
+                  )}
+                  {/* 反馈图片缩略图（点击放大） */}
+                  {fb.images && fb.images.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {fb.images.map((img, idx) => (
+                        <img
+                          key={idx}
+                          src={img}
+                          alt={`反馈图片${idx + 1}`}
+                          onClick={() => setPreviewImage(img)}
+                          className="w-16 h-16 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
+                        />
+                      ))}
+                    </div>
                   )}
                 </div>
               ))}
@@ -339,34 +366,105 @@ export function ParentH5({ appName }: { appName: string }) {
           如需调整排课或信息有误，请联系老师
         </p>
       </main>
+
+      {/* 图片放大预览（点击缩略图后全屏查看，再点击关闭） */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 animate-in fade-in-0 duration-150"
+          onClick={() => setPreviewImage('')}
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewImage('')}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30"
+            aria-label="关闭"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img
+            src={previewImage}
+            alt="反馈大图"
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   )
 }
 
+// 按日历视图过滤反馈：月→当月，周→当周，日→当天
+function filterFeedbackByView(feedback: Feedback[], view: ViewMode, currentDate: Date): Feedback[] {
+  if (!feedback || feedback.length === 0) return []
+  const y = currentDate.getFullYear()
+  const m = currentDate.getMonth()
+  if (view === 'month') {
+    // 月视图：当月1日~月末
+    const start = `${y}-${String(m + 1).padStart(2, '0')}-01`
+    const nextM = m === 11 ? 0 : m + 1
+    const nextY = m === 11 ? y + 1 : y
+    const end = `${nextY}-${String(nextM + 1).padStart(2, '0')}-01`
+    return feedback.filter((fb) => fb.date >= start && fb.date < end)
+  }
+  if (view === 'week') {
+    // 周视图：以 currentDate 所在周的周一~周日
+    const day = currentDate.getDay() // 0=周日
+    const monday = new Date(currentDate)
+    monday.setDate(currentDate.getDate() - (day === 0 ? 6 : day - 1))
+    const sunday = new Date(monday)
+    sunday.setDate(monday.getDate() + 6)
+    const start = fmtDate(monday)
+    const end = fmtDate(sunday)
+    return feedback.filter((fb) => fb.date >= start && fb.date <= end)
+  }
+  // 日视图：当天
+  const today = fmtDate(currentDate)
+  return feedback.filter((fb) => fb.date === today)
+}
+
+function fmtDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function viewLabel(view: ViewMode): string {
+  return view === 'month' ? '本月' : view === 'week' ? '本周' : '今天'
+}
+
 // ============ 家长端日历视图（复用原日历组件） ============
 // 月/周/日视图切换 + 导航，点击排课卡片弹出详情
-function ParentCalendar({ schedules }: { schedules: Schedule[] }) {
-  const [view, setView] = useState<ViewMode>('month')
-  const [currentDate, setCurrentDate] = useState(new Date())
+// view/currentDate 受控提升到 ParentH5 外层，供"教师课后反馈"按视图范围过滤
+function ParentCalendar({
+  schedules,
+  view,
+  currentDate,
+  onViewChange,
+  onCurrentDateChange,
+}: {
+  schedules: Schedule[]
+  view: ViewMode
+  currentDate: Date
+  onViewChange: (v: ViewMode) => void
+  onCurrentDateChange: (d: Date) => void
+}) {
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null)
 
   // 导航：上/下/今天
   const handleNavigate = (direction: 'prev' | 'next' | 'today') => {
     if (direction === 'today') {
-      setCurrentDate(new Date())
+      onCurrentDateChange(new Date())
       return
     }
     const delta = direction === 'next' ? 1 : -1
     if (view === 'month') {
-      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + delta, 1))
+      onCurrentDateChange(new Date(currentDate.getFullYear(), currentDate.getMonth() + delta, 1))
     } else if (view === 'week') {
       const d = new Date(currentDate)
       d.setDate(d.getDate() + delta * 7)
-      setCurrentDate(d)
+      onCurrentDateChange(d)
     } else {
       const d = new Date(currentDate)
       d.setDate(d.getDate() + delta)
-      setCurrentDate(d)
+      onCurrentDateChange(d)
     }
   }
 
@@ -376,7 +474,7 @@ function ParentCalendar({ schedules }: { schedules: Schedule[] }) {
         currentDate={currentDate}
         view={view}
         onNavigate={handleNavigate}
-        onViewChange={setView}
+        onViewChange={onViewChange}
       />
       {view === 'month' && (
         <MonthView

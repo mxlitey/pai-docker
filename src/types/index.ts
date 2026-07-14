@@ -360,6 +360,7 @@ export interface Feedback {
   date: string
   content: string
   rating: number
+  images: string[]
   createdAt: string
 }
 
