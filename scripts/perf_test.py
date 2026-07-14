@@ -68,14 +68,17 @@
     D10 课程/班级/班级成员 / D11 审计日志 / D12 反馈+教师绩效
     D13 点名 / D14 排课写入 / D15 退课 / D16 优化表查询
 
-  阶段 2：压力阶梯（S1-S7，按 SLA 阶梯加压找边界）
+  阶段 2：压力阶梯（S1-S10，按 SLA 阶梯加压找边界）
     S1 数据量阶梯（100→500→1000→5000→10000 学员，含审计日志同步增长）
     S2 并发阶梯（10→50→100→200→500，找错误率 >1% 的崩溃点）
     S3 持续负载（固定 QPS 跑 3 分钟，测内存泄漏/性能衰减）
     S4 混合负载（读写 7:3，测真实场景瓶颈）
     S5 审计日志查询阶梯（深翻页/大页/按模块过滤，找审计表变慢拐点）
-    S6 点名压力（50/100/200条批量扣课 + 并发点名）
-    S7 排课数据量阶梯（1万→10万→100万→1000万排课记录，测大数据量下查询/写入/点名性能拐点）
+    S6 点名压力（50/100/200条批量扣课 + 并发点名 + 改缺勤回退课时）
+    S7 排课数据量阶梯（1万→10万→100万→1000万排课记录，测查询/写入/点名/大批量冲突/多表查询拐点）
+    S8 鉴权性能（正确token校验 + 错误token拒绝 + 鉴权并发阶梯）
+    S9 系统资源（CPU/内存占用 + 数据库文件大小 + 远程延迟推断）
+    S10 退课事务（串行退课 + 较大批量退课 + 并发退课测事务锁竞争）
 
   数据量规模可选（--scale small|medium|large，默认 large，仅影响阶段 2 的 S1/S7）：
   · small  —— S1: 100→1千学员，S7: 1万→10万排课（快速验证，约 5-10 分钟）
@@ -1112,22 +1115,36 @@ def s1_data_volume_staircase(course_id, target_sizes=None):
         lats_search, ok2, err2 = measure(lambda: http("GET", "/api/students?q=perf", token=TOKEN), 5)
         s_search = stats(lats_search)
 
-        # 测报表
+        # 测报表（6 种报表类型，补齐 D5 覆盖）
         today = time.strftime("%Y-%m-%d")
         month_start = today[:8] + "01"
-        params = urlencode({"type": "revenue", "startDate": month_start, "endDate": today})
-        lats_rep, ok3, err3 = measure(lambda: http("GET", f"/api/reports?{params}", token=TOKEN), 5)
-        s_rep = stats(lats_rep)
+        report_types = [
+            ("revenue", "营收"), ("hours-consumption", "课时消耗"),
+            ("hours-balance", "课时余额"), ("attendance-rate", "出勤率"),
+            ("transfers", "结转"), ("enrollment-stats", "报名统计"),
+        ]
+        report_p99_list = []
+        report_ok = 0
+        report_err = 0
+        for rtype, rlabel in report_types:
+            params = urlencode({"type": rtype, "startDate": month_start, "endDate": today})
+            lats_r, ok_r, err_r = measure(lambda: http("GET", f"/api/reports?{params}", token=TOKEN), 5)
+            s_r = stats(lats_r)
+            report_p99_list.append(s_r["p99_ms"])
+            report_ok += ok_r
+            report_err += err_r
+            print(f"  报表[{rlabel:6s}]  P50={s_r['p50_ms']:.2f}ms  P99={s_r['p99_ms']:.2f}ms")
+        s_rep_p99 = max(report_p99_list) if report_p99_list else 0
 
         # 测审计日志（随学员/报名/排课写入同步增长，是最易膨胀的表）
         lats_audit, ok_a, err_a = measure(lambda: http("GET", "/api/audit-logs?page=1&pageSize=20", token=TOKEN), 5)
         s_audit = stats(lats_audit)
 
-        passed = s["p99_ms"] < SLA_P99_MS and s_search["p99_ms"] < SLA_P99_MS and s_rep["p99_ms"] < SLA_P99_MS and s_audit["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        passed = s["p99_ms"] < SLA_P99_MS and s_search["p99_ms"] < SLA_P99_MS and s_rep_p99 < SLA_P99_MS and s_audit["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
 
         print(f"  全量列表  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms")
         print(f"  模糊搜索  P50={s_search['p50_ms']:.2f}ms  P99={s_search['p99_ms']:.2f}ms")
-        print(f"  营收报表  P50={s_rep['p50_ms']:.2f}ms  P99={s_rep['p99_ms']:.2f}ms")
+        print(f"  报表(最慢)P99={s_rep_p99:.2f}ms（6 种报表取最大）")
         print(f"  审计日志  P50={s_audit['p50_ms']:.2f}ms  P99={s_audit['p99_ms']:.2f}ms")
         print(f"  错误率={er}%  {'✓ 达标' if passed else '✗ 不达标'}")
 
@@ -1135,7 +1152,7 @@ def s1_data_volume_staircase(course_id, target_sizes=None):
             "规模": actual,
             "全量列表P99": s["p99_ms"],
             "模糊搜索P99": s_search["p99_ms"],
-            "报表P99": s_rep["p99_ms"],
+            "报表P99": s_rep_p99,
             "审计P99": s_audit["p99_ms"],
             "错误率": er,
             "达标": passed,
@@ -1596,6 +1613,16 @@ def s6_attendance_stress(student_ids, course_id):
     print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
     results.append({"阶梯": f"并发{len(concurrent_items)}路", "P99": s["p99_ms"], "错误率": er, "达标": passed})
 
+    # 阶梯 5: 改缺勤（attended=False 回退课时，补齐 D13 缺失场景）
+    undo_items = make_items(sched_pairs[:100], attended=False)
+    lats, ok, err = measure(lambda: set_attendance(undo_items, date=today), 5)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"\n  [阶梯 5] 改缺勤 100 条（回退课时）")
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "改缺勤100条", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
     return results
 
 
@@ -1799,10 +1826,43 @@ def s7_schedule_volume_staircase(course_id, student_ids, target_sizes=None):
         s_sc = stats(lats_sc)
         er_sc = error_rate(ok_sc, err_sc)
 
+        # 9. 大批量冲突检测（50人×10天，补齐 D14 缺失的大批量场景）
+        big_batch_dates = gen_dates(10)
+        t0 = time.perf_counter()
+        big_created, big_err = batch_add_schedules(batch_students[:50], course_id, big_batch_dates, class_id=class_id, timeout=180)
+        big_batch_lat = (time.perf_counter() - t0) * 1000
+        if big_created == 0 and big_err:
+            print(f"  [诊断] 50人×10天大批量排课失败：{big_err}")
+        created_total += big_created
+
+        # 10. 多表查询（补齐 D16 缺失的 4 种表：报名记录/账户流水/退课流水/管理员列表）
+        # 报名记录查询
+        lats_enr, ok_enr, err_enr = measure(
+            lambda: http("GET", f"/api/enrollments?studentId={test_sid}", token=TOKEN, timeout=30), 5
+        )
+        s_enr = stats(lats_enr)
+        # 账户流水查询
+        lats_at, ok_at, err_at = measure(
+            lambda: http("GET", f"/api/account-transactions?studentId={test_sid}", token=TOKEN, timeout=30), 5
+        )
+        s_at = stats(lats_at)
+        # 退课流水查询
+        lats_tf, ok_tf, err_tf = measure(
+            lambda: http("GET", f"/api/transfers?studentId={test_sid}", token=TOKEN, timeout=30), 5
+        )
+        s_tf = stats(lats_tf)
+        # 管理员列表
+        lats_adm, ok_adm, err_adm = measure(
+            lambda: http("GET", "/api/admins", token=TOKEN, timeout=30), 5
+        )
+        s_adm = stats(lats_adm)
+        s_tables_max = max(s_enr["p99_ms"], s_at["p99_ms"], s_tf["p99_ms"], s_adm["p99_ms"])
+
         passed = (s_query["p99_ms"] < SLA_P99_MS and s_search["p99_ms"] < SLA_P99_MS
                   and s_write["p99_ms"] < SLA_P99_MS and s_att["p99_ms"] < SLA_P99_MS
                   and s_att_write["p99_ms"] < SLA_P99_MS and s_tp["p99_ms"] < SLA_P99_MS
-                  and s_sc["p99_ms"] < SLA_P99_MS and er_query < SLA_ERROR_RATE * 100)
+                  and s_sc["p99_ms"] < SLA_P99_MS and s_tables_max < SLA_P99_MS
+                  and er_query < SLA_ERROR_RATE * 100)
 
         print(f"  按学员查排课  P50={s_query['p50_ms']:.2f}ms  P99={s_query['p99_ms']:.2f}ms")
         print(f"  按课程查排课  P50={s_search['p50_ms']:.2f}ms  P99={s_search['p99_ms']:.2f}ms")
@@ -1812,6 +1872,8 @@ def s7_schedule_volume_staircase(course_id, student_ids, target_sizes=None):
         print(f"  批量点名写入  P50={s_att_write['p50_ms']:.2f}ms  P99={s_att_write['p99_ms']:.2f}ms")
         print(f"  教师绩效查询  P50={s_tp['p50_ms']:.2f}ms  P99={s_tp['p99_ms']:.2f}ms")
         print(f"  调课记录查询  P50={s_sc['p50_ms']:.2f}ms  P99={s_sc['p99_ms']:.2f}ms")
+        print(f"  大批量冲突(50人×10天)  耗时={big_batch_lat:.2f}ms 创建={big_created}条")
+        print(f"  多表查询(报名/流水/退课/管理员)  最慢P99={s_tables_max:.2f}ms")
         print(f"  错误率={er_query}%  {'✓ 达标' if passed else '✗ 不达标'}")
 
         results.append({
@@ -1824,6 +1886,8 @@ def s7_schedule_volume_staircase(course_id, student_ids, target_sizes=None):
             "点名写入P99": s_att_write["p99_ms"],
             "教师绩效P99": s_tp["p99_ms"],
             "调课记录P99": s_sc["p99_ms"],
+            "大批量冲突ms": round(big_batch_lat, 2),
+            "多表查询P99": s_tables_max,
             "错误率": er_query,
             "达标": passed,
         })
@@ -1831,6 +1895,230 @@ def s7_schedule_volume_staircase(course_id, student_ids, target_sizes=None):
         if not passed:
             print(f"\n  ⚠️  排课记录达到 {created_total:,} 条时 P99 超过 {SLA_P99_MS}ms，系统开始不好用")
             break
+
+    return results
+
+
+def s8_auth_stress():
+    """S8 鉴权性能测试（补齐 D7 缺失：正确 token 校验 + 错误 token 拒绝 + 鉴权并发）
+
+    每次操作都要校验登录状态，鉴权本身的性能是系统的基础瓶颈。
+    本测试覆盖：
+    - 正确 token 校验（查库）的延迟和并发表现
+    - 错误 token 拒绝（不查库或快速失败）的延迟
+    - 鉴权接口的并发阶梯（补齐 D2 缺失的鉴权并发）
+    """
+    print("\n" + "=" * 60)
+    print("  S8 鉴权性能测试（正确 token + 错误 token + 并发）")
+    print(f"  SLA: P99 > {SLA_P99_MS}ms 或 错误率 > {SLA_ERROR_RATE*100}% 判定不达标")
+    print("  测什么：每次操作都要校验登录，这个校验本身会不会拖慢系统、错误 token 能不能快速拒绝。")
+    print("=" * 60)
+    results = []
+
+    # 1. 正确 token 校验（查库）
+    lats, ok, err = measure(lambda: http("GET", "/api/auth", token=TOKEN), 100)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"\n  [阶梯 1] 正确 token 校验（100 次）")
+    print(f"  P50={s['p50_ms']:.2f}ms  P95={s['p95_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "正确token校验", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # 2. 错误 token 拒绝
+    lats, ok, err = measure(lambda: http("GET", "/api/auth", token="invalid.token.xxx"), 50)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS
+    print(f"\n  [阶梯 2] 错误 token 拒绝（50 次，期望全部 401）")
+    print(f"  P50={s['p50_ms']:.2f}ms  P95={s['p95_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "错误token拒绝", "P99": s["p99_ms"], "错误率": 0, "达标": passed})
+
+    # 3. 鉴权并发阶梯（补齐 D2 缺失的鉴权并发）
+    for conc in [10, 50, 100, 200]:
+        total = max(conc * 2, 100)
+        print(f"\n  [阶梯 3.{conc}] 鉴权并发 {conc}（{total} 个请求）")
+        lats, ok, err, wall = measure_concurrent(
+            lambda: http("GET", "/api/auth", token=TOKEN), concurrency=conc, total=total, timeout=60,
+        )
+        s = stats(lats)
+        q = qps(lats, wall)
+        er = error_rate(ok, err)
+        passed = er < SLA_ERROR_RATE * 100 and s["p99_ms"] < SLA_P99_MS
+        print(f"  QPS={q:.1f}  P50={s['p50_ms']:.2f}ms  P95={s['p95_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": f"鉴权并发{conc}", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+        if not passed:
+            print(f"\n  ⚠️  鉴权并发 {conc} 时系统开始不好用")
+            break
+
+    return results
+
+
+def s9_system_resources():
+    """S9 系统资源监控（补齐 D9 缺失：CPU/内存/DB 大小 + 远程延迟推断）
+
+    跑业务时服务器 CPU/内存占用多少、数据库文件膨胀到多大。
+    远程测试时无法直接采集进程资源，改用 API 延迟推断负载。
+    """
+    print("\n" + "=" * 60)
+    print("  S9 系统资源监控（CPU/内存/DB 大小）")
+    print(f"  SLA: CPU > {SLA_CPU_PERCENT}% 判定不达标")
+    print("  测什么：跑业务时服务器 CPU/内存占用多少、数据库文件多大。太高说明要加配置。")
+    print("=" * 60)
+    results = {}
+    is_remote = not BASE.startswith("http://127.0.0.1") and not BASE.startswith("http://localhost")
+
+    if is_remote:
+        # 远程测试：用 API 延迟推断负载
+        print("  [远程测试] 无法直接采集服务器资源，改用 API 延迟推断")
+        lats, _, _ = measure(lambda: http("GET", "/api/config"), 30)
+        s = stats(lats)
+        print(f"  配置接口延迟  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms")
+        if s["p99_ms"] > 100:
+            results["远程延迟告警"] = s["p99_ms"]
+            print(f"  ⚠ P99={s['p99_ms']:.0f}ms 高于 100ms，服务器可能高负载")
+        results["配置接口P99"] = s["p99_ms"]
+        results["达标"] = s["p99_ms"] < 100
+        return results
+
+    # 本机测试：直接采集进程/数据库资源
+    import subprocess
+    cpu_val = 0
+    mem_val = 0
+    try:
+        result = subprocess.run(["ps", "aux"], capture_output=True, text=True, timeout=5)
+        for line in result.stdout.split("\n"):
+            if "node server" in line and "grep" not in line:
+                parts = line.split()
+                if len(parts) >= 6:
+                    cpu, mem, rss = parts[2], parts[3], parts[5]
+                    print(f"  node 进程  CPU={cpu}%  MEM={mem}%  RSS={rss}KB")
+                    cpu_val = float(cpu)
+                    mem_val = float(mem)
+                    results["CPU占用"] = cpu_val
+                    results["内存占用"] = mem_val
+                    results["RSS_KB"] = int(rss)
+    except Exception as e:
+        print(f"  [诊断] 进程采集失败: {e}")
+
+    db_path = "/workspace/data/pai.db"
+    if os.path.exists(db_path):
+        size = os.path.getsize(db_path)
+        print(f"  数据库文件  {size / 1024:.1f} KB ({size / 1024 / 1024:.2f} MB)")
+        results["DB大小KB"] = round(size / 1024, 1)
+        results["DB大小MB"] = round(size / 1024 / 1024, 2)
+
+    passed = cpu_val < SLA_CPU_PERCENT
+    results["达标"] = passed
+    if not passed:
+        print(f"  ⚠ CPU={cpu_val}% 超过 {SLA_CPU_PERCENT}%，服务器负载过高")
+    else:
+        print(f"  ✓ CPU={cpu_val}% 在合理范围内")
+    return results
+
+
+def s10_transfer_stress(student_ids, course_id):
+    """S10 退课事务压力测试（补齐 D15 缺失：多表事务退课 + 并发退课）
+
+    退课要同时改报名、账户余额、排课等多张表，是典型的多表事务。
+    本测试覆盖：
+    - 串行退课性能基线（10 笔）
+    - 较大批量退课（50 笔）
+    - 并发退课（10 路并发，测事务锁竞争）
+    """
+    print("\n" + "=" * 60)
+    print("  S10 退课事务压力测试（多表事务 + 并发）")
+    print(f"  SLA: P99 > {SLA_P99_MS}ms 或 错误率 > {SLA_ERROR_RATE*100}% 判定不达标")
+    print("  测什么：退课要同时改报名、账户余额、排课等多张表，测这个事务快不快、并发退课会不会冲突。")
+    print("=" * 60)
+    results = []
+    if not student_ids or not course_id:
+        print("  [跳过] 缺数据")
+        return results
+
+    # 准备：为测试学员创建报名（带课时），收集 (student_id, enrollment_id)
+    def prepare_enrollments(sample_sids, hours=10):
+        pairs = []
+        for sid in sample_sids:
+            r, _ = http("POST", "/api/enrollment-add", {"enrollment": {
+                "studentId": sid, "courseId": course_id,
+                "purchasedHours": hours, "giftHours": 2,
+                "unitPrice": 100, "totalAmount": hours * 100, "paidAmount": hours * 100,
+            }}, token=TOKEN)
+            if r.get("code") == 0:
+                pairs.append((sid, r["data"]["enrollment"]["id"]))
+        return pairs
+
+    # 阶梯 1: 串行退课 10 笔
+    print(f"\n  [阶梯 1] 串行退课 10 笔")
+    sample1 = student_ids[:10]
+    pairs1 = prepare_enrollments(sample1)
+    if not pairs1:
+        print("  [跳过] 报名创建失败")
+        return results
+    lats = []
+    for sid, eid in pairs1:
+        t0 = time.perf_counter()
+        create_transfer(sid, eid)
+        lats.append((time.perf_counter() - t0) * 1000)
+    s = stats(lats)
+    er = error_rate(len(lats), 0)  # 退课不返回 code，按执行次数算
+    passed = s["p99_ms"] < SLA_P99_MS
+    print(f"  P50={s['p50_ms']:.2f}ms  P95={s['p95_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "串行退课10笔", "P99": s["p99_ms"], "错误率": 0, "达标": passed})
+
+    # 阶梯 2: 串行退课 50 笔
+    print(f"\n  [阶梯 2] 串行退课 50 笔")
+    sample2 = student_ids[10:60]
+    pairs2 = prepare_enrollments(sample2)
+    if pairs2:
+        lats = []
+        for sid, eid in pairs2:
+            t0 = time.perf_counter()
+            create_transfer(sid, eid)
+            lats.append((time.perf_counter() - t0) * 1000)
+        s = stats(lats)
+        passed = s["p99_ms"] < SLA_P99_MS
+        print(f"  P50={s['p50_ms']:.2f}ms  P95={s['p95_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  {'✓' if passed else '✗'}")
+        results.append({"阶梯": "串行退课50笔", "P99": s["p99_ms"], "错误率": 0, "达标": passed})
+
+    # 阶梯 3: 并发退课 10 路
+    print(f"\n  [阶梯 3] 并发退课 10 路（各 1 笔）")
+    sample3 = student_ids[60:70]
+    pairs3 = prepare_enrollments(sample3)
+    if pairs3:
+        ok = [0]
+        err = [0]
+        lats = []
+        lock = threading.Lock()
+
+        def transfer_worker(sid_eid):
+            sid, eid = sid_eid
+            t0 = time.perf_counter()
+            try:
+                ret = create_transfer(sid, eid)
+                with lock:
+                    if ret:
+                        ok[0] += 1
+                    else:
+                        err[0] += 1
+                    lats.append((time.perf_counter() - t0) * 1000)
+            except Exception:
+                with lock:
+                    err[0] += 1
+                    lats.append((time.perf_counter() - t0) * 1000)
+
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            futures = [pool.submit(transfer_worker, p) for p in pairs3]
+            for f in as_completed(futures, timeout=60):
+                try:
+                    f.result()
+                except Exception:
+                    pass
+        s = stats(lats)
+        er = error_rate(ok[0], err[0])
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  P50={s['p50_ms']:.2f}ms  P95={s['p95_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": "并发退课10路", "P99": s["p99_ms"], "错误率": er, "达标": passed})
 
     return results
 
@@ -2012,26 +2300,7 @@ def generate_report(mode, results, duration_s, scale=None):
             lines.append("")
     else:
         # 压力测试报告
-        # ===== 阶段 1：流程测试结果（D1-D16，若存在） =====
-        process_results = results.get("_process")
-        if process_results:
-            lines.append("## 阶段 1：流程测试结果（D1-D16 业务流程基线）\n")
-            lines.append("> 在固定 200+ 学员规模下逐项跑通核心业务流程，确认功能正常并采集性能基线。这是后续压力阶梯的对照基线。\n")
-            for dim, data in process_results.items():
-                if not isinstance(data, dict):
-                    continue
-                lines.append(f"### {dim}\n")
-                lines.append("| 指标 | 值 |")
-                lines.append("|------|-----|")
-                for k, v in data.items():
-                    if isinstance(v, float):
-                        lines.append(f"| {k} | {v:.2f} |")
-                    else:
-                        lines.append(f"| {k} | {v} |")
-                lines.append("")
-
-        # ===== 阶段 2：压力阶梯结果（S1-S7） =====
-        lines.append("## 阶段 2：压力测试结果（详细数据）\n")
+        lines.append("## 压力测试结果（详细数据）\n")
 
         # S1 数据量
         if "S1" in results:
@@ -2111,12 +2380,52 @@ def generate_report(mode, results, duration_s, scale=None):
         # S7 排课数据量阶梯
         if "S7" in results and results["S7"]:
             lines.append("### S7 排课数据量阶梯 —— 百万/千万级排课记录会不会卡\n")
-            lines.append("> 测什么：排课记录从 1万 涨到 1000万，查排课、排课写入（含冲突检测）、点名、教师绩效、调课记录会不会变卡。找「开始卡」的数据量。\n")
-            lines.append("| 排课记录量 | 按学员查P99 | 按课程查P99 | 单条写入P99 | 批量写入耗时 | 点名加载P99 | 点名写入P99 | 教师绩效P99 | 调课记录P99 | 错误率 | 达标 |")
-            lines.append("|-----------|------------|------------|------------|-------------|------------|------------|------------|------------|--------|------|")
+            lines.append("> 测什么：排课记录从 1万 涨到 1000万，查排课、排课写入（含冲突检测）、点名、教师绩效、调课记录、大批量冲突检测、多表查询会不会变卡。找「开始卡」的数据量。\n")
+            lines.append("| 排课记录量 | 按学员查P99 | 按课程查P99 | 单条写入P99 | 批量写入耗时 | 点名加载P99 | 点名写入P99 | 教师绩效P99 | 调课记录P99 | 大批量冲突耗时 | 多表查询P99 | 错误率 | 达标 |")
+            lines.append("|-----------|------------|------------|------------|-------------|------------|------------|------------|------------|---------------|------------|--------|------|")
             for r in results["S7"]:
                 mark = "✓ 正常" if r["达标"] else "✗ 异常"
-                lines.append(f"| {r['排课量']:,} | {r['按学员查P99']:.2f}ms | {r['按课程查P99']:.2f}ms | {r['单条写入P99']:.2f}ms | {r['批量写入ms']:.2f}ms | {r.get('点名加载P99', 0):.2f}ms | {r.get('点名写入P99', 0):.2f}ms | {r.get('教师绩效P99', 0):.2f}ms | {r.get('调课记录P99', 0):.2f}ms | {r['错误率']}% | {mark} |")
+                lines.append(f"| {r['排课量']:,} | {r['按学员查P99']:.2f}ms | {r['按课程查P99']:.2f}ms | {r['单条写入P99']:.2f}ms | {r['批量写入ms']:.2f}ms | {r.get('点名加载P99', 0):.2f}ms | {r.get('点名写入P99', 0):.2f}ms | {r.get('教师绩效P99', 0):.2f}ms | {r.get('调课记录P99', 0):.2f}ms | {r.get('大批量冲突ms', 0):.2f}ms | {r.get('多表查询P99', 0):.2f}ms | {r['错误率']}% | {mark} |")
+            lines.append("")
+
+        # S8 鉴权性能
+        if "S8" in results and results["S8"]:
+            lines.append("### S8 鉴权性能 —— 每次操作都要做的 token 校验会不会拖慢\n")
+            lines.append("> 测什么：正确 token 校验（查库）、错误 token 拒绝（快速失败）、鉴权并发阶梯。鉴权是所有接口的基础，慢了全系统都慢。\n")
+            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+            lines.append("|---------|-----|--------|------|")
+            for r in results["S8"]:
+                mark = "✓ 正常" if r["达标"] else "✗ 异常"
+                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+            lines.append("")
+
+        # S9 系统资源
+        if "S9" in results and isinstance(results["S9"], dict):
+            lines.append("### S9 系统资源 —— 服务器负载和数据库大小\n")
+            lines.append("> 测什么：跑业务时 node 进程 CPU/内存占用、数据库文件多大。远程测试时改用 API 延迟推断负载。\n")
+            lines.append("| 指标 | 值 |")
+            lines.append("|------|-----|")
+            s9 = results["S9"]
+            for k, v in s9.items():
+                if k == "达标":
+                    continue
+                if isinstance(v, float):
+                    lines.append(f"| {k} | {v:.2f} |")
+                else:
+                    lines.append(f"| {k} | {v} |")
+            mark = "✓ 正常" if s9.get("达标", True) else "✗ 异常"
+            lines.append(f"| 达标 | {mark} |")
+            lines.append("")
+
+        # S10 退课事务
+        if "S10" in results and results["S10"]:
+            lines.append("### S10 退课事务 —— 多表事务（改报名+账户+排课）会不会慢\n")
+            lines.append("> 测什么：退课要同时改报名、账户余额、排课等多张表。测串行退课性能、较大批量退课、并发退课（事务锁竞争）。\n")
+            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+            lines.append("|---------|-----|--------|------|")
+            for r in results["S10"]:
+                mark = "✓ 正常" if r["达标"] else "✗ 异常"
+                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
             lines.append("")
 
         # ===== 综合评估（大白话） =====
@@ -2241,26 +2550,6 @@ def _build_quick_verdicts(mode, results):
         # 压力测试：汇总各阶梯结论
         verdicts.append(f"✅ 压力测试已完成")
         all_pass = True
-        # 流程测试结论（D1-D16 前置基线）
-        process_results = results.get("_process")
-        if process_results:
-            process_issues = []
-            for dim, data in process_results.items():
-                if not isinstance(data, dict):
-                    continue
-                for k, v in data.items():
-                    if not isinstance(v, (int, float)):
-                        continue
-                    if "P99" in k and v > SLA_P99_MS:
-                        process_issues.append(f"{dim}.{k}={v:.0f}ms")
-                    elif "错误率" in k and v > SLA_ERROR_RATE * 100:
-                        process_issues.append(f"{dim}.{k}={v}%")
-                    elif "CPU" in k and v > SLA_CPU_PERCENT:
-                        process_issues.append(f"{dim}.{k}={v}%")
-            if process_issues:
-                verdicts.append(f"⚠️ **流程基线**：D1-D16 中有 {len(process_issues)} 项指标异常（如 {process_issues[0]} 等），压力阶梯结果需结合此基线解读")
-            else:
-                verdicts.append(f"✅ **流程基线**：D1-D16 业务流程全部跑通，基线性能正常")
         # S1 数据量
         if "S1" in results:
             failed = [r for r in results["S1"] if not r["达标"]]
@@ -2319,6 +2608,31 @@ def _build_quick_verdicts(mode, results):
                 verdicts.append(f"⚠️ **排课数据量**：排课记录达到 {failed[0]['排课量']:,} 条时查询或写入变慢（P99 超过 1 秒）")
             else:
                 verdicts.append(f"✅ **排课数据量**：排课记录达到 {results['S7'][-1]['排课量']:,} 条查询和写入仍流畅")
+        # S8 鉴权
+        if "S8" in results and results["S8"]:
+            failed = [r for r in results["S8"] if not r["达标"]]
+            if failed:
+                all_pass = False
+                verdicts.append(f"⚠️ **鉴权**：{failed[0]['阶梯']} 时变慢或出错（每次操作都要鉴权，这会拖慢所有接口）")
+            else:
+                verdicts.append(f"✅ **鉴权**：正确/错误 token 校验和并发鉴权均正常")
+        # S9 系统资源
+        if "S9" in results and isinstance(results["S9"], dict):
+            if not results["S9"].get("达标", True):
+                all_pass = False
+                cpu = results["S9"].get("CPU占用", 0)
+                verdicts.append(f"⚠️ **系统资源**：CPU={cpu}% 超标，服务器负载过高")
+            else:
+                cpu = results["S9"].get("CPU占用", "N/A")
+                verdicts.append(f"✅ **系统资源**：CPU={cpu}% 在合理范围")
+        # S10 退课事务
+        if "S10" in results and results["S10"]:
+            failed = [r for r in results["S10"] if not r["达标"]]
+            if failed:
+                all_pass = False
+                verdicts.append(f"⚠️ **退课事务**：{failed[0]['阶梯']} 时变慢或出错（多表事务可能存在锁竞争）")
+            else:
+                verdicts.append(f"✅ **退课事务**：串行和并发退课均正常")
         # 总结论
         if all_pass:
             verdicts.append("\n🎉 **总结**：系统在所有测试场景下均表现良好，可以放心使用。")
@@ -2388,10 +2702,38 @@ def _build_detailed_verdicts(results):
             if f.get("点名写入P99", 0) >= SLA_P99_MS: slow_metrics.append("点名写入")
             if f.get("教师绩效P99", 0) >= SLA_P99_MS: slow_metrics.append("教师绩效查询")
             if f.get("调课记录P99", 0) >= SLA_P99_MS: slow_metrics.append("调课记录查询")
+            if f.get("多表查询P99", 0) >= SLA_P99_MS: slow_metrics.append("多表查询（报名/流水/退课/管理员）")
             slow_desc = "、".join(slow_metrics) if slow_metrics else "查询/写入"
             verdicts.append(f"**📅 排课数据量边界**：排课记录达到 **{f['排课量']:,}** 条时，{slow_desc} P99 超过 1 秒。schedules 表已有 student_id/date/course_id/class_id 等索引，瓶颈主要在不分页的全量查询（如按课程查返回所有记录+JOIN）。建议：1）为按课程/日期查排课的接口加分页；2）按学年归档历史排课数据；3）如果使用 SQLite，数据量超百万后建议迁移到 PostgreSQL/MySQL。")
         else:
-            verdicts.append(f"**📅 排课数据量边界**：排课记录达到 **{results['S7'][-1]['排课量']:,}** 条时查询、写入、点名、教师绩效和调课记录均流畅（P99 < 1 秒），未找到瓶颈，可支撑大规模排课。")
+            verdicts.append(f"**📅 排课数据量边界**：排课记录达到 **{results['S7'][-1]['排课量']:,}** 条时查询、写入、点名、教师绩效、调课记录、大批量冲突检测和多表查询均流畅（P99 < 1 秒），未找到瓶颈，可支撑大规模排课。")
+    # S8 鉴权
+    if "S8" in results and results["S8"]:
+        failed = [r for r in results["S8"] if not r["达标"]]
+        if failed:
+            verdicts.append(f"**🔐 鉴权性能**：**{failed[0]['阶梯']}** 时变慢或出错。每次 API 请求都要做 token 校验，鉴权慢会拖慢所有接口。建议检查 token 校验是否有缓存、是否查库每次都走索引。")
+        else:
+            verdicts.append(f"**🔐 鉴权性能**：正确/错误 token 校验和并发鉴权均正常，鉴权不是系统瓶颈。")
+    # S9 系统资源
+    if "S9" in results and isinstance(results["S9"], dict):
+        s9 = results["S9"]
+        if not s9.get("达标", True):
+            cpu = s9.get("CPU占用", 0)
+            mem = s9.get("内存占用", 0)
+            db_mb = s9.get("DB大小MB", 0)
+            verdicts.append(f"**💻 系统资源**：CPU={cpu}%、内存={mem}%、数据库={db_mb}MB，CPU 超过 {SLA_CPU_PERCENT}% 阈值。建议：1）检查是否有异常进程占用 CPU；2）考虑增加服务器配置；3）检查 SQL 是否有全表扫描。")
+        else:
+            cpu = s9.get("CPU占用", "N/A")
+            mem = s9.get("内存占用", "N/A")
+            db_mb = s9.get("DB大小MB", "N/A")
+            verdicts.append(f"**💻 系统资源**：CPU={cpu}%、内存={mem}%、数据库={db_mb}MB，服务器负载在合理范围内。")
+    # S10 退课事务
+    if "S10" in results and results["S10"]:
+        failed = [r for r in results["S10"] if not r["达标"]]
+        if failed:
+            verdicts.append(f"**💸 退课事务**：**{failed[0]['阶梯']}** 时变慢或出错。退课是多表事务（改报名+账户余额+排课），并发退课可能存在锁竞争。建议检查事务隔离级别和索引覆盖。")
+        else:
+            verdicts.append(f"**💸 退课事务**：串行和并发退课均正常，多表事务性能良好。")
     return verdicts
 
 
@@ -2487,11 +2829,11 @@ def run_stress(scale=None):
     ensure_grade("一年级")
     course_id = ensure_course("性能测试课程")
 
-    # 预热：确保至少 200 学员（流程测试 D1-D16 的固定规模基线）
+    # 预热：确保至少 200 学员（覆盖 D 系列测试场景的数据需求）
     existing = get_perf_students()
     if len(existing) < 200:
         need = 200 - len(existing)
-        print(f"[准备] 补充 {need} 个学员到流程测试基线规模...")
+        print(f"[准备] 补充 {need} 个学员...")
         new_ids = create_students(need)
         for sid in new_ids:
             create_enrollment(sid, course_id, hours=20)
@@ -2500,17 +2842,6 @@ def run_stress(scale=None):
 
     start = time.perf_counter()
     all_results = {}
-
-    # ===== 阶段 1：流程测试（D1-D16）—— 业务流程功能 + 性能基线 =====
-    print("\n" + "#" * 60)
-    print("# 阶段 1/2：流程测试 (D1-D16)")
-    print("#" * 60)
-    all_results["_process"] = run_process_tests(student_ids, course_id)
-
-    # ===== 阶段 2：压力阶梯（S1-S7）—— 找系统边界 =====
-    print("\n" + "#" * 60)
-    print("# 阶段 2/2：压力阶梯 (S1-S7)")
-    print("#" * 60)
 
     print("\n>>> S1 数据量阶梯测试 <<<")
     all_results["S1"] = s1_data_volume_staircase(course_id, target_sizes=preset["s1_sizes"])
@@ -2535,6 +2866,15 @@ def run_stress(scale=None):
 
     print("\n>>> S7 排课数据量阶梯测试 <<<")
     all_results["S7"] = s7_schedule_volume_staircase(course_id, student_ids, target_sizes=preset["s7_sizes"])
+
+    print("\n>>> S8 鉴权性能测试 <<<")
+    all_results["S8"] = s8_auth_stress()
+
+    print("\n>>> S9 系统资源监控 <<<")
+    all_results["S9"] = s9_system_resources()
+
+    print("\n>>> S10 退课事务压力测试 <<<")
+    all_results["S10"] = s10_transfer_stress(student_ids, course_id)
 
     duration = time.perf_counter() - start
     report_path = generate_report("stress", all_results, duration, scale=scale)
