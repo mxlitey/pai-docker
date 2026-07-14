@@ -49,47 +49,35 @@
 ================================================================
 
 【简易评估 quick】
-  固定 200 学员规模下的多维度性能快照：
-  D1 基础响应延迟 / D2 并发吞吐 / D3 DB查询 / D4 业务事务
-  D5 报表聚合 / D6 搜索 / D7 鉴权 / D8 写吞吐 / D9 系统资源
-  D10 课程/班级/班级成员 / D11 审计日志 / D12 反馈+教师绩效
-  D13 点名（读列表+批量扣课+改缺勤）
-  D14 排课写入（单条/批量/冲突检测）
-  D15 退课（多表事务）
-  D16 优化表查询（报名/账户流水/退课/调课/管理员）
+  调用 test_suite.py 的 13 个流程测试组，验证系统功能正确性：
+  组1 完整业务流程 / 组2 安全性 / 组3 业务流程 / 组4 非流程拦截
+  组5 Bug修复 / 组6 严重Bug / 组7 退课与流水 / 组8 CRUD改删
+  组9 报表与审计 / 组10 批量与成员 / 组11 灾备 / 组12 多角色 / 组13 错误边界
 
 【压力测试 stress】
-  两阶段流程：先跑流程测试做基线/冒烟，再跑压力阶梯找系统边界。
+  按 SLA 阶梯加压找系统边界，覆盖查询/并发/持续负载/混合负载/审计/点名/排课/鉴权/资源/退课/调课/CRUD/反馈/错误路径/灾备。
 
-  阶段 1：流程测试（D1-D16，固定 200+ 学员规模，与 quick 模式内容相同）
-    跑通每个核心业务流程并采集性能快照，作为后续压力阶梯的对照基线。
-    D1 基础响应延迟 / D2 并发吞吐 / D3 DB查询 / D4 业务事务
-    D5 报表聚合 / D6 搜索 / D7 鉴权 / D8 写吞吐 / D9 系统资源
-    D10 课程/班级/班级成员 / D11 审计日志 / D12 反馈+教师绩效
-    D13 点名 / D14 排课写入 / D15 退课 / D16 优化表查询
+  S1 数据量阶梯（100→500→1000→5000→10000 学员，含审计日志同步增长）
+  S2 并发阶梯（10→50→100→200→500，找错误率 >1% 的崩溃点）
+  S3 持续负载（固定 QPS 跑 3 分钟，测内存泄漏/性能衰减）
+  S4 混合负载（读写 7:3，测真实场景瓶颈）
+  S5 审计日志查询阶梯（深翻页/大页/7种过滤维度，找审计表变慢拐点）
+  S6 点名压力（50/100/200条批量扣课 + 并发点名 + 改缺勤 + 班级成员查删）
+  S7 排课数据量阶梯（1万→10万→100万→1000万排课记录，测查询/写入/点名/大批量冲突/多表查询拐点）
+  S8 鉴权性能（正确token校验 + 错误token拒绝 + 鉴权并发阶梯）
+  S9 系统资源（CPU/内存占用 + 数据库文件大小 + 远程延迟推断）
+  S10 退课事务（串行退课 + 较大批量退课 + 并发退课测事务锁竞争）
+  S11 调课/补课（排课核心写操作：取消+新建+变更记录，串行+并发）
+  S12 CRUD 改删（课程/班级/学员/排课/报名/管理员/年级/配置 PUT+DELETE）
+  S13 反馈 CRUD（feedback POST/GET/PUT/DELETE 全套）
+  S14 错误路径与边界（404/400/重复/超大页/SQL字符/emoji/冲突拒绝）
+  S15 灾备与多角色（备份/归档/权限定义/教师列表/公告/家长端/年级升级）
 
-  阶段 2：压力阶梯（S1-S15，按 SLA 阶梯加压找边界）
-    S1 数据量阶梯（100→500→1000→5000→10000 学员，含审计日志同步增长）
-    S2 并发阶梯（10→50→100→200→500，找错误率 >1% 的崩溃点）
-    S3 持续负载（固定 QPS 跑 3 分钟，测内存泄漏/性能衰减）
-    S4 混合负载（读写 7:3，测真实场景瓶颈）
-    S5 审计日志查询阶梯（深翻页/大页/7种过滤维度，找审计表变慢拐点）
-    S6 点名压力（50/100/200条批量扣课 + 并发点名 + 改缺勤 + 班级成员查删）
-    S7 排课数据量阶梯（1万→10万→100万→1000万排课记录，测查询/写入/点名/大批量冲突/多表查询拐点）
-    S8 鉴权性能（正确token校验 + 错误token拒绝 + 鉴权并发阶梯）
-    S9 系统资源（CPU/内存占用 + 数据库文件大小 + 远程延迟推断）
-    S10 退课事务（串行退课 + 较大批量退课 + 并发退课测事务锁竞争）
-    S11 调课/补课（排课核心写操作：取消+新建+变更记录，串行+并发）
-    S12 CRUD 改删（课程/班级/学员/排课/报名/管理员/年级/配置 PUT+DELETE）
-    S13 反馈 CRUD（feedback POST/GET/PUT/DELETE 全套）
-    S14 错误路径与边界（404/400/重复/超大页/SQL字符/emoji/冲突拒绝）
-    S15 灾备与多角色（备份/归档/权限定义/教师列表/公告/家长端/年级升级）
-
-  数据量规模可选（--scale small|medium|large，默认 large，仅影响阶段 2 的 S1/S7）：
+  数据量规模可选（--scale small|medium|large，默认 large，仅影响 S1/S7 阶梯上限）：
   · small  —— S1: 100→1千学员，S7: 1万→10万排课（快速验证，约 5-10 分钟）
   · medium —— S1: 100→5千学员，S7: 1万→100万排课（常规压测，约 15-30 分钟）
   · large  —— S1: 100→1万学员，S7: 1万→1000万排课（深度压测，可能 30 分钟以上）
-  注：阶段 1（D1-D16）和 S2/S3/S4/S5/S6 不受 --scale 影响，规模固定。
+  注：S2/S3/S4/S5/S6 不受 --scale 影响，规模固定。
 
   SLA 阈值：P99 > 1s 或 错误率 > 1% 或 CPU > 80% 判定「不好用」
 
@@ -106,6 +94,15 @@ import argparse
 import http.client as httplib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlencode, urlparse
+
+# 复用 test_suite.py 的流程测试（quick 模式调用）
+from test_suite import (
+    TestRunner,
+    test_full_flow, test_security, test_business_flow, test_non_flow_intercept,
+    test_bug_fixes, test_severe_bugs, test_transfer_and_flow,
+    test_crud_update_delete, test_reports_and_audit, test_batch_and_members,
+    test_disaster_recovery, test_multi_role, test_error_boundary,
+)
 
 BASE = os.environ.get("PERF_BASE", "http://127.0.0.1:8788")
 TOKEN = None
@@ -3048,8 +3045,8 @@ def generate_report(mode, results, duration_s, scale=None):
     lines.append("")
 
     if mode == "quick":
-        lines.append("## 简易评估结果（详细数据）\n")
-        lines.append("固定 200+ 学员规模下的多维度性能快照。每个维度测一项常用操作。\n")
+        lines.append("## 流程测试结果（各测试组通过/失败统计）\n")
+        lines.append("调用 test_suite.py 的 13 个流程测试组，覆盖完整业务流程、安全性、Bug 修复、退课与流水、CRUD 改删、报表与审计、批量与成员、灾备、多角色、错误边界。\n")
         for dim, data in results.items():
             lines.append(f"### {dim}\n")
             lines.append("| 指标 | 值 |")
@@ -3341,28 +3338,29 @@ def _build_quick_verdicts(mode, results):
     """生成「测试结果速读」——一句话结论，用大白话告诉用户系统好不好用"""
     verdicts = []
     if mode == "quick":
-        # 简易评估：看几个关键指标
-        verdicts.append(f"✅ 测试已完成，耗时 {int(results.get('_duration', 0))} 秒" if False else "✅ 简易评估已完成")
-        # 检查是否有明显异常的指标
+        # 流程测试：汇总各测试组通过/失败
+        verdicts.append("✅ 流程测试已完成")
+        # 检查是否有失败用例
         issues = []
+        total_pass = 0
+        total_fail = 0
         for dim, data in results.items():
             if not isinstance(data, dict):
                 continue
-            for k, v in data.items():
-                if not isinstance(v, (int, float)):
-                    continue
-                if "P99" in k and v > SLA_P99_MS:
-                    issues.append(f"{dim} 的 {k}={v:.0f}ms 超过 1 秒")
-                elif "错误率" in k and v > SLA_ERROR_RATE * 100:
-                    issues.append(f"{dim} 的 {k}={v}% 超过 1%")
-                elif "CPU" in k and v > SLA_CPU_PERCENT:
-                    issues.append(f"{dim} 的 {k}={v}% 超过 80%")
+            failed = data.get("失败", 0)
+            passed = data.get("通过", 0)
+            total_pass += passed if isinstance(passed, int) else 0
+            total_fail += failed if isinstance(failed, int) else 0
+            if isinstance(failed, int) and failed > 0:
+                issues.append(f"{dim} 有 {failed} 个用例失败")
+        if total_pass + total_fail > 0:
+            verdicts.append(f"**总计**：{total_pass} 通过 / {total_fail} 失败")
         if issues:
-            verdicts.append("⚠️ 发现以下问题需关注：")
-            for i in issues[:5]:
+            verdicts.append("⚠️ 以下测试组有失败用例需关注：")
+            for i in issues[:10]:
                 verdicts.append(f"   - {i}")
         else:
-            verdicts.append("✅ 各项指标均在正常范围内，系统运行良好。")
+            verdicts.append("✅ 全部 13 个测试组用例均通过，系统功能正常。")
     else:
         # 压力测试：汇总各阶梯结论
         verdicts.append(f"✅ 压力测试已完成")
@@ -3664,34 +3662,84 @@ def run_process_tests(student_ids, course_id):
 
 
 def run_quick():
-    """简易评估：D1-D9"""
+    """简易评估：调用 test_suite 的 13 个流程测试组
+
+    quick 模式已从「固定 200 学员的性能快照（D1-D16）」改为
+    「调用 test_suite.py 的 13 个流程测试组」，覆盖完整业务流程、
+    安全性、Bug 修复验证、退课与流水、CRUD 改删、报表与审计、
+    批量与成员、灾备、多角色、错误边界等场景。
+    """
     print("=" * 60)
-    print("  排课系统简易性能评估 (quick)")
+    print("  排课系统简易评估 (quick) — 流程测试")
     print("  时间: " + time.strftime("%Y-%m-%d %H:%M:%S"))
     print("=" * 60)
 
+    # perf_test 自己登录，写全局 TOKEN；test_suite 的 TestRunner 复用此 token
     login()
-    ensure_grade("一年级")
-    course_id = ensure_course("性能测试课程")
 
-    # 补齐 200 学员
-    existing = get_perf_students()
-    print(f"[准备] 现有 perf_ 学员: {len(existing)}")
-    if len(existing) < 200:
-        need = 200 - len(existing)
-        print(f"[准备] 补充 {need} 个学员...")
-        new_ids = create_students(need)
-        for sid in new_ids:
-            create_enrollment(sid, course_id, hours=20)
+    # 构造 TestRunner，复用 perf_test 的 BASE 和 TOKEN
+    t = TestRunner(BASE)
+    t.token = TOKEN
 
-    student_ids = [s["id"] for s in get_perf_students()]
-    print(f"[准备] 测试学员: {len(student_ids)}")
+    # 唯一前缀，避免与历史数据冲突（test_suite.main 同款做法）
+    prefix = f"T{int(time.time())}"
+
+    # 测试组执行序列（顺序与 test_suite.main 一致，test_full_flow 必须最先跑）
+    groups = [
+        ("组1完整流程",    lambda t, p, ctx: test_full_flow(t, p)),
+        ("组2安全性",      lambda t, p, ctx: test_security(t, p)),
+        ("组3业务流程",    lambda t, p, ctx: test_business_flow(t, p, ctx)),
+        ("组4非流程拦截",  lambda t, p, ctx: test_non_flow_intercept(t, p, ctx)),
+        ("组5Bug修复",     lambda t, p, ctx: test_bug_fixes(t, p, ctx)),
+        ("组6严重Bug",     lambda t, p, ctx: test_severe_bugs(t, p, ctx)),
+        ("组7退课与流水",  lambda t, p, ctx: test_transfer_and_flow(t, p, ctx)),
+        ("组8CRUD改删",    lambda t, p, ctx: test_crud_update_delete(t, p, ctx)),
+        ("组9报表与审计",  lambda t, p, ctx: test_reports_and_audit(t, p, ctx)),
+        ("组10批量与成员", lambda t, p, ctx: test_batch_and_members(t, p, ctx)),
+        ("组11灾备",       lambda t, p, ctx: test_disaster_recovery(t, p, ctx)),
+        ("组12多角色",     lambda t, p, ctx: test_multi_role(t, p, ctx)),
+        ("组13错误边界",   lambda t, p, ctx: test_error_boundary(t, p, ctx)),
+    ]
 
     start = time.perf_counter()
-    all_results = run_process_tests(student_ids, course_id)
+    results = {}
+    ctx = None
+
+    for name, fn in groups:
+        passed_before, failed_before = t.passed, t.failed
+        # token 可能在长流程中失效，失效时重登一次
+        try:
+            if name == "组1完整流程":
+                ctx = fn(t, prefix, None)
+            else:
+                fn(t, prefix, ctx)
+        except Exception as e:
+            print(f"  [异常] {name} 执行出错: {e}")
+            t.failed += 1
+            t.errors.append(f"[FAIL] {name} 异常: {e}")
+        # 若 token 失效导致大面积失败，重登后继续下一组
+        if t.token is None or (t.failed > failed_before and t.token):
+            # 检查是否 token 失效（最近失败信息含 401/token）
+            recent_errors = t.errors[-5:] if len(t.errors) >= 5 else t.errors
+            if any("401" in str(e) or "token" in str(e).lower() for e in recent_errors):
+                print(f"  [重登] {name} 后检测到 token 失效，重新登录...")
+                login()
+                t.token = TOKEN
+
+        passed = t.passed - passed_before
+        failed = t.failed - failed_before
+        results[name] = {
+            "通过": passed,
+            "失败": failed,
+            "错误率": round(failed * 100.0 / max(passed + failed, 1), 2),
+        }
+
     duration = time.perf_counter() - start
 
-    report_path = generate_report("quick", all_results, duration)
+    # 汇总打印
+    t.summary()
+
+    report_path = generate_report("quick", results, duration)
     print("\n" + "=" * 60)
     print("  简易评估完成")
     print("=" * 60)
