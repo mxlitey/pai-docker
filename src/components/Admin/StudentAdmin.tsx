@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Student, EnrollmentSummary, GradeStatus, Grade } from '@/types'
+import type { Student, Enrollment, EnrollmentSummary, Course, GradeStatus, Grade } from '@/types'
 import { cn } from '@/utils/cn'
 import {
   Button,
@@ -19,6 +19,10 @@ interface StudentAdminProps {
   grades: Grade[]
   // 学员报名汇总：studentId -> 汇总（由父级从 enrollment 聚合后传入）
   summaries: Record<string, EnrollmentSummary>
+  // 学员报名明细：studentId -> 该学员的 active 报名列表（按课程展示课时）
+  enrollmentsByStudent: Record<string, Enrollment[]>
+  // 课程列表（用于 courseId -> courseName 映射）
+  courses: Course[]
   busy: boolean
   onBack: () => void
   onDelete: (student: Student) => void
@@ -29,7 +33,13 @@ interface StudentAdminProps {
 
 const PAGE_SIZE = 10
 
-export function StudentAdmin({ students, grades, summaries, busy, onBack, onDelete, onAdd, onUpdate, onGradesChange }: StudentAdminProps) {
+export function StudentAdmin({ students, grades, summaries, enrollmentsByStudent, courses, busy, onBack, onDelete, onAdd, onUpdate, onGradesChange }: StudentAdminProps) {
+  // courseId -> courseName 映射（O(1) 查找，避免每行遍历）
+  const courseNameMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const c of courses) m[c.id] = c.name
+    return m
+  }, [courses])
   const [page, setPage] = useState(1)
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Student | null>(null)
@@ -107,13 +117,16 @@ export function StudentAdmin({ students, grades, summaries, busy, onBack, onDele
                   <tr className="border-b border-border text-muted-foreground text-xs">
                     <th className="text-left py-2 px-2 font-medium">{'姓名'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'年级'}</th>
-                    <th className="text-left py-2 px-2 font-medium">{'报名课程'}</th>
-                    <th className="text-left py-2 px-2 font-medium">{'剩余课时'}</th>
+                    <th className="text-left py-2 px-2 font-medium">{'报名课程 [剩余/报名(赠)]'}</th>
                     <th className="text-right py-2 px-2 font-medium">{'操作'}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pageItems.map((s) => (
+                  {pageItems.map((s) => {
+                    const sum = summaries[s.id]
+                    const enrList = enrollmentsByStudent[s.id] || []
+                    const hasEnrollments = !!sum && sum.count > 0 && enrList.length > 0
+                    return (
                     <tr
                       key={s.id}
                       className="border-b border-border hover:bg-muted/50 transition-colors"
@@ -122,60 +135,51 @@ export function StudentAdmin({ students, grades, summaries, busy, onBack, onDele
                       <td className="py-2.5 px-2 text-muted-foreground">
                         {s.grade || <span className="text-muted-foreground/40">—</span>}
                       </td>
-                      <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap">
+                      <td className="py-2.5 px-2 text-muted-foreground">
                         {(() => {
-                          const sum = summaries[s.id]
-                          if (!sum || sum.count === 0) {
+                          if (!hasEnrollments) {
                             return <span className="text-muted-foreground/40">—</span>
                           }
-                          return (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="px-1.5 py-0.5 rounded bg-primary/10 text-brand-700 text-xs font-medium">
-                                {sum.count} 门
-                              </span>
-                              {sum.giftHours > 0 && (
-                                <span className="text-xs text-amber-600">{'含赠'} {sum.giftHours}</span>
-                              )}
-                            </span>
-                          )
-                        })()}
-                      </td>
-                      <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap">
-                        {(() => {
-                          const sum = summaries[s.id]
-                          if (!sum || sum.count === 0) {
-                            return <span className="text-muted-foreground/40">—</span>
-                          }
-                          const remaining = sum.remainingHours
-                          const total = sum.purchasedHours + sum.giftHours
+                          // 每门课程一个 chip：课程名[剩余/报名(赠)]
+                          // flex-wrap 自动换行，每个 chip 是不可分割整体（whitespace-nowrap + inline-flex）
                           // 续费预警：剩余 ≤ 阈值（且 > 0）标橙，=0 标红
-                          const isWarning = remaining > 0 && remaining <= renewalThreshold
                           return (
-                            <span>
-                              <span
-                                className={
+                            <div className="flex flex-wrap gap-1.5">
+                              {enrList.map((e) => {
+                                const courseName = courseNameMap[e.courseId] || e.courseId.slice(-6)
+                                const remaining = e.remainingPaidHours + e.remainingGiftHours
+                                const total = e.purchasedHours + e.giftHours
+                                const isWarning = remaining > 0 && remaining <= renewalThreshold
+                                const remainingColor =
                                   remaining === 0
-                                    ? 'text-destructive font-medium'
+                                    ? 'text-destructive'
                                     : isWarning
-                                      ? 'text-amber-600 font-medium'
-                                      : 'text-foreground font-medium'
-                                }
-                              >
-                                {remaining}
-                              </span>
-                              <span className="text-muted-foreground/70"> / {total}</span>
-                              {remaining === 0 && (
-                                <span className="ml-1 text-xs text-destructive">{'已用完'}</span>
-                              )}
-                              {isWarning && (
-                                <span className="ml-1 text-xs text-amber-500" title={`剩余 ≤ ${renewalThreshold}，建议续费`}>{'需续费'}</span>
-                              )}
-                              {sum.remainingGiftHours > 0 && (
-                                <span className="ml-1 text-xs text-amber-600">
-                                  ({'赠'} {sum.remainingGiftHours})
-                                </span>
-                              )}
-                            </span>
+                                      ? 'text-amber-600'
+                                      : 'text-foreground'
+                                return (
+                                  <span
+                                    key={e.id}
+                                    className="inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded bg-muted/60 text-xs"
+                                    title={`${courseName}：剩余 ${remaining} / 报名 ${total}${e.giftHours > 0 ? `（赠 ${e.giftHours}）` : ''}`}
+                                  >
+                                    <span className="text-muted-foreground">{courseName}</span>
+                                    <span className="text-muted-foreground/50 mx-0.5">[</span>
+                                    <span className={cn('font-medium', remainingColor)}>{remaining}</span>
+                                    <span className="text-muted-foreground/70">/{total}</span>
+                                    {e.giftHours > 0 && (
+                                      <span className="text-amber-600">({e.giftHours})</span>
+                                    )}
+                                    <span className="text-muted-foreground/50 mx-0.5">]</span>
+                                    {remaining === 0 && (
+                                      <span className="ml-0.5 text-destructive">已用完</span>
+                                    )}
+                                    {isWarning && (
+                                      <span className="ml-0.5 text-amber-500" title={`剩余 ≤ ${renewalThreshold}，建议续费`}>需续费</span>
+                                    )}
+                                  </span>
+                                )
+                              })}
+                            </div>
                           )
                         })()}
                       </td>
@@ -196,7 +200,8 @@ export function StudentAdmin({ students, grades, summaries, busy, onBack, onDele
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { Student, Course, EnrollmentSummary, Grade, CurrentAdmin } from '@/types'
+import type { Student, Course, Enrollment, EnrollmentSummary, Grade, CurrentAdmin } from '@/types'
 import { searchStudents, getAnnouncement } from '@/api'
 import {
   verifyAuth,
@@ -290,6 +290,8 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
   const [grades, setGrades] = useState<Grade[]>([])
   // 学员报名汇总：studentId -> 汇总（从全部 active enrollment 聚合）
   const [enrollmentSummaries, setEnrollmentSummaries] = useState<Record<string, EnrollmentSummary>>({})
+  // 学员报名明细：studentId -> 该学员的 active 报名列表（供学员管理页按课程展示课时）
+  const [enrollmentsByStudent, setEnrollmentsByStudent] = useState<Record<string, Enrollment[]>>({})
 
   // 操作状态
   const [busy, setBusy] = useState(false)
@@ -365,11 +367,13 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
   }, [])
 
   // 加载全部报名记录并聚合为「学员 -> 报名汇总」映射，供学员管理页展示
+  // 同时保留「学员 -> 报名明细列表」映射，供学员管理页按课程展示课时
   const loadEnrollmentSummaries = useCallback(async () => {
     try {
       const result = await listEnrollments({ status: 'active' })
       if (result.code !== 0) return
       const map: Record<string, EnrollmentSummary> = {}
+      const detailMap: Record<string, Enrollment[]> = {}
       for (const e of result.data.enrollments) {
         let s = map[e.studentId]
         if (!s) {
@@ -393,8 +397,12 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
         s.remainingHours = s.remainingPaidHours + s.remainingGiftHours
         s.totalAmount += e.totalAmount
         s.paidAmount += e.paidAmount
+        // 明细列表
+        if (!detailMap[e.studentId]) detailMap[e.studentId] = []
+        detailMap[e.studentId].push(e)
       }
       setEnrollmentSummaries(map)
+      setEnrollmentsByStudent(detailMap)
     } catch (e) {
       console.error('加载报名汇总失败:', e)
     }
@@ -742,6 +750,8 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
             students={students}
             grades={grades}
             summaries={enrollmentSummaries}
+            enrollmentsByStudent={enrollmentsByStudent}
+            courses={courses}
             busy={busy}
             onBack={() => goSubPage(null)}
             onDelete={handleDeleteStudent}
