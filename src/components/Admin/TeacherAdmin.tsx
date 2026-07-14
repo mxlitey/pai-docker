@@ -205,6 +205,8 @@ function FeedbackPanel() {
                 <tr className="border-b border-border text-muted-foreground text-xs">
                   <th className="text-left py-2 px-2 font-medium whitespace-nowrap">{'日期'}</th>
                   <th className="text-left py-2 px-2 font-medium whitespace-nowrap">{'学员'}</th>
+                  <th className="text-left py-2 px-2 font-medium whitespace-nowrap">{'年级'}</th>
+                  <th className="text-left py-2 px-2 font-medium whitespace-nowrap">{'班级'}</th>
                   <th className="text-left py-2 px-2 font-medium whitespace-nowrap">{'课程'}</th>
                   <th className="text-left py-2 px-2 font-medium whitespace-nowrap">{'教师'}</th>
                   <th className="text-left py-2 px-2 font-medium whitespace-nowrap">{'评分'}</th>
@@ -220,7 +222,9 @@ function FeedbackPanel() {
                   >
                     <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{fb.date || '—'}</td>
                     <td className="py-2 px-2 text-foreground whitespace-nowrap">{fb.studentName || '—'}</td>
-                    <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{fb.courseId || fb.teacherName || '—'}</td>
+                    <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{fb.grade || '—'}</td>
+                    <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{fb.className || '—'}</td>
+                    <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{fb.courseName || '—'}</td>
                     <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{fb.teacherName || '—'}</td>
                     <td className="py-2 px-2 text-amber-500 whitespace-nowrap" title={`${fb.rating} 星`}>
                       {renderStars(fb.rating)}

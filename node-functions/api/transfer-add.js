@@ -70,12 +70,12 @@ export default async function onRequestPost(context) {
         balanceAfter: result.balanceAfter,
       },
     })
-    const cancelNote = result.cancelledSchedules > 0
-      ? `，已取消 ${result.cancelledSchedules} 节未来排课`
+    const deleteNote = result.deletedSchedules > 0
+      ? `，已删除 ${result.deletedSchedules} 节未来排课`
       : ''
     return json({
       code: 0,
-      message: `已退课：折算 ¥${result.refundAmount} 入账户余额，当前余额 ¥${result.balanceAfter}${cancelNote}`,
+      message: `已退课：折算 ¥${result.refundAmount} 入账户余额，当前余额 ¥${result.balanceAfter}${deleteNote}`,
       data: result,
     })
   } catch (e) {

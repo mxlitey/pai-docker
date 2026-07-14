@@ -15,18 +15,28 @@ function parseImages(raw) {
 }
 
 // ========== 课后反馈 feedback ==========
+// 查询反馈列表，LEFT JOIN courses/schedules/classes 取课程名/班级名/年级供前端展示
 export async function getFeedback({ scheduleId, teacherId, studentId, courseId } = {}) {
   const db = getDb()
-  let sql = 'SELECT * FROM feedback WHERE 1=1'
+  let sql = `SELECT f.*, c.name AS course_name, cl.name AS class_name,
+    COALESCE(cl.grade, c.grade) AS grade
+    FROM feedback f
+    LEFT JOIN courses c ON c.id = f.course_id
+    LEFT JOIN schedules s ON s.id = f.schedule_id
+    LEFT JOIN classes cl ON cl.id = s.class_id
+    WHERE 1=1`
   const params = []
-  if (scheduleId) { sql += ' AND schedule_id=?'; params.push(scheduleId) }
-  if (teacherId) { sql += ' AND teacher_id=?'; params.push(teacherId) }
-  if (studentId) { sql += ' AND student_id=?'; params.push(studentId) }
-  if (courseId) { sql += ' AND course_id=?'; params.push(courseId) }
-  sql += ' ORDER BY created_at DESC'
+  if (scheduleId) { sql += ' AND f.schedule_id=?'; params.push(scheduleId) }
+  if (teacherId) { sql += ' AND f.teacher_id=?'; params.push(teacherId) }
+  if (studentId) { sql += ' AND f.student_id=?'; params.push(studentId) }
+  if (courseId) { sql += ' AND f.course_id=?'; params.push(courseId) }
+  sql += ' ORDER BY f.created_at DESC'
   const rows = db.prepare(sql).all(...params)
   return rows.map((r) => ({
     id: r.id, scheduleId: r.schedule_id, courseId: r.course_id,
+    courseName: r.course_name || '',
+    className: r.class_name || '',
+    grade: r.grade || '',
     teacherId: r.teacher_id, teacherName: r.teacher_name,
     studentId: r.student_id, studentName: r.student_name,
     date: r.date, content: r.content, rating: r.rating,

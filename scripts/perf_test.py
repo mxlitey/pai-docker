@@ -4843,15 +4843,15 @@ def test_transfer_and_flow(t, prefix, ctx):
     settled_found = any(e.get('status') == 'settled' for e in enrollments)
     t.assert_true(settled_found, '退课后报名状态变为 settled')
 
-    # 验证退课后排课被取消
-    # 注：/api/schedules 会过滤掉 status='cancelled' 的排课，故通过 transfer 返回的
-    # cancelledSchedules 计数 + 该排课已不在活跃列表中 双重验证
-    cancel_count = tf_body.get('data', {}).get('cancelledSchedules', 0)
+    # 验证退课后未来排课被硬删除
+    # 退课时硬删除该学员该课程未来未点名的排课，故通过 transfer 返回的
+    # deletedSchedules 计数 + 该排课已不在列表中 双重验证
+    delete_count = tf_body.get('data', {}).get('deletedSchedules', 0)
     _, sched_after = t.get(f'/api/schedules?studentId={stu_id}')
     t.assert_ok((200, sched_after), '查询退课后排课')
     schedules = sched_after.get('data', {}).get('schedules', [])
     still_active = any(s.get('id') == sched_id for s in schedules)
-    t.assert_true(cancel_count > 0 and not still_active, '退课后未来排课被取消')
+    t.assert_true(delete_count > 0 and not still_active, '退课后未来排课被硬删除')
 
     # 查询退课流水
     _, transfers = t.get(f'/api/transfers?studentId={stu_id}')

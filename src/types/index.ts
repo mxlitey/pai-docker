@@ -353,6 +353,9 @@ export interface Feedback {
   id: string
   scheduleId: string
   courseId: string
+  courseName?: string
+  className?: string
+  grade?: string
   teacherId: string
   teacherName: string
   studentId: string

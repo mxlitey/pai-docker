@@ -56,12 +56,12 @@ export async function refundEnrollment({ transfer }) {
     db.prepare(`UPDATE enrollments SET remaining_paid_hours=0, remaining_gift_hours=0, status='settled' WHERE id=?`)
       .run(from.id)
 
-    // 退课后取消该学员该课程未来未点名的排课（date >= 今天 且 attended IS NULL）
-    // 已点名的历史排课保留，未来排课取消避免点名时找不到 active 报名记录
-    // 同时取消插班补课生成的排课（其 makeup_for 指向该课程的原排课），避免漏掉孤儿排课
+    // 退课后硬删除该学员该课程未来未点名的排课（date >= 今天 且 attended IS NULL）
+    // 已点名的历史排课保留用于报表统计；未来未点名排课直接删除，避免点名时找不到 active 报名记录
+    // 同时删除插班补课生成的排课（其 makeup_for 指向该课程的原排课），避免漏掉孤儿排课
     const todayStr = today()
-    const cancelInfo = db.prepare(
-      `UPDATE schedules SET status='cancelled'
+    const deleteInfo = db.prepare(
+      `DELETE FROM schedules
        WHERE student_id=? AND date>=? AND attended IS NULL AND status='scheduled'
          AND (course_id=? OR makeup_for IN (
            SELECT id FROM schedules WHERE student_id=? AND course_id=?
@@ -106,7 +106,7 @@ export async function refundEnrollment({ transfer }) {
       giftMode,
       settledEnrollmentId: from.id,
       balanceAfter,
-      cancelledSchedules: cancelInfo.changes || 0,
+      deletedSchedules: deleteInfo.changes || 0,
     }
   })
 
