@@ -169,7 +169,7 @@ export async function getClassMembers(classId) {
   const rows = db.prepare(`SELECT s.id, s.name, s.grade, s.phone, s.status, cm.created_at AS joined_at
     FROM class_members cm
     JOIN students s ON s.id = cm.student_id
-    WHERE cm.class_id=?
+    WHERE cm.class_id=? AND s.deleted_at IS NULL
     ORDER BY s.name, s.id`).all(classId)
   return rows.map((r) => ({
     id: r.id,
@@ -193,7 +193,7 @@ export async function addClassMembers(classId, studentIds) {
     const stmt = db.prepare('INSERT OR IGNORE INTO class_members (class_id, student_id, created_at) VALUES (?, ?, ?)')
     for (const sid of studentIds) {
       if (!sid) continue
-      if (!db.prepare('SELECT 1 FROM students WHERE id=?').get(sid)) continue
+      if (!db.prepare('SELECT 1 FROM students WHERE id=? AND deleted_at IS NULL').get(sid)) continue
       const info = stmt.run(classId, sid, now())
       if (info.changes > 0) added++
     }

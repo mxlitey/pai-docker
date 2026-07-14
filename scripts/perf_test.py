@@ -3647,6 +3647,14 @@ def test_full_flow(t, prefix):
         '提交反馈'
     )
 
+    # 同一排课重复反馈应被拒（业务规则：同一排课只允许一条反馈）
+    dup_resp = t.post('/api/feedback', {
+        'scheduleId': sched_id, 'studentId': stu['id'],
+        'studentName': stu['name'], 'date': yesterday,
+        'courseId': math['id'], 'content': '重复反馈测试', 'rating': 3
+    })
+    t.assert_fail(dup_resp, '同一排课重复反馈应被拒', '重复')
+
     return {
         'grade_name': grade_name, 'math': math, 'cls': cls, 'stu': stu,
         'enr_id': enr_id, 'sched_id': sched_id,
@@ -3805,6 +3813,9 @@ def test_security(t, prefix, ctx=None):
     # 验证注入名学员存在
     injected = [s for s in body['data']['students'] if s['name'] == inject_name]
     t.assert_true(len(injected) > 0, 'SQL 注入名学员被正常存储')
+    # 清理 SQL 注入测试学员（无报名可直接软删除）
+    if injected:
+        t.delete('/api/student-delete', {'studentId': injected[0]['id']})
 
 
 # ============================================================
@@ -4458,6 +4469,16 @@ def test_business_rules(t, prefix, ctx):
         t.delete('/api/student-delete', {'studentId': rule6_stu['id']}),
         '无课时后删除学员'
     )
+
+    # === 软删除验证：学员列表不可见，但报名数据保留 ===
+    print('  --- 软删除验证 ---')
+    _, list_body = t.get('/api/students')
+    deleted_in_list = [s for s in list_body['data']['students'] if s['id'] == rule6_stu['id']]
+    t.assert_true(len(deleted_in_list) == 0, '软删除后学员列表不显示该学员')
+    # 报名数据应保留（软删除不删关联数据）
+    _, enr_body = t.get(f'/api/enrollments?studentId={rule6_stu["id"]}')
+    retained_enrs = enr_body.get('data', {}).get('enrollments', [])
+    t.assert_true(len(retained_enrs) > 0, '软删除后报名数据保留')
 
     # === 报名有效期处理 ===
     print('  --- 报名有效期处理 ---')

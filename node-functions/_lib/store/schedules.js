@@ -74,7 +74,7 @@ export async function getSchedulesByDateRange(studentId, startDate, endDate) {
   return rows.map(rowToSchedule)
 }
 
-export async function searchSchedules({ startDate, endDate, courseId, grade, teacher, teacherId, classId, attended } = {}) {
+export async function searchSchedules({ startDate, endDate, courseId, grade, teacher, teacherId, classId, attended, excludeFeedback } = {}) {
   const db = getDb()
   // 未传日期范围时默认查当月，避免全表扫描返回太多数据
   if (!startDate && !endDate) {
@@ -94,7 +94,7 @@ export async function searchSchedules({ startDate, endDate, courseId, grade, tea
   if (startDate) { sql += ' AND s.date>=?'; params.push(startDate) }
   if (endDate) { sql += ' AND s.date<=?'; params.push(endDate) }
   if (courseId) { sql += ' AND s.course_id=?'; params.push(courseId) }
-  if (grade) { sql += ' AND s.student_id IN (SELECT id FROM students WHERE grade=?)'; params.push(grade) }
+  if (grade) { sql += ' AND s.student_id IN (SELECT id FROM students WHERE grade=? AND deleted_at IS NULL)'; params.push(grade) }
   // 老师过滤：优先用 teacher_id（准确），兼容旧接口的 teacher 名字过滤
   if (teacherId) { sql += ' AND s.teacher_id=?'; params.push(teacherId) }
   else if (teacher) { sql += ' AND s.teacher=?'; params.push(teacher) }
@@ -103,6 +103,10 @@ export async function searchSchedules({ startDate, endDate, courseId, grade, tea
   // 注意：未点名的排课 attended 为 NULL，不会匹配 true/false 任一过滤
   if (attended === true) { sql += ' AND s.attended=1' }
   else if (attended === false) { sql += ' AND s.attended=0' }
+  // 排除已有反馈的排课：新增反馈时只展示尚未反馈的到课排课
+  if (excludeFeedback) {
+    sql += ' AND NOT EXISTS (SELECT 1 FROM feedback WHERE schedule_id=s.id)'
+  }
   sql += ' ORDER BY s.date, s.start_time LIMIT 5000'
   const rows = db.prepare(sql).all(...params)
   return rows.map(rowToSchedule)
@@ -167,7 +171,7 @@ export async function batchAddSchedules(schedules) {
   }
   const studentExists = (studentId) => {
     if (studentCache.has(studentId)) return studentCache.get(studentId)
-    const row = db.prepare('SELECT 1 FROM students WHERE id=?').get(studentId)
+    const row = db.prepare('SELECT 1 FROM students WHERE id=? AND deleted_at IS NULL').get(studentId)
     const exists = !!row
     studentCache.set(studentId, exists)
     return exists

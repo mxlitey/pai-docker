@@ -3,7 +3,7 @@
 // POST   /api/feedback  body: fb                                     -> 新增反馈，需 feedback:create
 // PUT    /api/feedback  body: { id, ...patch }                       -> 更新反馈(content/rating/images)，需 feedback:update
 // DELETE /api/feedback?id=                                            -> 删除反馈，需 feedback:delete
-import { getFeedback, addFeedback, updateFeedback, deleteFeedback, getScheduleById, json } from '../_lib/store.js'
+import { getFeedback, addFeedback, updateFeedback, deleteFeedback, getScheduleById, hasFeedbackByScheduleId, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 import { unlink } from 'node:fs/promises'
@@ -91,6 +91,11 @@ async function handlePost(context) {
       // 防止绕过前端选课界面直接 POST 反馈到未到课的排课
       if (schedule.attended !== true) {
         return json({ code: 1, message: '只能为已到课的学员添加课后反馈', data: null }, 400)
+      }
+      // 业务规则：同一排课只允许一条课后反馈，防止重复反馈
+      const existed = await hasFeedbackByScheduleId(fb.scheduleId)
+      if (existed) {
+        return json({ code: 1, message: '该排课已有课后反馈，不能重复添加', data: null }, 400)
       }
       // 自动补全 studentId/studentName/courseId/date 从排课记录
       fb.studentId = fb.studentId || schedule.studentId

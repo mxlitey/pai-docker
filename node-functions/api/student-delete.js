@@ -1,6 +1,6 @@
-// 删除学员 API
+// 删除学员 API（软删除）
 // DELETE /api/student-delete  body: { studentId }
-// 删除指定学员及其所有排课数据
+// 软删除学员：仅标记 deleted_at，保留所有关联数据用于报表统计和历史追溯
 // 业务约束：
 //   - 有剩余课时的报名记录存在时，禁止删除（须先走退课流程）
 //   - 账户有余额时允许删除，但返回提示需退费
@@ -59,7 +59,7 @@ export default async function onRequestDelete(context) {
     if (!result.studentRemoved) {
       return json({
         code: 0,
-        message: '未找到该学员（已清理其残留排课文件）',
+        message: '未找到该学员（可能已被删除）',
         data: result,
       })
     }
@@ -70,9 +70,7 @@ export default async function onRequestDelete(context) {
     const balanceHint = balance > 0
       ? `，账户余额 ${balance.toFixed(2)} 元需退费`
       : ''
-    const auditSummary = `删除学员「${studentName}」` +
-      (result.deletedScheduleFiles > 0 ? `（同时清理 ${result.deletedScheduleFiles} 个排课文件）` : '') +
-      balanceHint
+    const auditSummary = `删除学员「${studentName}」（软删除，关联数据已保留）` + balanceHint
 
     await writeAudit(context, {
       action: 'delete',
@@ -85,7 +83,7 @@ export default async function onRequestDelete(context) {
     })
     return json({
       code: 0,
-      message: `学员已删除，清理 ${result.deletedScheduleFiles} 个排课文件${balanceHint}`,
+      message: `学员已删除（关联数据已保留）${balanceHint}`,
       data: { ...result, balanceRefunded: balance > 0 },
     })
   } catch (e) {

@@ -337,6 +337,9 @@ export function getDb() {
   rebuildTransfersTable(db)
   // students 补 balance 列
   ensureColumn(db, 'students', 'balance', 'REAL NOT NULL DEFAULT 0')
+  // students 软删除字段：NULL=未删除，非空=删除时间戳
+  // 软删除后学员在列表中不可见，但关联数据（排课/报名/反馈等）全部保留用于报表统计
+  ensureColumn(db, 'students', 'deleted_at', 'TEXT')
   // classes 补齐 grade 列（旧库兼容）
   ensureColumn(db, 'classes', 'grade', "TEXT DEFAULT ''")
   // classes/schedules 补齐 teacher_id 列（关联老师账号 admins.id）

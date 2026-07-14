@@ -69,7 +69,7 @@ export async function refundEnrollment({ transfer }) {
     ).run(transfer.studentId, todayStr, from.course_id, transfer.studentId, from.course_id)
 
     // 金额进学员账户余额（仅当金额 > 0）
-    let balanceAfter = Number(db.prepare('SELECT balance FROM students WHERE id=?').get(transfer.studentId)?.balance || 0)
+    let balanceAfter = Number(db.prepare('SELECT balance FROM students WHERE id=? AND deleted_at IS NULL').get(transfer.studentId)?.balance || 0)
     if (refundAmount > 0) {
       const r = adjustBalanceTx(db, {
         studentId: transfer.studentId,

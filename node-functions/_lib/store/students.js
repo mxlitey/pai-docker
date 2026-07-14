@@ -29,24 +29,25 @@ function rowToStudent(r) {
 export async function getStudents(q) {
   const db = getDb()
   if (!q || !q.trim()) {
-    const rows = db.prepare('SELECT * FROM students ORDER BY created_at, id').all()
+    const rows = db.prepare('SELECT * FROM students WHERE deleted_at IS NULL ORDER BY created_at, id').all()
     return rows.map(rowToStudent)
   }
   const kw = q.trim()
   // 精确匹配 + 模糊匹配，用 CASE 保持「精确在前」的排序（与原 JS filter 行为一致）
+  // 过滤已软删除的学员（deleted_at IS NULL）
   const rows = db.prepare(
     `SELECT * FROM students
-     WHERE name = ? OR name LIKE ?
+     WHERE deleted_at IS NULL AND (name = ? OR name LIKE ?)
      ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END, created_at, id`,
   ).all(kw, `%${kw}%`, kw)
   return rows.map(rowToStudent)
 }
 
-// 按 id 取单个学员（不存在返回 null）
+// 按 id 取单个学员（不存在/已删除返回 null）
 export async function getStudentById(studentId) {
   if (!studentId) return null
   const db = getDb()
-  const row = db.prepare('SELECT * FROM students WHERE id=?').get(studentId)
+  const row = db.prepare('SELECT * FROM students WHERE id=? AND deleted_at IS NULL').get(studentId)
   return row ? rowToStudent(row) : null
 }
 
@@ -85,7 +86,7 @@ export async function addStudent(student) {
 export async function updateStudent(student) {
   validateStorageId(student?.id, 'student.id')
   const db = getDb()
-  const old = db.prepare('SELECT * FROM students WHERE id = ?').get(student.id)
+  const old = db.prepare('SELECT * FROM students WHERE id = ? AND deleted_at IS NULL').get(student.id)
   if (!old) return { updated: false, notFound: true, nameChanged: false, updatedScheduleFiles: 0 }
   const before = rowToStudent(old)
   const nameChanged = old.name !== student.name
@@ -112,24 +113,18 @@ export async function updateStudent(student) {
   return { updated: true, notFound: false, nameChanged, updatedScheduleFiles, before, after, student: after }
 }
 
+// 软删除学员：仅标记 deleted_at，保留所有关联数据（排课/报名/反馈/班级成员/调课记录等）
+// 用于报表统计和历史追溯。查询学员时通过 deleted_at IS NULL 过滤已删除学员。
+// 删除前须确保无剩余课时（由 API 层校验），退课时已取消未来未点名排课，故无需在此清理排课。
 export async function deleteStudentWithSchedules(studentId) {
   validateStorageId(studentId, 'studentId')
   const db = getDb()
-  const tx = db.transaction(() => {
-    const oldRow = db.prepare('SELECT * FROM students WHERE id=?').get(studentId)
-    const before = oldRow ? rowToStudent(oldRow) : null
-    // 保留历史数据用于报表统计（营收/报名/结转/课时消耗/出勤率）：
-    //   - enrollments（报名记录）：营收报表、报名统计报表的数据源
-    //   - transfers（退课记录）：结转统计报表的数据源
-    //   - schedules WHERE attended IS NOT NULL（已点名排课）：课时消耗、出勤率报表的数据源
-    //   - account_transactions（账户流水）：保留以备审计追溯
-    // 仅删除未点名排课（避免幽灵排课）和业务关联记录（班级成员/反馈/调课记录）
-    const del = db.prepare('DELETE FROM schedules WHERE student_id=? AND attended IS NULL').run(studentId)
-    db.prepare('DELETE FROM feedback WHERE student_id=?').run(studentId)
-    db.prepare('DELETE FROM class_members WHERE student_id=?').run(studentId)
-    db.prepare('DELETE FROM schedule_changes WHERE student_id=?').run(studentId)
-    const stu = db.prepare('DELETE FROM students WHERE id=?').run(studentId)
-    return { deletedScheduleFiles: del.changes > 0 ? 1 : 0, studentRemoved: stu.changes > 0, before }
-  })
-  return tx()
+  const oldRow = db.prepare('SELECT * FROM students WHERE id=? AND deleted_at IS NULL').get(studentId)
+  if (!oldRow) {
+    return { deletedScheduleFiles: 0, studentRemoved: false, before: null }
+  }
+  const before = rowToStudent(oldRow)
+  // 软删除：仅标记 deleted_at，不删除任何关联数据
+  db.prepare('UPDATE students SET deleted_at=? WHERE id=?').run(now(), studentId)
+  return { deletedScheduleFiles: 0, studentRemoved: true, before }
 }

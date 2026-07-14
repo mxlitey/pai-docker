@@ -35,6 +35,14 @@ export async function getFeedback({ scheduleId, teacherId, studentId, courseId }
   }))
 }
 
+// 检查某排课是否已有反馈（同一排课只允许一条反馈）
+export async function hasFeedbackByScheduleId(scheduleId) {
+  if (!scheduleId) return false
+  const db = getDb()
+  const row = db.prepare('SELECT 1 FROM feedback WHERE schedule_id=? LIMIT 1').get(scheduleId)
+  return !!row
+}
+
 export async function addFeedback(fb) {
   const db = getDb()
   const id = genFeedbackId()

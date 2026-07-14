@@ -94,7 +94,7 @@ export async function deleteGrade(gradeId) {
   if (!grade) return { deleted: false, notFound: true }
   const before = rowToGrade(grade)
   // 引用检查：仍有学员/课程使用该年级名称则拒绝删除
-  const studentCount = db.prepare("SELECT COUNT(*) as c FROM students WHERE grade=?").get(grade.name).c
+  const studentCount = db.prepare("SELECT COUNT(*) as c FROM students WHERE grade=? AND deleted_at IS NULL").get(grade.name).c
   const courseCount = db.prepare("SELECT COUNT(*) as c FROM courses WHERE grade=?").get(grade.name).c
   if (studentCount > 0 || courseCount > 0) {
     return { deleted: false, inUse: true, studentCount, courseCount }
@@ -109,6 +109,6 @@ export async function promoteStudents(fromGradeName, toGradeName) {
   if (!fromGradeName || !toGradeName) throw new Error('源年级与目标年级均不能为空')
   if (fromGradeName === toGradeName) return { promoted: 0, same: true }
   const db = getDb()
-  const info = db.prepare('UPDATE students SET grade=? WHERE grade=?').run(toGradeName, fromGradeName)
+  const info = db.prepare('UPDATE students SET grade=? WHERE grade=? AND deleted_at IS NULL').run(toGradeName, fromGradeName)
   return { promoted: info.changes, same: false, fromGradeName, toGradeName }
 }

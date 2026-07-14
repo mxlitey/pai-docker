@@ -585,6 +585,7 @@ export async function searchSchedules(params: {
   classId?: string
   teacherId?: string
   attended?: boolean
+  excludeFeedback?: boolean
 }): Promise<ApiResult<{ schedules: Schedule[]; total: number }>> {
   const qs = new URLSearchParams()
   if (params.startDate) qs.set('startDate', params.startDate)
@@ -595,6 +596,7 @@ export async function searchSchedules(params: {
   if (params.teacherId) qs.set('teacherId', params.teacherId)
   if (params.attended === true) qs.set('attended', 'true')
   else if (params.attended === false) qs.set('attended', 'false')
+  if (params.excludeFeedback) qs.set('excludeFeedback', '1')
   const query = qs.toString()
   return request(`${API_BASE}/schedules-search${query ? '?' + query : ''}`, { method: 'GET' })
 }

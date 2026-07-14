@@ -33,7 +33,7 @@ export function adjustBalanceTx(db, { studentId, type, amount, direction, refTyp
   if (!['in', 'out'].includes(direction)) throw new Error('adjustBalanceTx direction 仅允许 in/out')
   const amt = Number(amount || 0)
   if (!Number.isFinite(amt) || amt <= 0) throw new Error('adjustBalanceTx amount 需为正数')
-  const stu = db.prepare('SELECT balance FROM students WHERE id=?').get(studentId)
+  const stu = db.prepare('SELECT balance FROM students WHERE id=? AND deleted_at IS NULL').get(studentId)
   if (!stu) throw new Error('学员不存在')
   const cur = Number(stu.balance || 0)
   const next = direction === 'in' ? cur + amt : cur - amt

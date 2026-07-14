@@ -35,6 +35,8 @@ export default async function onRequestGet(context) {
   let attended
   if (attendedRaw === 'true') attended = true
   else if (attendedRaw === 'false') attended = false
+  // excludeFeedback=1：排除已有反馈的排课（新增反馈时只展示尚未反馈的到课排课）
+  const excludeFeedback = url.searchParams.get('excludeFeedback') === '1'
 
   // 日期格式校验：传了就必须合法，避免脏输入触发异常分支
   if (startDate && !DATE_RE.test(startDate)) {
@@ -66,6 +68,7 @@ export default async function onRequestGet(context) {
       teacherId,
       classId,
       attended,
+      excludeFeedback,
     })
     // 批量标记哪些缺勤排课已安排补课（补课按钮隐藏依据）
     const idsWithMakeup = await getScheduleIdsWithMakeup(schedules.map((s) => s.id))

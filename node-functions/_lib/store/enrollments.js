@@ -70,7 +70,7 @@ export async function addEnrollment(enrollment) {
 
   const useBalance = !!enrollment.useBalance
   const tx = db.transaction(() => {
-    if (!db.prepare('SELECT 1 FROM students WHERE id=?').get(enrollment.studentId)) {
+    if (!db.prepare('SELECT 1 FROM students WHERE id=? AND deleted_at IS NULL').get(enrollment.studentId)) {
       return { created: false, notFound: 'student' }
     }
     if (!db.prepare('SELECT 1 FROM courses WHERE id=?').get(enrollment.courseId)) {
@@ -94,7 +94,7 @@ export async function addEnrollment(enrollment) {
     let balanceDeduct = 0
     let balanceAfter = 0
     if (useBalance) {
-      const stu = db.prepare('SELECT balance FROM students WHERE id=?').get(enrollment.studentId)
+      const stu = db.prepare('SELECT balance FROM students WHERE id=? AND deleted_at IS NULL').get(enrollment.studentId)
       const cur = Number(stu?.balance || 0)
       balanceDeduct = Math.min(cur, paidAmount)
       balanceDeduct = Math.round(balanceDeduct * 100) / 100
