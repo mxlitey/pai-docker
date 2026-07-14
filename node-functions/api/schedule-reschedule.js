@@ -88,6 +88,19 @@ export default async function onRequestPost(context) {
         const stuName = stu?.name || original.studentId
         return json({ code: 1, message: `学员「${stuName}」未报名原排课课程，无法调课`, data: { noEnrollment: true } }, 400)
       }
+      // 剩余课时校验：调课后点名会扣原排课课程的课时，须至少有 1 课时剩余
+      const totalRemaining = enrs.reduce(
+        (sum, e) => sum + (Number(e.remainingPaidHours) || 0) + (Number(e.remainingGiftHours) || 0),
+        0,
+      )
+      if (totalRemaining <= 0) {
+        const stu = await getStudentById(original.studentId)
+        const stuName = stu?.name || original.studentId
+        return json(
+          { code: 1, message: `学员「${stuName}」原排课课程剩余课时不足，无法调课`, data: { insufficientHours: true } },
+          400,
+        )
+      }
     }
 
     const operatorId = context.admin?.id || ''

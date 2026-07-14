@@ -342,15 +342,21 @@ export async function batchSetAttendance(items) {
 
       if (newAttended) {
         // === 到课：扣减课时 ===
-        let enr = findEnrollment(row.course_id)
+        // 补课优先扣原排课课程的报名（请假→补课场景：扣的是请请假那门课的课时）
+        // 只有原排课课程没报名时，才按当前排课课程扣（普通排课/非插班补课）
+        let enr
         let deductedCourseName = row.course_name || row.course_id
-        // 补课且当前课程找不到报名：回退到原排课课程扣课时
-        if (!enr && row.makeup_for) {
+        if (row.makeup_for) {
           const originalRow = db.prepare('SELECT * FROM schedules WHERE id=?').get(row.makeup_for)
-          if (originalRow && originalRow.course_id && originalRow.course_id !== row.course_id) {
+          if (originalRow && originalRow.course_id) {
             enr = findEnrollment(originalRow.course_id)
             deductedCourseName = originalRow.course_name || originalRow.course_id
           }
+        }
+        // 非补课，或补课但原排课课程找不到报名时，按当前排课课程扣
+        if (!enr) {
+          enr = findEnrollment(row.course_id)
+          deductedCourseName = row.course_name || row.course_id
         }
         if (!enr) {
           errors.push(`学员 ${row.student_id} 未报名课程 ${row.course_name || row.course_id}（含原排课课程），跳过课时扣减`)

@@ -3869,6 +3869,91 @@ def test_business_flow(t, prefix, ctx):
     eng_enr = next((e for e in body['data']['enrollments'] if e['courseId'] == english['id']), None)
     t.assert_true(eng_enr is None, '英语无报名记录(插班补课不要求报名目标课程)')
 
+    # === 3.1b 课时不足时调课/补课应被拦截 ===
+    # 原排课课程剩余课时为 0 时，调课/补课 API 应直接拦截（点名会扣原报名课时）
+    print('  --- 3.1b 课时不足时调课/补课拦截 ---')
+    name_1h = gen_name()
+    body = t.assert_ok(
+        t.post('/api/student-add', {'student': {
+            'name': name_1h, 'grade': grade_name, 'phone': gen_phone(),
+            'status': 'active', 'source': 'insufficient-test'
+        }}),
+        '创建课时不足测试学员'
+    )
+    stu_1h = body['data']['student']
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': cls['id'], 'studentIds': [stu_1h['id']]}),
+        '课时不足测试学员加入班级'
+    )
+    t.assert_ok(
+        t.post('/api/enrollment-add', {'enrollment': {
+            'studentId': stu_1h['id'], 'courseId': math['id'],
+            'purchasedHours': 1, 'unitPrice': 100,
+            'totalAmount': 100, 'paidAmount': 100
+        }}),
+        '报名数学(1课时)'
+    )
+    # 排课C → 点名到课消耗 1 课时（让 remainingPaidHours=0）
+    date_c = date_offset(2)
+    resp, sched_c_id = add_single_schedule(t, {
+        'studentId': stu_1h['id'], 'studentName': stu_1h['name'],
+        'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
+        'teacher': cls['teacher'], 'location': cls['location'],
+        'date': date_c, 'startTime': '09:00', 'endTime': '10:30',
+        'color': math['color']
+    })
+    t.assert_ok(resp, '排课C(消耗课时用)')
+    t.assert_ok(
+        t.post('/api/attendance', {'date': date_c, 'items': [
+            {'scheduleId': sched_c_id, 'studentId': stu_1h['id'], 'attended': True}
+        ]}),
+        '排课C点名到课(消耗1课时)'
+    )
+    body = t.assert_ok(t.get(f'/api/enrollments?studentId={stu_1h["id"]}'), '查询报名(消耗后)')
+    enr_1h = next(e for e in body['data']['enrollments'] if e['courseId'] == math['id'])
+    t.assert_eq(enr_1h['remainingPaidHours'] + enr_1h['remainingGiftHours'], 0, '剩余课时应为0')
+
+    # 排课A → 标记缺勤（补课前置）
+    date_a = date_offset(-2)
+    resp, sched_a_id = add_single_schedule(t, {
+        'studentId': stu_1h['id'], 'studentName': stu_1h['name'],
+        'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
+        'teacher': cls['teacher'], 'location': cls['location'],
+        'date': date_a, 'startTime': '14:00', 'endTime': '15:30',
+        'color': math['color']
+    })
+    t.assert_ok(resp, '排课A(待补课)')
+    t.assert_ok(
+        t.post('/api/attendance', {'date': date_a, 'items': [
+            {'scheduleId': sched_a_id, 'studentId': stu_1h['id'], 'attended': False}
+        ]}),
+        '排课A标记缺勤(补课前置)'
+    )
+    # 排课B（待调课，未点名）
+    date_b = date_offset(4)
+    resp, sched_b_id = add_single_schedule(t, {
+        'studentId': stu_1h['id'], 'studentName': stu_1h['name'],
+        'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
+        'teacher': cls['teacher'], 'location': cls['location'],
+        'date': date_b, 'startTime': '09:00', 'endTime': '10:30',
+        'color': math['color']
+    })
+    t.assert_ok(resp, '排课B(待调课)')
+
+    # 补课应被拦截（剩余课时不足）
+    resp = t.post('/api/schedule-makeup', {
+        'scheduleId': sched_a_id, 'newDate': date_offset(6),
+        'newStartTime': '14:00', 'newEndTime': '15:30', 'reason': '课时不足测试'
+    })
+    t.assert_fail(resp, '课时不足时补课应被拦截', '剩余课时不足')
+
+    # 调课应被拦截（剩余课时不足）
+    resp = t.post('/api/schedule-reschedule', {
+        'scheduleId': sched_b_id, 'newDate': date_offset(7),
+        'newStartTime': '14:00', 'newEndTime': '15:30', 'reason': '课时不足测试'
+    })
+    t.assert_fail(resp, '课时不足时调课应被拦截', '剩余课时不足')
+
     # === 3.2 调课流程 ===
     print('  --- 3.2 调课 ---')
     resched_date = date_offset(3)
