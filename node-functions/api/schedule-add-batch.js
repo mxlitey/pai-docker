@@ -95,6 +95,10 @@ export default async function onRequestPost(context) {
     if (!cls) {
       return json({ code: 1, message: `班级 id="${classId}" 不存在`, data: null }, 404)
     }
+    // 班级与课程须一致（与 schedule-update 防护一致）
+    if (cls.courseId && cls.courseId !== courseId) {
+      return json({ code: 1, message: `班级「${cls.name}」关联的课程与排课课程不一致`, data: null }, 400)
+    }
     // 校验所有学员均为该班级成员
     const members = await getClassMembers(classId)
     const memberIdSet = new Set(members.map((m) => m.id))

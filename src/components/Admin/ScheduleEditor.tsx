@@ -1,69 +1,65 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
 import type { Schedule, Student } from '@/types'
-import { updateSchedule, deleteSchedule } from '@/api/admin'
+import { updateSchedule, batchUpdateSchedules, deleteSchedule } from '@/api/admin'
 import { cn } from '@/utils/cn'
 import { Modal, ModalFooter, Button, confirmDialog, inputClass } from '@/components/ui'
 import { TeacherSelect } from '@/components/Admin/TeacherSelect'
 
 interface ScheduleEditorProps {
-  schedule: Schedule | null
+  schedules: Schedule[]              // 选中的排课（1 条=单条编辑，多条=批量编辑）
   students: Student[]
   onClose: () => void
   onUpdated: () => void
 }
 
-// 表单初始值
-function createForm(schedule: Schedule | null): Schedule {
-  return (
-    schedule || {
-      id: '',
-      studentId: '',
-      studentName: '',
-      courseName: '',
-      teacher: '',
-      teacherId: '',
-      location: '',
-      date: '',
-      startTime: '',
-      endTime: '',
-      note: '',
+// 表单初始值（取第一条排课作为模板）
+function createForm(schedules: Schedule[]): Schedule {
+  if (schedules.length === 0) {
+    return {
+      id: '', studentId: '', studentName: '', courseName: '', teacher: '', teacherId: '',
+      location: '', date: '', startTime: '', endTime: '', note: '',
     }
-  )
+  }
+  return { ...schedules[0] }
 }
 
 export function ScheduleEditor({
-  schedule,
+  schedules,
   students,
   onClose,
   onUpdated,
 }: ScheduleEditorProps) {
-  const [form, setForm] = useState<Schedule>(createForm(schedule))
-  const [original, setOriginal] = useState<Schedule | null>(schedule)
+  const isBatch = schedules.length > 1
+  const [form, setForm] = useState<Schedule>(createForm(schedules))
+  const [originals, setOriginals] = useState<Schedule[]>(schedules)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
   useEffect(() => {
-    setForm(createForm(schedule))
-    setOriginal(schedule)
+    setForm(createForm(schedules))
+    setOriginals(schedules)
     setError('')
     setSuccess('')
-  }, [schedule])
+  }, [schedules])
 
-  if (!schedule) return null
+  if (schedules.length === 0) return null
 
-  // 是否跨月/跨学员
+  const original = originals[0]
+
+  // 是否跨月（单条模式下检查）
   const isCrossMonth =
+    !isBatch &&
     original &&
     (original.studentId !== form.studentId || original.date.slice(0, 7) !== form.date.slice(0, 7))
 
   const handleChange = (field: keyof Schedule, value: string) => {
     setForm((f) => {
       const next = { ...f, [field]: value }
-      // 学员变更时同步 studentName
-      if (field === 'studentId') {
+      // 学员变更时同步 studentName（仅单条模式）
+      if (field === 'studentId' && !isBatch) {
         const student = students.find((s) => s.id === value)
         next.studentName = student?.name || ''
       }
@@ -86,26 +82,60 @@ export function ScheduleEditor({
       setError('日期格式应为 yyyy-MM-dd')
       return
     }
-    if (!form.studentId) {
+    if (!isBatch && !form.studentId) {
       setError('请选择学员')
       return
     }
 
     setSaving(true)
     try {
-      const result = await updateSchedule(original!, form)
-      if (result.code === 0) {
-        setSuccess(
-          result.data.moved
-            ? `已跨月迁移：${result.data.fromKey} → ${result.data.toKey}`
-            : '排课已更新',
-        )
-        setTimeout(() => {
-          onUpdated()
-          onClose()
-        }, 800)
+      if (isBatch) {
+        // 批量模式：对每条排课应用统一的新值（保留各自 id/studentId/studentName）
+        const items = originals.map((old) => ({
+          old,
+          new: {
+            ...old,
+            courseName: form.courseName,
+            date: form.date,
+            startTime: form.startTime,
+            endTime: form.endTime,
+            teacher: form.teacher,
+            teacherId: form.teacherId,
+            location: form.location,
+            note: form.note,
+          },
+        }))
+        const result = await batchUpdateSchedules(items)
+        if (result.code === 0) {
+          const { updated, failed } = result.data
+          setSuccess(
+            failed > 0
+              ? `已更新 ${updated} 条，失败 ${failed} 条`
+              : `已更新 ${updated} 条排课`,
+          )
+          setTimeout(() => {
+            onUpdated()
+            onClose()
+          }, 1000)
+        } else {
+          setError(result.message)
+        }
       } else {
-        setError(result.message)
+        // 单条模式（原逻辑）
+        const result = await updateSchedule(originals[0], form)
+        if (result.code === 0) {
+          setSuccess(
+            result.data.moved
+              ? `已跨月迁移：${result.data.fromKey} → ${result.data.toKey}`
+              : '排课已更新',
+          )
+          setTimeout(() => {
+            onUpdated()
+            onClose()
+          }, 800)
+        } else {
+          setError(result.message)
+        }
       }
     } catch (e) {
       setError('请求失败：' + (e as Error).message)
@@ -144,14 +174,17 @@ export function ScheduleEditor({
 
   return (
     <Modal
-      title={'编辑排课'}
+      title={isBatch ? `批量修改排课（${schedules.length} 条）` : '编辑排课'}
       onClose={onClose}
       size="lg"
       footer={
         <div className="flex justify-between w-full items-center">
-          <Button variant="danger" onClick={handleDelete} loading={deleting} disabled={saving}>
-            {'删除排课'}
-          </Button>
+          {!isBatch && (
+            <Button variant="danger" onClick={handleDelete} loading={deleting} disabled={saving}>
+              {'删除排课'}
+            </Button>
+          )}
+          {isBatch && <div className="text-xs text-muted-foreground/70">批量模式不支持删除</div>}
           <div className="flex gap-2">
             <ModalFooter
               onCancel={onClose}
@@ -159,36 +192,51 @@ export function ScheduleEditor({
               loading={saving}
               confirmDisabled={deleting}
               cancelText={'取消'}
-              confirmText={'保存'}
+              confirmText={isBatch ? '保存全部' : '保存'}
             />
           </div>
         </div>
       }
     >
       <div className="space-y-4">
+        {/* 批量模式提示 */}
+        {isBatch && (
+          <div className="bg-blue-50 border border-blue-200 rounded-md px-3 py-2 text-xs text-blue-700">
+            批量修改 {schedules.length} 条排课，修改的字段将统一应用到所有选中排课。学员字段保持各自不变。
+          </div>
+        )}
+
         {/* 必填说明 */}
         <div className="text-xs text-muted-foreground/70">
           <span className="text-destructive">*</span> 为必填项
         </div>
 
         {/* 不可编辑的 id */}
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0">排课ID</span>
-          <span className="text-sm text-muted-foreground font-mono bg-background px-2 py-1 rounded break-all">
-            {form.id}
-          </span>
-        </div>
+        {!isBatch && (
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0">排课ID</span>
+            <span className="text-sm text-muted-foreground font-mono bg-background px-2 py-1 rounded break-all">
+              {form.id}
+            </span>
+          </div>
+        )}
 
-        {/* 学员选择（搜索） */}
+        {/* 学员选择（批量模式下只读） */}
         <div className="flex items-start gap-4">
           <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">
-            <span className="text-destructive mr-0.5">*</span>{'学员'}
+            {!isBatch && <span className="text-destructive mr-0.5">*</span>}{'学员'}
           </span>
-          <StudentSearchSelect
-            students={students}
-            value={form.studentId}
-            onChange={(id) => handleChange('studentId', id)}
-          />
+          {isBatch ? (
+            <div className="flex-1 px-3 py-2 bg-muted/30 rounded-md text-sm text-muted-foreground">
+              {schedules.length} 名学员（各自不变）
+            </div>
+          ) : (
+            <StudentSearchSelect
+              students={students}
+              value={form.studentId}
+              onChange={(id) => handleChange('studentId', id)}
+            />
+          )}
         </div>
 
         {/* 课程名称 */}
@@ -274,7 +322,7 @@ export function ScheduleEditor({
           />
         </div>
 
-        {/* 跨月提示 */}
+        {/* 跨月提示（仅单条模式） */}
         {isCrossMonth && (
           <div className="bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-xs text-amber-700">
             ⚠ 检测到跨月/跨学员变更，系统将自动迁移存储路径：

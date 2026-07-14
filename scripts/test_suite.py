@@ -156,6 +156,38 @@ def gen_phone():
     return '139' + ''.join(random.choice('0123456789') for _ in range(8))
 
 
+def add_single_schedule(t, sched):
+    """单条排课（走 batch API），返回 (resp, schedule_id)。
+    sched 为原 schedule-add 的 schedule 字典（含 studentId/date/courseId/classId 等）。
+    resp 为 t.post 返回的 (status, body) 元组，可直接传给 t.assert_ok；
+    schedule_id 为查询到的排课 id 字符串（失败为 None）。"""
+    batch_body = {
+        'studentIds': [sched['studentId']],
+        'classId': sched.get('classId', ''),
+        'courseId': sched.get('courseId', ''),
+        'courseName': sched.get('courseName', ''),
+        'teacher': sched.get('teacher', ''),
+        'teacherId': sched.get('teacherId', ''),
+        'location': sched.get('location', ''),
+        'color': sched.get('color', ''),
+        'dates': [sched['date']],
+        'startTime': sched.get('startTime', ''),
+        'endTime': sched.get('endTime', ''),
+        'note': sched.get('note', ''),
+    }
+    if sched.get('makeupFor'):
+        batch_body['makeupFor'] = sched['makeupFor']
+    resp = t.post('/api/schedule-add-batch', batch_body)
+    schedule_id = None
+    if resp[1].get('code') == 0:
+        _, qbody = t.get(f"/api/schedules?studentId={sched['studentId']}&startDate={sched['date']}&endDate={sched['date']}")
+        for s in qbody.get('data', {}).get('schedules', []):
+            if s.get('date') == sched['date'] and s.get('courseId') == sched.get('courseId'):
+                schedule_id = s.get('id')
+                break
+    return resp, schedule_id
+
+
 # ============================================================
 # 测试组 1: 完整业务流程
 # ============================================================
@@ -221,19 +253,22 @@ def test_full_flow(t, prefix):
     )
     enr_id = body['data']['enrollment']['id']
 
+    # 学员加入班级（batch 排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': cls['id'], 'studentIds': [stu['id']]}),
+        '学员加入班级'
+    )
+
     # 排课(昨天)
     yesterday = date_offset(-1)
-    body = t.assert_ok(
-        t.post('/api/schedule-add', {'schedule': {
-            'studentId': stu['id'], 'studentName': stu['name'],
-            'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
-            'teacher': cls['teacher'], 'location': cls['location'],
-            'date': yesterday, 'startTime': '09:00', 'endTime': '10:30',
-            'color': math['color'], 'status': 'scheduled', 'note': ''
-        }}),
-        '排课(昨天)'
-    )
-    sched_id = body['data']['schedule']['id']
+    resp, sched_id = add_single_schedule(t, {
+        'studentId': stu['id'], 'studentName': stu['name'],
+        'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
+        'teacher': cls['teacher'], 'location': cls['location'],
+        'date': yesterday, 'startTime': '09:00', 'endTime': '10:30',
+        'color': math['color'], 'note': ''
+    })
+    t.assert_ok(resp, '排课(昨天)')
 
     # === 课时扣减/回退核心验证 ===
 
@@ -279,17 +314,15 @@ def test_full_flow(t, prefix):
     sched_ids = []
     for i in range(10):
         d = date_offset(-(10 + i))  # 不同日期避免唯一约束冲突
-        body = t.assert_ok(
-            t.post('/api/schedule-add', {'schedule': {
-                'studentId': stu['id'], 'studentName': stu['name'],
-                'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
-                'teacher': cls['teacher'], 'location': cls['location'],
-                'date': d, 'startTime': '09:00', 'endTime': '10:30',
-                'color': math['color'], 'status': 'scheduled'
-            }}),
-            f'排课 #{i+1}(消耗付费课时)'
-        )
-        sched_ids.append(body['data']['schedule']['id'])
+        resp, sid = add_single_schedule(t, {
+            'studentId': stu['id'], 'studentName': stu['name'],
+            'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
+            'teacher': cls['teacher'], 'location': cls['location'],
+            'date': d, 'startTime': '09:00', 'endTime': '10:30',
+            'color': math['color']
+        })
+        t.assert_ok(resp, f'排课 #{i+1}(消耗付费课时)')
+        sched_ids.append(sid)
 
     # 全部点到课(10 条,扣 10 付费课时 → 0 付费 + 2 赠课)
     items = [{'scheduleId': sid, 'studentId': stu['id'], 'attended': True} for sid in sched_ids]
@@ -311,17 +344,14 @@ def test_full_flow(t, prefix):
 
     # 5. 再到课 1 次: 应扣赠课
     extra_date = date_offset(-21)
-    body = t.assert_ok(
-        t.post('/api/schedule-add', {'schedule': {
-            'studentId': stu['id'], 'studentName': stu['name'],
-            'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
-            'teacher': cls['teacher'], 'location': cls['location'],
-            'date': extra_date, 'startTime': '09:00', 'endTime': '10:30',
-            'color': math['color'], 'status': 'scheduled'
-        }}),
-        '排课(测试扣赠课)'
-    )
-    extra_sched = body['data']['schedule']['id']
+    resp, extra_sched = add_single_schedule(t, {
+        'studentId': stu['id'], 'studentName': stu['name'],
+        'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
+        'teacher': cls['teacher'], 'location': cls['location'],
+        'date': extra_date, 'startTime': '09:00', 'endTime': '10:30',
+        'color': math['color']
+    })
+    t.assert_ok(resp, '排课(测试扣赠课)')
     t.assert_ok(
         t.post('/api/attendance', {'date': extra_date, 'items': [
             {'scheduleId': extra_sched, 'studentId': stu['id'], 'attended': True}
@@ -569,17 +599,14 @@ def test_business_flow(t, prefix, ctx):
 
     # 排数学课
     makeup_date = date_offset(-3)
-    body = t.assert_ok(
-        t.post('/api/schedule-add', {'schedule': {
-            'studentId': stu['id'], 'studentName': stu['name'],
-            'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
-            'teacher': cls['teacher'], 'location': cls['location'],
-            'date': makeup_date, 'startTime': '14:00', 'endTime': '15:30',
-            'color': math['color'], 'status': 'scheduled'
-        }}),
-        '排数学课(待补课)'
-    )
-    makeup_orig_id = body['data']['schedule']['id']
+    resp, makeup_orig_id = add_single_schedule(t, {
+        'studentId': stu['id'], 'studentName': stu['name'],
+        'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
+        'teacher': cls['teacher'], 'location': cls['location'],
+        'date': makeup_date, 'startTime': '14:00', 'endTime': '15:30',
+        'color': math['color']
+    })
+    t.assert_ok(resp, '排数学课(待补课)')
 
     # 标记缺勤(补课前置条件: 原排课须已缺勤)
     t.assert_ok(
@@ -624,17 +651,14 @@ def test_business_flow(t, prefix, ctx):
     # === 3.2 调课流程 ===
     print('  --- 3.2 调课 ---')
     resched_date = date_offset(3)
-    body = t.assert_ok(
-        t.post('/api/schedule-add', {'schedule': {
-            'studentId': stu['id'], 'studentName': stu['name'],
-            'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
-            'teacher': cls['teacher'], 'location': cls['location'],
-            'date': resched_date, 'startTime': '09:00', 'endTime': '10:30',
-            'color': math['color'], 'status': 'scheduled'
-        }}),
-        '排课(待调课)'
-    )
-    resched_id = body['data']['schedule']['id']
+    resp, resched_id = add_single_schedule(t, {
+        'studentId': stu['id'], 'studentName': stu['name'],
+        'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
+        'teacher': cls['teacher'], 'location': cls['location'],
+        'date': resched_date, 'startTime': '09:00', 'endTime': '10:30',
+        'color': math['color']
+    })
+    t.assert_ok(resp, '排课(待调课)')
 
     body = t.assert_ok(
         t.post('/api/schedule-reschedule', {
@@ -746,33 +770,33 @@ def test_non_flow_intercept(t, prefix, ctx):
     t.assert_fail(resp, '报名不存在课程应被拒', '课程不存在')
 
     # 4.5 排课不传 classId(应被拒)
-    resp = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu['id'], 'courseId': math['id'], 'courseName': math['name'],
-        'date': date_offset(2), 'startTime': '09:00', 'endTime': '10:30', 'status': 'scheduled'
-    }})
-    t.assert_fail(resp, '排课不传 classId 应被拒', 'classId')
+    resp = t.post('/api/schedule-add-batch', {
+        'studentIds': [stu['id']], 'courseId': math['id'], 'courseName': math['name'],
+        'dates': [date_offset(2)], 'startTime': '09:00', 'endTime': '10:30'
+    })
+    t.assert_fail(resp, '排课不传 classId 应被拒', '缺少 classId')
 
     # 4.6 排课不传 courseId(应被拒)
-    resp = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu['id'], 'classId': cls['id'], 'courseName': math['name'],
-        'date': date_offset(2), 'startTime': '09:00', 'endTime': '10:30', 'status': 'scheduled'
-    }})
-    t.assert_fail(resp, '排课不传 courseId 应被拒', 'courseId')
+    resp = t.post('/api/schedule-add-batch', {
+        'studentIds': [stu['id']], 'classId': cls['id'], 'courseName': math['name'],
+        'dates': [date_offset(2)], 'startTime': '09:00', 'endTime': '10:30'
+    })
+    t.assert_fail(resp, '排课不传 courseId 应被拒', '缺少 courseId')
 
     # 4.7 排课传不存在的 classId(应被拒)
-    resp = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu['id'], 'classId': 'cls_nonexistent',
+    resp = t.post('/api/schedule-add-batch', {
+        'studentIds': [stu['id']], 'classId': 'cls_nonexistent',
         'courseId': math['id'], 'courseName': math['name'],
-        'date': date_offset(2), 'startTime': '09:00', 'endTime': '10:30', 'status': 'scheduled'
-    }})
+        'dates': [date_offset(2)], 'startTime': '09:00', 'endTime': '10:30'
+    })
     t.assert_fail(resp, '排课传不存在 classId 应被拒', '不存在')
 
     # 4.8 排课传不存在的 courseId(应被拒)
-    resp = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu['id'], 'classId': cls['id'],
+    resp = t.post('/api/schedule-add-batch', {
+        'studentIds': [stu['id']], 'classId': cls['id'],
         'courseId': 'crs_nonexistent', 'courseName': '不存在课程',
-        'date': date_offset(2), 'startTime': '09:00', 'endTime': '10:30', 'status': 'scheduled'
-    }})
+        'dates': [date_offset(2)], 'startTime': '09:00', 'endTime': '10:30'
+    })
     t.assert_fail(resp, '排课传不存在 courseId 应被拒', '不存在')
 
     # 4.9 排课班级与课程不匹配(应被拒)
@@ -796,44 +820,44 @@ def test_non_flow_intercept(t, prefix, ctx):
     )
     nf_eng_cls = body['data']['class']
 
-    resp = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu['id'], 'classId': nf_eng_cls['id'],
+    # 学员加入 NF 英语班（使成员校验通过，从而测到后续的"班级与课程不匹配"校验）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': nf_eng_cls['id'], 'studentIds': [stu['id']]}),
+        '学员加入NF英语班级'
+    )
+
+    resp = t.post('/api/schedule-add-batch', {
+        'studentIds': [stu['id']], 'classId': nf_eng_cls['id'],
         'courseId': math['id'], 'courseName': math['name'],
-        'date': date_offset(2), 'startTime': '09:00', 'endTime': '10:30', 'status': 'scheduled'
-    }})
+        'dates': [date_offset(2)], 'startTime': '09:00', 'endTime': '10:30'
+    })
     t.assert_fail(resp, '排课班级与课程不匹配应被拒', '不一致')
 
-    # 4.10 排课未报名课程(非补课)(应被拒)
-    # 学员没报名 nf_english,排 nf_english 的课
-    resp = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu['id'], 'classId': nf_eng_cls['id'],
-        'courseId': nf_english['id'], 'courseName': nf_english['name'],
-        'date': date_offset(2), 'startTime': '10:00', 'endTime': '11:30', 'status': 'scheduled'
-    }})
-    t.assert_fail(resp, '排课未报名课程应被拒', '未报名')
+    # 4.10 排课未报名课程 —— 已删除（batch API 不校验报名）
 
     # 4.11 排课不存在的学员(应被拒)
-    resp = t.post('/api/schedule-add', {'schedule': {
-        'studentId': 'stu_nonexistent', 'classId': cls['id'],
+    # batch API 先校验班级成员资格，非成员返回"不属于班级"
+    resp = t.post('/api/schedule-add-batch', {
+        'studentIds': ['stu_nonexistent'], 'classId': cls['id'],
         'courseId': math['id'], 'courseName': math['name'],
-        'date': date_offset(2), 'startTime': '09:00', 'endTime': '10:30', 'status': 'scheduled'
-    }})
-    t.assert_fail(resp, '排课不存在学员应被拒', '不存在')
+        'dates': [date_offset(2)], 'startTime': '09:00', 'endTime': '10:30'
+    })
+    t.assert_fail(resp, '排课不存在学员应被拒', '不属于班级')
 
     # 4.12 排课日期格式错误(应被拒)
-    resp = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu['id'], 'classId': cls['id'],
+    resp = t.post('/api/schedule-add-batch', {
+        'studentIds': [stu['id']], 'classId': cls['id'],
         'courseId': math['id'], 'courseName': math['name'],
-        'date': '2026/07/20', 'startTime': '09:00', 'endTime': '10:30', 'status': 'scheduled'
-    }})
-    t.assert_fail(resp, '日期格式错误应被拒', 'yyyy-MM-dd')
+        'dates': ['2026/07/20'], 'startTime': '09:00', 'endTime': '10:30'
+    })
+    t.assert_fail(resp, '日期格式错误应被拒', '日期格式应为 yyyy-MM-dd')
 
     # 4.13 排课缺少 studentId(应被拒)
-    resp = t.post('/api/schedule-add', {'schedule': {
+    resp = t.post('/api/schedule-add-batch', {
         'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
-        'date': date_offset(2), 'startTime': '09:00', 'endTime': '10:30', 'status': 'scheduled'
-    }})
-    t.assert_fail(resp, '排课缺少 studentId 应被拒', 'studentId')
+        'dates': [date_offset(2)], 'startTime': '09:00', 'endTime': '10:30'
+    })
+    t.assert_fail(resp, '排课缺少 studentId 应被拒', '请至少选择一名学员')
 
     # 4.14 点名 attended 非 boolean(应被拒)
     resp = t.post('/api/attendance', {'date': date_offset(0), 'items': [
@@ -1034,6 +1058,11 @@ def test_severe_bugs(t, prefix, ctx):
         '创建学员(BugA)'
     )
     buga_stu = body['data']['student']
+    # 学员加入班级（batch 排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': cls['id'], 'studentIds': [buga_stu['id']]}),
+        '学员BugA加入班级'
+    )
     # 报名 A（10付费，先报名）
     body = t.assert_ok(
         t.post('/api/enrollment-add', {'enrollment': {
@@ -1061,17 +1090,15 @@ def test_severe_bugs(t, prefix, ctx):
     sched_ids_buga = []
     for i in range(11):
         d = date_offset(-(20 + i))
-        body = t.assert_ok(
-            t.post('/api/schedule-add', {'schedule': {
-                'studentId': buga_stu['id'], 'studentName': buga_stu['name'],
-                'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
-                'teacher': cls['teacher'], 'location': cls['location'],
-                'date': d, 'startTime': '09:00', 'endTime': '10:30',
-                'color': math['color'], 'status': 'scheduled'
-            }}),
-            f'排课 #{i+1}(BugA)'
-        )
-        sched_ids_buga.append((body['data']['schedule']['id'], d))
+        resp, sid = add_single_schedule(t, {
+            'studentId': buga_stu['id'], 'studentName': buga_stu['name'],
+            'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
+            'teacher': cls['teacher'], 'location': cls['location'],
+            'date': d, 'startTime': '09:00', 'endTime': '10:30',
+            'color': math['color']
+        })
+        t.assert_ok(resp, f'排课 #{i+1}(BugA)')
+        sched_ids_buga.append((sid, d))
 
     # 全部点到课
     date_groups = {}
@@ -1156,6 +1183,11 @@ def test_severe_bugs(t, prefix, ctx):
         '创建学员(BugD)'
     )
     bugd_stu = body['data']['student']
+    # 学员加入班级（batch 排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': cls['id'], 'studentIds': [bugd_stu['id']]}),
+        '学员BugD加入班级'
+    )
     t.assert_ok(
         t.post('/api/enrollment-add', {'enrollment': {
             'studentId': bugd_stu['id'], 'courseId': math['id'],
@@ -1166,36 +1198,32 @@ def test_severe_bugs(t, prefix, ctx):
     )
     conflict_date = date_offset(7)
     # 排第一节课 09:00-10:30
-    t.assert_ok(
-        t.post('/api/schedule-add', {'schedule': {
-            'studentId': bugd_stu['id'], 'studentName': bugd_stu['name'],
-            'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
-            'teacher': cls['teacher'], 'location': cls['location'],
-            'date': conflict_date, 'startTime': '09:00', 'endTime': '10:30',
-            'color': math['color'], 'status': 'scheduled'
-        }}),
-        '排课1(BugD)'
-    )
-    # 排重叠时间 10:00-11:30 应被拒
-    resp = t.post('/api/schedule-add', {'schedule': {
+    resp, _ = add_single_schedule(t, {
         'studentId': bugd_stu['id'], 'studentName': bugd_stu['name'],
         'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
         'teacher': cls['teacher'], 'location': cls['location'],
-        'date': conflict_date, 'startTime': '10:00', 'endTime': '11:30',
-        'color': math['color'], 'status': 'scheduled'
-    }})
+        'date': conflict_date, 'startTime': '09:00', 'endTime': '10:30',
+        'color': math['color']
+    })
+    t.assert_ok(resp, '排课1(BugD)')
+    # 排重叠时间 10:00-11:30 应被拒（batch API 时间冲突检测）
+    resp = t.post('/api/schedule-add-batch', {
+        'studentIds': [bugd_stu['id']],
+        'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
+        'teacher': cls['teacher'], 'location': cls['location'],
+        'dates': [conflict_date], 'startTime': '10:00', 'endTime': '11:30',
+        'color': math['color']
+    })
     t.assert_fail(resp, '时间冲突排课应被拒(BugD)', '时间冲突')
     # 不重叠时间 11:00-12:30 应成功
-    t.assert_ok(
-        t.post('/api/schedule-add', {'schedule': {
-            'studentId': bugd_stu['id'], 'studentName': bugd_stu['name'],
-            'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
-            'teacher': cls['teacher'], 'location': cls['location'],
-            'date': conflict_date, 'startTime': '11:00', 'endTime': '12:30',
-            'color': math['color'], 'status': 'scheduled'
-        }}),
-        '不重叠排课成功(BugD)'
-    )
+    resp, _ = add_single_schedule(t, {
+        'studentId': bugd_stu['id'], 'studentName': bugd_stu['name'],
+        'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
+        'teacher': cls['teacher'], 'location': cls['location'],
+        'date': conflict_date, 'startTime': '11:00', 'endTime': '12:30',
+        'color': math['color']
+    })
+    t.assert_ok(resp, '不重叠排课成功(BugD)')
     # 清理
     body = t.assert_ok(t.get(f'/api/enrollments?studentId={bugd_stu["id"]}'), '查询报名(BugD清理)')
     for e in body['data']['enrollments']:
@@ -1260,6 +1288,13 @@ def test_transfer_and_flow(t, prefix, ctx):
     course = math_body.get('data', {}).get('course') or math_body.get('data', {})
     course_id = course.get('id')
 
+    # 创建班级（batch 排课要求真实班级+成员）
+    _, cls_body = t.post('/api/class-add', {'class': {
+        'name': f'{prefix}_退课测试班', 'courseId': course_id, 'grade': grade_name,
+    }})
+    t.assert_ok((200, cls_body), '创建退课测试班级')
+    rf_cls = cls_body.get('data', {}).get('class') or cls_body.get('data', {})
+
     stu_name = gen_name()
     _, stu_body = t.post('/api/student-add', {'student': {
         'name': stu_name, 'grade': grade_name, 'phone': gen_phone(),
@@ -1267,6 +1302,12 @@ def test_transfer_and_flow(t, prefix, ctx):
     t.assert_ok((200, stu_body), '创建退课测试学员')
     stu = stu_body.get('data', {}).get('student') or stu_body.get('data', {})
     stu_id = stu.get('id')
+
+    # 学员加入班级（batch 排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': rf_cls['id'], 'studentIds': [stu_id]}),
+        '退课测试学员加入班级'
+    )
 
     # 报名 20 课时
     _, enr_body = t.post('/api/enrollment-add', {'enrollment': {
@@ -1279,13 +1320,12 @@ def test_transfer_and_flow(t, prefix, ctx):
 
     # 创建未来排课（退课时应被取消）
     future_date = date_offset(7)
-    _, sched_body = t.post('/api/schedule-add', {'schedule': {
+    resp, sched_id = add_single_schedule(t, {
         'studentId': stu_id, 'courseId': course_id, 'courseName': '退课测',
-        'classId': 'none', 'studentName': stu_name,
+        'classId': rf_cls['id'], 'studentName': stu_name,
         'date': future_date, 'startTime': '10:00', 'endTime': '11:00',
-    }})
-    t.assert_ok((200, sched_body), '创建退课测试排课(未来)')
-    sched_id = sched_body['data']['schedule']['id']
+    })
+    t.assert_ok(resp, '创建退课测试排课(未来)')
 
     # 真正的退课 transfer-add
     _, tf_body = t.post('/api/transfer-add', {'transfer': {
@@ -1350,6 +1390,12 @@ def test_crud_update_delete(t, prefix, ctx):
     stu = stu_body['data'].get('student') or stu_body['data']
     stu_id = stu['id']
 
+    # 学员加入班级（batch 排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': ctx['cls']['id'], 'studentIds': [stu_id]}),
+        '改删测试学员加入班级'
+    )
+
     # 改
     _, upd_body = t.put('/api/student-update', {'student': {
         'id': stu_id, 'name': f'{prefix}_改后学员', 'grade': grade_name, 'phone': '13900000088',
@@ -1358,12 +1404,12 @@ def test_crud_update_delete(t, prefix, ctx):
 
     # 验证姓名变更级联更新排课 studentName（创建排课后改名）
     future_date = date_offset(5)
-    _, sched_body = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu_id, 'courseId': ctx['math'], 'courseName': '改删测',
-        'classId': 'none', 'studentName': f'{prefix}_改前学员',
+    resp, _ = add_single_schedule(t, {
+        'studentId': stu_id, 'courseId': ctx['math']['id'], 'courseName': '改删测',
+        'classId': ctx['cls']['id'], 'studentName': f'{prefix}_改前学员',
         'date': future_date, 'startTime': '10:00', 'endTime': '11:00',
-    }})
-    t.assert_ok((200, sched_body), '为改名测试创建排课')
+    })
+    t.assert_ok(resp, '为改名测试创建排课')
 
     # 改回原名（测级联）
     _, upd2 = t.put('/api/student-update', {'student': {
@@ -1446,21 +1492,34 @@ def test_crud_update_delete(t, prefix, ctx):
     t.assert_ok((200, stu2_body), '创建排课改删测试学员')
     stu2 = stu2_body['data'].get('student') or stu2_body['data']
 
+    # 学员加入班级（batch 排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': ctx['cls']['id'], 'studentIds': [stu2['id']]}),
+        '排课改删学员加入班级'
+    )
+
     _, enr2 = t.post('/api/enrollment-add', {'enrollment': {
-        'studentId': stu2['id'], 'courseId': ctx['math'],
+        'studentId': stu2['id'], 'courseId': ctx['math']['id'],
         'purchasedHours': 10, 'giftHours': 0,
         'unitPrice': 100, 'totalAmount': 1000, 'paidAmount': 1000,
     }})
     t.assert_ok((200, enr2), '创建排课改删测试报名')
 
     sched_date = date_offset(10)
-    _, sc_body = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu2['id'], 'courseId': ctx['math'], 'courseName': '改删测',
-        'classId': 'none', 'studentName': stu2['name'],
+    resp, sched_id = add_single_schedule(t, {
+        'studentId': stu2['id'], 'courseId': ctx['math']['id'], 'courseName': '改删测',
+        'classId': ctx['cls']['id'], 'studentName': stu2['name'],
         'date': sched_date, 'startTime': '10:00', 'endTime': '11:00',
-    }})
-    t.assert_ok((200, sc_body), '创建排课改删测试排课')
-    sched = sc_body['data']['schedule']
+    })
+    t.assert_ok(resp, '创建排课改删测试排课')
+    # 查询排课完整信息用于 PUT（batch API 不返回排课对象）
+    _, sc_query = t.get(f"/api/schedules?studentId={stu2['id']}&startDate={sched_date}&endDate={sched_date}")
+    sched = None
+    for s in sc_query.get('data', {}).get('schedules', []):
+        if s.get('id') == sched_id:
+            sched = s
+            break
+    t.assert_true(sched is not None, '查询到排课改删测试排课')
 
     # 改（修改时间）
     _, scu = t.put('/api/schedule', {'old': sched, 'new': {
@@ -1476,23 +1535,22 @@ def test_crud_update_delete(t, prefix, ctx):
 
     # 已点名排课应拒绝删除（状态机校验）
     sched_date2 = date_offset(11)
-    _, sc2_body = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu2['id'], 'courseId': ctx['math'], 'courseName': '改删测',
-        'classId': 'none', 'studentName': stu2['name'],
+    resp, sched2_id = add_single_schedule(t, {
+        'studentId': stu2['id'], 'courseId': ctx['math']['id'], 'courseName': '改删测',
+        'classId': ctx['cls']['id'], 'studentName': stu2['name'],
         'date': sched_date2, 'startTime': '10:00', 'endTime': '11:00',
-    }})
-    t.assert_ok((200, sc2_body), '创建状态机测试排课')
-    sched2 = sc2_body['data']['schedule']
+    })
+    t.assert_ok(resp, '创建状态机测试排课')
 
     # 点名（到课）
     t.post('/api/attendance', {'attendance': [{
-        'scheduleId': sched2['id'], 'studentId': stu2['id'],
+        'scheduleId': sched2_id, 'studentId': stu2['id'],
         'attended': True, 'date': sched_date2,
     }]})
 
     # 已到课排课删除应拒绝
     _, scd_fail = t.delete('/api/schedule', {
-        'id': sched2['id'], 'studentId': stu2['id'], 'date': sched_date2,
+        'id': sched2_id, 'studentId': stu2['id'], 'date': sched_date2,
     })
     t.assert_fail((200, scd_fail), '已到课排课删除应拒绝(状态机)')
 
@@ -1552,15 +1610,14 @@ def test_crud_update_delete(t, prefix, ctx):
     print('  [阶段] 反馈改删')
     # 创建排课+反馈
     fb_date = date_offset(2)
-    _, fb_sc = t.post('/api/schedule-add', {'schedule': {
-        'studentId': ctx['stu'], 'courseId': ctx['math'], 'courseName': '反馈测',
-        'classId': 'none', 'studentName': '反馈测',
+    fb_resp, fb_sched_id = add_single_schedule(t, {
+        'studentId': ctx['stu']['id'], 'courseId': ctx['math']['id'], 'courseName': '反馈测',
+        'classId': ctx['cls']['id'], 'studentName': '反馈测',
         'date': fb_date, 'startTime': '10:00', 'endTime': '11:00',
-    }})
-    if fb_sc[1].get('code') == 0:
-        fb_sched_id = fb_sc[1]['data']['schedule']['id']
+    })
+    if fb_resp[1].get('code') == 0 and fb_sched_id:
         _, fb_create = t.post('/api/feedback', {
-            'scheduleId': fb_sched_id, 'studentId': ctx['stu'],
+            'scheduleId': fb_sched_id, 'studentId': ctx['stu']['id'],
             'content': '测试反馈内容', 'rating': 5,
         })
         t.assert_ok((200, fb_create), '创建反馈测试')
@@ -1569,9 +1626,9 @@ def test_crud_update_delete(t, prefix, ctx):
         # 查询反馈
         _, fb_list = t.get('/api/feedback')
         t.assert_ok((200, fb_list), '查询反馈列表')
-        _, fb_by_stu = t.get(f'/api/feedback?studentId={ctx["stu"]}')
+        _, fb_by_stu = t.get(f'/api/feedback?studentId={ctx["stu"]["id"]}')
         t.assert_ok((200, fb_by_stu), '按学员查反馈')
-        _, fb_by_course = t.get(f'/api/feedback?courseId={ctx["math"]}')
+        _, fb_by_course = t.get(f'/api/feedback?courseId={ctx["math"]["id"]}')
         t.assert_ok((200, fb_by_course), '按课程查反馈')
 
         # 改
@@ -2007,25 +2064,38 @@ def test_error_boundary(t, prefix, ctx):
     t.assert_ok((200, stu_body), '创建状态机测试学员')
     stu = stu_body['data'].get('student') or stu_body['data']
 
+    # 学员加入班级（batch 排课要求学员须为班级成员）
+    t.assert_ok(
+        t.post('/api/class-members', {'classId': ctx['cls']['id'], 'studentIds': [stu['id']]}),
+        '状态机测试学员加入班级'
+    )
+
     _, enr_body = t.post('/api/enrollment-add', {'enrollment': {
-        'studentId': stu['id'], 'courseId': ctx['math'],
+        'studentId': stu['id'], 'courseId': ctx['math']['id'],
         'purchasedHours': 10, 'giftHours': 0,
         'unitPrice': 100, 'totalAmount': 1000, 'paidAmount': 1000,
     }})
     t.assert_ok((200, enr_body), '创建状态机测试报名')
 
     sm_date = date_offset(8)
-    _, sm_sc = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu['id'], 'courseId': ctx['math'], 'courseName': '状态机测',
-        'classId': 'none', 'studentName': stu['name'],
+    resp, sm_sched_id = add_single_schedule(t, {
+        'studentId': stu['id'], 'courseId': ctx['math']['id'], 'courseName': '状态机测',
+        'classId': ctx['cls']['id'], 'studentName': stu['name'],
         'date': sm_date, 'startTime': '10:00', 'endTime': '11:00',
-    }})
-    t.assert_ok((200, sm_sc), '创建状态机测试排课')
-    sm_sched = sm_sc['data']['schedule']
+    })
+    t.assert_ok(resp, '创建状态机测试排课')
+    # 查询排课完整信息用于 PUT（batch API 不返回排课对象）
+    _, sm_query = t.get(f"/api/schedules?studentId={stu['id']}&startDate={sm_date}&endDate={sm_date}")
+    sm_sched = None
+    for s in sm_query.get('data', {}).get('schedules', []):
+        if s.get('id') == sm_sched_id:
+            sm_sched = s
+            break
+    t.assert_true(sm_sched is not None, '查询到状态机测试排课')
 
     # 点名（到课）
     _, att = t.post('/api/attendance', {'attendance': [{
-        'scheduleId': sm_sched['id'], 'studentId': stu['id'],
+        'scheduleId': sm_sched_id, 'studentId': stu['id'],
         'attended': True, 'date': sm_date,
     }]})
     t.assert_ok((200, att), '状态机:点名到课')
@@ -2038,7 +2108,7 @@ def test_error_boundary(t, prefix, ctx):
 
     # 已到课排课删除应拒绝
     _, smd_fail = t.delete('/api/schedule', {
-        'id': sm_sched['id'], 'studentId': stu['id'], 'date': sm_date,
+        'id': sm_sched_id, 'studentId': stu['id'], 'date': sm_date,
     })
     t.assert_fail((200, smd_fail), '已到课排课删除应拒绝(状态机)')
 

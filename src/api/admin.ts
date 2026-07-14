@@ -242,18 +242,18 @@ export async function updateSchedule(
   })
 }
 
-// 新增排课
-export async function addSchedule(
-  schedule: Schedule,
+// 批量修改排课（聚合全班修改）
+// 每条排课独立处理，单条失败不影响其他条
+export async function batchUpdateSchedules(
+  items: { old: Schedule; new: Schedule }[],
 ): Promise<ApiResult<{
-  created: boolean
-  key: string
-  exists: boolean
-  schedule: Schedule
+  updated: number
+  failed: number
+  details: { id: string; success: boolean; message?: string; moved?: boolean }[]
 }>> {
-  return request(`${API_BASE}/schedule-add`, {
-    method: 'POST',
-    body: JSON.stringify({ schedule }),
+  return request(`${API_BASE}/schedule-update-batch`, {
+    method: 'PUT',
+    body: JSON.stringify({ items }),
   })
 }
 

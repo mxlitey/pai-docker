@@ -15,6 +15,7 @@ import {
   inputClass,
 } from '@/components/ui'
 import { ScheduleEditor } from './ScheduleEditor'
+import { ScheduleBatchSelect } from './ScheduleBatchSelect'
 import { ScheduleAddModal } from './ScheduleAddModal'
 import { RescheduleModal } from './RescheduleModal'
 
@@ -55,7 +56,8 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
   // 班级列表：排课弹窗按班级带出成员名单
   const [classes, setClasses] = useState<ClassInfo[]>([])
 
-  const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
+  const [batchSelectSchedule, setBatchSelectSchedule] = useState<Schedule | null>(null)
+  const [editingSchedules, setEditingSchedules] = useState<Schedule[]>([])
   const [addingSchedule, setAddingSchedule] = useState(false)
   const [reschedulingSchedule, setReschedulingSchedule] = useState<Schedule | null>(null)
 
@@ -426,7 +428,7 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
                       <td className="py-2.5 px-2 text-right whitespace-nowrap">
                         {canModify && canUpdate && (
                           <button
-                            onClick={() => setEditingSchedule(s)}
+                            onClick={() => setBatchSelectSchedule(s)}
                             disabled={busy}
                             className="text-primary hover:text-brand-700 text-xs font-medium mr-3 disabled:opacity-50"
                           >
@@ -474,13 +476,28 @@ export function ScheduleAdmin({ students, courses, grades, onBack, onToast, curr
         )}
       </main>
 
-      {/* 编辑弹窗 */}
-      <ScheduleEditor
-        schedule={editingSchedule}
-        students={students}
-        onClose={() => setEditingSchedule(null)}
-        onUpdated={handleEditorUpdated}
-      />
+      {/* 批量选择弹窗：点击编辑后先展示同班同时段排课 */}
+      {batchSelectSchedule && (
+        <ScheduleBatchSelect
+          schedule={batchSelectSchedule}
+          students={students}
+          onClose={() => setBatchSelectSchedule(null)}
+          onConfirm={(selected) => {
+            setBatchSelectSchedule(null)
+            setEditingSchedules(selected)
+          }}
+        />
+      )}
+
+      {/* 编辑弹窗（单条/批量） */}
+      {editingSchedules.length > 0 && (
+        <ScheduleEditor
+          schedules={editingSchedules}
+          students={students}
+          onClose={() => setEditingSchedules([])}
+          onUpdated={handleEditorUpdated}
+        />
+      )}
 
       {/* 新增弹窗 */}
       {addingSchedule && (
