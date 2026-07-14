@@ -72,7 +72,7 @@ export default async function onRequestPut(context) {
     }
     const result = await updateClass(finalClass)
     if (result.notFound) {
-      return json({ code: 1, message: '班级不存在', data: null }, 404)
+      return json({ code: 1, message: '班级不存在', data: { notFound: true } }, 404)
     }
     const before = result.before || null
     const after = result.after || finalClass

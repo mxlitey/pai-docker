@@ -321,7 +321,7 @@ function StudentEditModal({ student, grades, onGradesChange, onClose, onSubmit }
         update({ grade: name })
         setQuickName('')
         setQuickAdding(false)
-      } else if (result.code === 409) {
+      } else if (result.data?.duplicateName) {
         toast.error('年级名称已存在')
       } else {
         toast.error(result.message || '添加失败')

@@ -1,6 +1,6 @@
 // 更新课程 API
 // PUT /api/course-update  body: { course }
-import { updateCourse, json } from '../_lib/store.js'
+import { updateCourse, getDb, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit, buildUpdateSummary } from '../_lib/audit.js'
 
@@ -31,6 +31,12 @@ function validateCourse(c) {
   }
   if (c.status && !['active', 'inactive'].includes(c.status)) {
     throw new Error('status 仅允许 active / inactive')
+  }
+  // 年级必须存在于 grades 表中（与 student-add / course-add 规则一致）
+  const db = getDb()
+  const gradeRow = db.prepare("SELECT 1 FROM grades WHERE name=? AND status='active'").get(c.grade.trim())
+  if (!gradeRow) {
+    throw new Error(`年级「${c.grade.trim()}」不存在或已停用，请先在年级管理中创建`)
   }
 }
 

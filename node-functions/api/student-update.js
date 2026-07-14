@@ -2,7 +2,7 @@
 // PUT /api/student-update  body: { student }
 // 若姓名变更，级联更新该学员所有排课中的 studentName
 // 课时不再由学员维护（改为报名记录 enrollment 维护），更新学员仅支持修改姓名/年级
-import { updateStudent, json } from '../_lib/store.js'
+import { updateStudent, getDb, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit, buildUpdateSummary } from '../_lib/audit.js'
 
@@ -35,6 +35,16 @@ function validateStudent(s) {
   }
   if (typeof s.grade !== 'string') {
     throw new Error('grade 需为字符串')
+  }
+  // 年级必须存在于 grades 表中（与 student-add 规则一致）
+  const db = getDb()
+  const gradeRow = db.prepare("SELECT 1 FROM grades WHERE name=? AND status='active'").get(s.grade.trim())
+  if (!gradeRow) {
+    throw new Error(`年级「${s.grade.trim()}」不存在或已停用，请先在年级管理中创建`)
+  }
+  // status 枚举校验（与 course-update 规则一致）
+  if (s.status && !['active', 'inactive'].includes(s.status)) {
+    throw new Error('status 仅允许 active / inactive')
   }
 }
 

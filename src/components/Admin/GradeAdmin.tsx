@@ -90,7 +90,7 @@ export function GradeAdmin({
       if (result.code === 0) {
         toast.success(result.message)
         onGradesChange()
-      } else if (result.code === 409 && result.data?.inUse) {
+      } else if (result.data?.inUse) {
         toast.error(`该年级仍被 ${result.data.studentCount} 名学员、${result.data.courseCount} 门课程引用，请先迁移或清空后再删除`)
       } else {
         toast.error(result.message || '删除失败')
@@ -251,7 +251,7 @@ function GradeEditModal({ grade, onClose, onSaved, showToast }: GradeEditModalPr
       if (result.code === 0) {
         toast.success(result.message)
         onSaved()
-      } else if (result.code === 409) {
+      } else if (result.data?.duplicateName) {
         setNameError('年级名称已存在')
       } else {
         showToast('error', result.message || '保存失败')

@@ -57,7 +57,7 @@ export default async function onRequestPost(context) {
       return json({ code: 1, message: `年级 id="${finalGrade.id}" 已存在`, data: null }, 409)
     }
     if (result.duplicateName) {
-      return json({ code: 1, message: `年级名称「${finalGrade.name}」已存在`, data: null }, 409)
+      return json({ code: 1, message: `年级名称「${finalGrade.name}」已存在`, data: { duplicateName: true } }, 409)
     }
     if (result.grade && result.grade.id) finalGrade.id = result.grade.id
     await writeAudit(context, {

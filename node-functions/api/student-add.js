@@ -37,6 +37,10 @@ function validateStudent(s) {
   if (!gradeRow) {
     throw new Error(`年级「${s.grade.trim()}」不存在或已停用，请先在年级管理中创建`)
   }
+  // status 枚举校验
+  if (s.status && !['active', 'inactive'].includes(s.status)) {
+    throw new Error('status 仅允许 active / inactive')
+  }
   // 课时不再由学员维护（改为报名记录 enrollment 维护），忽略前端可能传入的 hours 字段
 }
 

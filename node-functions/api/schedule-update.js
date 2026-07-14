@@ -1,7 +1,7 @@
 // 排课修改 API
 // PUT /api/schedule  body: { old: Schedule, new: Schedule }
 // 处理跨月/跨学员的存储路径迁移
-import { updateSchedule, getScheduleById, json } from '../_lib/store.js'
+import { updateSchedule, getScheduleById, getStudentById, getCourseById, getClassById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit, buildUpdateSummary } from '../_lib/audit.js'
 
@@ -13,15 +13,23 @@ async function readBody(request) {
   }
 }
 
-// 校验排课记录必填字段
+// 校验排课记录必填字段与格式（与 schedule-add 规则一致）
 function validateSchedule(s, prefix) {
   if (!s) throw new Error(`${prefix}: 数据不能为空`)
   if (!s.id) throw new Error(`${prefix}: 缺少 id`)
   if (!s.studentId) throw new Error(`${prefix}: 缺少 studentId`)
+  if (!s.courseId) throw new Error(`${prefix}: 缺少 courseId`)
   if (!s.courseName) throw new Error(`${prefix}: 缺少 courseName`)
+  if (!s.classId) throw new Error(`${prefix}: 缺少 classId（班级为必填项）`)
   if (!s.date) throw new Error(`${prefix}: 缺少 date`)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s.date)) {
     throw new Error(`${prefix}: date 格式应为 yyyy-MM-dd`)
+  }
+  if (s.startTime && !/^\d{2}:\d{2}$/.test(s.startTime)) {
+    throw new Error(`${prefix}: startTime 格式应为 HH:mm`)
+  }
+  if (s.endTime && !/^\d{2}:\d{2}$/.test(s.endTime)) {
+    throw new Error(`${prefix}: endTime 格式应为 HH:mm`)
   }
 }
 
@@ -67,6 +75,22 @@ export default async function onRequestPut(context) {
     }
     if (current.attended === false) {
       return json({ code: 1, message: '已缺勤的排课不允许编辑', data: null }, 409)
+    }
+
+    // 跨表关联校验：newSchedule 的 studentId / courseId / classId 必须在对应表中存在
+    const student = await getStudentById(newSchedule.studentId)
+    if (!student) {
+      return json({ code: 1, message: `studentId="${newSchedule.studentId}" 在学员表中不存在`, data: null }, 400)
+    }
+    const course = await getCourseById(newSchedule.courseId)
+    if (!course) {
+      return json({ code: 1, message: `courseId="${newSchedule.courseId}" 在课程表中不存在`, data: null }, 400)
+    }
+    if (newSchedule.classId) {
+      const cls = await getClassById(newSchedule.classId)
+      if (!cls) {
+        return json({ code: 1, message: `classId="${newSchedule.classId}" 在班级表中不存在`, data: null }, 400)
+      }
     }
 
     const result = await updateSchedule(oldSchedule, newSchedule)

@@ -1,6 +1,6 @@
 // 新增课程 API
 // POST /api/course-add  body: { course }
-import { addCourse, json } from '../_lib/store.js'
+import { addCourse, getDb, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -26,6 +26,16 @@ function validateCourse(c) {
   if (c.color && typeof c.color !== 'string') throw new Error('color 需为字符串')
   if (c.billingType && !['per_lesson', 'per_term', 'per_month'].includes(c.billingType)) {
     throw new Error('billingType 仅允许 per_lesson / per_term / per_month')
+  }
+  // 年级必须存在于 grades 表中（与 student-add 规则一致）
+  const db = getDb()
+  const gradeRow = db.prepare("SELECT 1 FROM grades WHERE name=? AND status='active'").get(c.grade.trim())
+  if (!gradeRow) {
+    throw new Error(`年级「${c.grade.trim()}」不存在或已停用，请先在年级管理中创建`)
+  }
+  // status 枚举校验
+  if (c.status && !['active', 'inactive'].includes(c.status)) {
+    throw new Error('status 仅允许 active / inactive')
   }
 }
 

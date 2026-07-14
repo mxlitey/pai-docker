@@ -18,6 +18,10 @@ function validateGrade(g) {
   if (!g.id) throw new Error('缺少 id')
   if (!g.name || typeof g.name !== 'string') throw new Error('缺少 name')
   if (g.name.trim().length > 32) throw new Error('name 需为 1-32 字符的字符串')
+  if (g.sortOrder !== undefined && g.sortOrder !== null && g.sortOrder !== '') {
+    const n = Number(g.sortOrder)
+    if (!Number.isFinite(n)) throw new Error('sortOrder 需为数字')
+  }
   if (g.status && !['active', 'inactive'].includes(g.status)) {
     throw new Error('status 仅允许 active / inactive')
   }
@@ -53,7 +57,7 @@ export default async function onRequestPut(context) {
       return json({ code: 1, message: '年级不存在', data: null }, 404)
     }
     if (result.duplicateName) {
-      return json({ code: 1, message: `年级名称「${finalGrade.name}」已存在`, data: null }, 409)
+      return json({ code: 1, message: `年级名称「${finalGrade.name}」已存在`, data: { duplicateName: true } }, 409)
     }
     const before = result.before || null
     const after = result.after || finalGrade

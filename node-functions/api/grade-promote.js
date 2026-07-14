@@ -25,7 +25,7 @@ export default async function onRequestPost(context) {
   }
 
   try {
-    const result = promoteStudents(String(fromGradeName).trim(), String(toGradeName).trim())
+    const result = await promoteStudents(String(fromGradeName).trim(), String(toGradeName).trim())
     if (result.same) {
       return json({ code: 1, message: '源年级与目标年级相同，无需升班', data: null }, 400)
     }

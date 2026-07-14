@@ -31,7 +31,15 @@ function validateEnrollment(e) {
   }
   if (e.unitPrice !== undefined) {
     const n = Number(e.unitPrice)
-    if (!Number.isFinite(n) || n < 0) throw new Error('unitPrice 需为非负数')
+    if (!Number.isFinite(n) || n <= 0) throw new Error('unitPrice 需为正数')
+  }
+  if (e.totalAmount !== undefined) {
+    const n = Number(e.totalAmount)
+    if (!Number.isFinite(n) || n <= 0) throw new Error('totalAmount 需为正数')
+  }
+  if (e.paidAmount !== undefined) {
+    const n = Number(e.paidAmount)
+    if (!Number.isFinite(n) || n < 0) throw new Error('paidAmount 需为非负数')
   }
   if (e.status && !['active', 'settled', 'expired'].includes(e.status)) {
     throw new Error('status 仅允许 active / settled / expired')
@@ -55,32 +63,36 @@ export default async function onRequestPut(context) {
     return json({ code: 1, message: e.message, data: null }, 400)
   }
 
-  // Bug10 修复：改为 settled 状态时，剩余课时必须为 0
+  // 改为 settled 状态时，剩余课时必须为 0
   // 否则课时会凭空消失，须先走退课流程消耗或退回课时
   if (enrollment.status === 'settled') {
+    let current
     try {
-      const current = await getEnrollment(enrollment.id.trim())
-      if (current) {
-        // 计算更新后的剩余课时（若同时传了 purchasedHours/giftHours 则按新值计算）
-        const newPurchased = enrollment.purchasedHours !== undefined
-          ? Number(enrollment.purchasedHours) : current.purchasedHours
-        const newGift = enrollment.giftHours !== undefined
-          ? Number(enrollment.giftHours) : current.giftHours
-        const purchasedDelta = newPurchased - current.purchasedHours
-        const giftDelta = newGift - current.giftHours
-        const remainPaid = Math.max(0, current.remainingPaidHours + purchasedDelta)
-        const remainGift = Math.max(0, current.remainingGiftHours + giftDelta)
-        if (remainPaid > 0 || remainGift > 0) {
-          return json({
-            code: 1,
-            message: `剩余课时不为 0（付费 ${remainPaid} + 赠课 ${remainGift}），不可直接结转，请先走退课流程消耗或退回课时`,
-            data: { remainingPaidHours: remainPaid, remainingGiftHours: remainGift },
-          }, 400)
-        }
-      }
-    } catch {
-      // 查询失败不阻塞，让后续 updateEnrollment 处理 notFound
+      current = await getEnrollment(enrollment.id.trim())
+    } catch (e) {
+      // 存储故障时不可静默放行，否则剩余课时校验被绕过导致课时凭空消失
+      console.error('[enrollment-update] 查询报名失败:', e?.message || String(e))
+      return json({ code: 1, message: '校验剩余课时失败，请稍后重试', data: null }, 500)
     }
+    if (current) {
+      // 计算更新后的剩余课时（若同时传了 purchasedHours/giftHours 则按新值计算）
+      const newPurchased = enrollment.purchasedHours !== undefined
+        ? Number(enrollment.purchasedHours) : current.purchasedHours
+      const newGift = enrollment.giftHours !== undefined
+        ? Number(enrollment.giftHours) : current.giftHours
+      const purchasedDelta = newPurchased - current.purchasedHours
+      const giftDelta = newGift - current.giftHours
+      const remainPaid = Math.max(0, current.remainingPaidHours + purchasedDelta)
+      const remainGift = Math.max(0, current.remainingGiftHours + giftDelta)
+      if (remainPaid > 0 || remainGift > 0) {
+        return json({
+          code: 1,
+          message: `剩余课时不为 0（付费 ${remainPaid} + 赠课 ${remainGift}），不可直接结转，请先走退课流程消耗或退回课时`,
+          data: { remainingPaidHours: remainPaid, remainingGiftHours: remainGift },
+        }, 400)
+      }
+    }
+    // current 为 null 时由后续 updateEnrollment 处理 notFound
   }
 
   try {

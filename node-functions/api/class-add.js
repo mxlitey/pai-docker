@@ -78,7 +78,7 @@ export default async function onRequestPost(context) {
 
     const result = await addClass(finalClass)
     if (result.exists) {
-      return json({ code: 1, message: `班级 id="${finalClass.id}" 已存在`, data: null }, 409)
+      return json({ code: 1, message: `班级 id="${finalClass.id}" 已存在`, data: { exists: true } }, 409)
     }
     if (result.class && result.class.id) finalClass.id = result.class.id
     await writeAudit(context, {

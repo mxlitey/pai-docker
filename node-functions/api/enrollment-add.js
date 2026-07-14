@@ -40,6 +40,11 @@ function validateEnrollment(e) {
   if (!Number.isFinite(ta) || ta <= 0) {
     throw new Error('应付总价必须大于 0')
   }
+  // 实付金额必须为非负数
+  const pa = Number(e.paidAmount || 0)
+  if (!Number.isFinite(pa) || pa < 0) {
+    throw new Error('paidAmount 需为非负数')
+  }
 }
 
 export default async function onRequestPost(context) {
