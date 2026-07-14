@@ -3666,6 +3666,10 @@ def run_quick():
     print("=" * 60)
 
     # 延迟导入 test_suite（仅在 quick 模式需要，避免模块加载阶段依赖缺失导致闪退）
+    # 显式把脚本所在目录加入 sys.path，确保无论从哪个工作目录运行都能找到 test_suite.py
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    if _script_dir not in sys.path:
+        sys.path.insert(0, _script_dir)
     try:
         from test_suite import (
             TestRunner,
@@ -3676,6 +3680,8 @@ def run_quick():
         )
     except ImportError as e:
         print(f"[错误] 无法导入 test_suite 模块: {e}")
+        print(f"  已尝试在以下路径查找: {_script_dir}")
+        print(f"  sys.path: {sys.path}")
         print("  请确认 test_suite.py 与 perf_test.py 在同一目录下。")
         print("  quick 模式依赖 test_suite.py 的流程测试，stress 模式不受影响。")
         return None
