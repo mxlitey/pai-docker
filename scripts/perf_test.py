@@ -3567,7 +3567,7 @@ def test_full_flow(t, prefix):
 # ============================================================
 # 测试组 2: 安全性测试
 # ============================================================
-def test_security(t, prefix):
+def test_security(t, prefix, ctx=None):
     """安全性测试: 鉴权、权限、密码策略、token 失效、SQL 注入"""
     print('\n[测试组 2] 安全性测试')
 
@@ -3705,8 +3705,9 @@ def test_security(t, prefix):
 
     # 2.14 SQL 注入学员名(参数化查询应防注入)
     inject_name = "'; DROP TABLE students; --"
+    inject_grade = ctx['grade_name'] if ctx else f'{prefix}一年级'
     resp = t.post('/api/student-add', {'student': {
-        'name': inject_name, 'grade': '一年级', 'phone': gen_phone(),
+        'name': inject_name, 'grade': inject_grade, 'phone': gen_phone(),
         'status': 'active', 'source': 'sqli-test'
     }})
     t.assert_ok(resp, 'SQL 注入学员名应被参数化处理(创建成功)')
@@ -4491,7 +4492,7 @@ def test_transfer_and_flow(t, prefix, ctx):
     future_date = date_offset(7)
     _, sched_body = t.post('/api/schedule-add', {'schedule': {
         'studentId': stu_id, 'courseId': course_id, 'courseName': '退课测',
-        'classId': 'none', 'studentName': stu_name,
+        'classId': ctx['cls']['id']['id'], 'studentName': stu_name,
         'date': future_date, 'startTime': '10:00', 'endTime': '11:00',
     }})
     t.assert_ok((200, sched_body), '创建退课测试排课(未来)')
@@ -4569,8 +4570,8 @@ def test_crud_update_delete(t, prefix, ctx):
     # 验证姓名变更级联更新排课 studentName（创建排课后改名）
     future_date = date_offset(5)
     _, sched_body = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu_id, 'courseId': ctx['math'], 'courseName': '改删测',
-        'classId': 'none', 'studentName': f'{prefix}_改前学员',
+        'studentId': stu_id, 'courseId': ctx['math']['id'], 'courseName': '改删测',
+        'classId': ctx['cls']['id']['id'], 'studentName': f'{prefix}_改前学员',
         'date': future_date, 'startTime': '10:00', 'endTime': '11:00',
     }})
     t.assert_ok((200, sched_body), '为改名测试创建排课')
@@ -4615,7 +4616,7 @@ def test_crud_update_delete(t, prefix, ctx):
     # ===== 班级改删 =====
     print('  [阶段] 班级改删')
     _, cl_body = t.post('/api/class-add', {'class': {
-        'name': f'{prefix}_改删班级', 'grade': grade_name, 'courseId': ctx['math'],
+        'name': f'{prefix}_改删班级', 'grade': grade_name, 'courseId': ctx['math']['id'],
     }})
     t.assert_ok((200, cl_body), '创建改删测试班级')
     cls = cl_body['data'].get('class') or cl_body['data']
@@ -4624,7 +4625,7 @@ def test_crud_update_delete(t, prefix, ctx):
     # 改
     _, clu = t.put('/api/class-update', {'class': {
         'id': class_id, 'name': f'{prefix}_改后班级', 'grade': grade_name,
-        'courseId': ctx['math'], 'capacity': 30, 'status': 'active',
+        'courseId': ctx['math']['id'], 'capacity': 30, 'status': 'active',
     }})
     t.assert_ok((200, clu), '班级 PUT 修改成功')
 
@@ -4657,7 +4658,7 @@ def test_crud_update_delete(t, prefix, ctx):
     stu2 = stu2_body['data'].get('student') or stu2_body['data']
 
     _, enr2 = t.post('/api/enrollment-add', {'enrollment': {
-        'studentId': stu2['id'], 'courseId': ctx['math'],
+        'studentId': stu2['id'], 'courseId': ctx['math']['id'],
         'purchasedHours': 10, 'giftHours': 0,
         'unitPrice': 100, 'totalAmount': 1000, 'paidAmount': 1000,
     }})
@@ -4665,8 +4666,8 @@ def test_crud_update_delete(t, prefix, ctx):
 
     sched_date = date_offset(10)
     _, sc_body = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu2['id'], 'courseId': ctx['math'], 'courseName': '改删测',
-        'classId': 'none', 'studentName': stu2['name'],
+        'studentId': stu2['id'], 'courseId': ctx['math']['id'], 'courseName': '改删测',
+        'classId': ctx['cls']['id']['id'], 'studentName': stu2['name'],
         'date': sched_date, 'startTime': '10:00', 'endTime': '11:00',
     }})
     t.assert_ok((200, sc_body), '创建排课改删测试排课')
@@ -4687,17 +4688,17 @@ def test_crud_update_delete(t, prefix, ctx):
     # 已点名排课应拒绝删除（状态机校验）
     sched_date2 = date_offset(11)
     _, sc2_body = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu2['id'], 'courseId': ctx['math'], 'courseName': '改删测',
-        'classId': 'none', 'studentName': stu2['name'],
+        'studentId': stu2['id'], 'courseId': ctx['math']['id'], 'courseName': '改删测',
+        'classId': ctx['cls']['id']['id'], 'studentName': stu2['name'],
         'date': sched_date2, 'startTime': '10:00', 'endTime': '11:00',
     }})
     t.assert_ok((200, sc2_body), '创建状态机测试排课')
     sched2 = sc2_body['data']['schedule']
 
     # 点名（到课）
-    t.post('/api/attendance', {'attendance': [{
+    t.post('/api/attendance', {'date': sched_date2, 'items': [{
         'scheduleId': sched2['id'], 'studentId': stu2['id'],
-        'attended': True, 'date': sched_date2,
+        'attended': True,
     }]})
 
     # 已到课排课删除应拒绝
@@ -4763,14 +4764,14 @@ def test_crud_update_delete(t, prefix, ctx):
     # 创建排课+反馈
     fb_date = date_offset(2)
     _, fb_sc = t.post('/api/schedule-add', {'schedule': {
-        'studentId': ctx['stu'], 'courseId': ctx['math'], 'courseName': '反馈测',
-        'classId': 'none', 'studentName': '反馈测',
+        'studentId': ctx['stu']['id'], 'courseId': ctx['math']['id'], 'courseName': '反馈测',
+        'classId': ctx['cls']['id']['id'], 'studentName': '反馈测',
         'date': fb_date, 'startTime': '10:00', 'endTime': '11:00',
     }})
     if fb_sc[1].get('code') == 0:
         fb_sched_id = fb_sc[1]['data']['schedule']['id']
         _, fb_create = t.post('/api/feedback', {
-            'scheduleId': fb_sched_id, 'studentId': ctx['stu'],
+            'scheduleId': fb_sched_id, 'studentId': ctx['stu']['id'],
             'content': '测试反馈内容', 'rating': 5,
         })
         t.assert_ok((200, fb_create), '创建反馈测试')
@@ -4879,7 +4880,7 @@ def test_reports_and_audit(t, prefix, ctx):
 
     # ===== 调课历史 =====
     print('  [阶段] 调课历史')
-    _, sc_hist = t.get(f'/api/schedule-changes?studentId={ctx["stu"]}&limit=50')
+    _, sc_hist = t.get(f'/api/schedule-changes?studentId={ctx["stu"]["id"]}&limit=50')
     t.assert_ok((200, sc_hist), '查询调课历史 schedule-changes')
 
     # ===== 教师绩效 =====
@@ -4898,7 +4899,7 @@ def test_batch_and_members(t, prefix, ctx):
 
     # 创建专用班级和学员
     _, cl_body = t.post('/api/class-add', {'class': {
-        'name': f'{prefix}_批量测试班', 'grade': grade_name, 'courseId': ctx['math'],
+        'name': f'{prefix}_批量测试班', 'grade': grade_name, 'courseId': ctx['math']['id'],
     }})
     t.assert_ok((200, cl_body), '创建批量测试班级')
     cls = cl_body['data'].get('class') or cl_body['data']
@@ -4915,7 +4916,7 @@ def test_batch_and_members(t, prefix, ctx):
         batch_stu_ids.append(s['id'])
         # 报名
         t.post('/api/enrollment-add', {'enrollment': {
-            'studentId': s['id'], 'courseId': ctx['math'],
+            'studentId': s['id'], 'courseId': ctx['math']['id'],
             'purchasedHours': 20, 'giftHours': 0,
             'unitPrice': 100, 'totalAmount': 2000, 'paidAmount': 2000,
         }})
@@ -4940,7 +4941,7 @@ def test_batch_and_members(t, prefix, ctx):
     batch_dates = [date_offset(i + 1) for i in range(3)]
     _, batch_sc = t.post('/api/schedule-add-batch', {
         'studentIds': batch_stu_ids, 'dates': batch_dates,
-        'courseId': ctx['math'], 'courseName': '批量排课测',
+        'courseId': ctx['math']['id'], 'courseName': '批量排课测',
         'classId': class_id, 'startTime': '10:00', 'endTime': '11:00',
     })
     t.assert_ok((200, batch_sc), '批量排课成功(5学员×3天=15条)')
@@ -4952,7 +4953,7 @@ def test_batch_and_members(t, prefix, ctx):
     # 批量排课冲突检测（重复排课应被拒绝或返回冲突）
     _, batch_conflict = t.post('/api/schedule-add-batch', {
         'studentIds': batch_stu_ids, 'dates': batch_dates,
-        'courseId': ctx['math'], 'courseName': '批量排课测',
+        'courseId': ctx['math']['id'], 'courseName': '批量排课测',
         'classId': class_id, 'startTime': '10:00', 'endTime': '11:00',
     })
     # 冲突时应返回 code!=0 或 created=0
@@ -4962,7 +4963,7 @@ def test_batch_and_members(t, prefix, ctx):
 
     # 批量排课缺参应拒绝
     _, batch_bad = t.post('/api/schedule-add-batch', {
-        'dates': batch_dates, 'courseId': ctx['math'],
+        'dates': batch_dates, 'courseId': ctx['math']['id'],
     })
     t.assert_fail((200, batch_bad), '批量排课缺 studentIds 应拒绝')
 
@@ -4992,7 +4993,7 @@ def test_disaster_recovery(t, prefix, ctx):
 
     # ===== 创建备份 =====
     print('  [阶段] 创建备份')
-    _, bk_create = t.post('/api/backups')
+    _, bk_create = t.post('/api/backups', {})
     t.assert_ok((200, bk_create), '创建备份成功')
     created_filename = bk_create.get('data', {}).get('filename') or bk_create.get('data', {}).get('backup', {}).get('filename')
 
@@ -5066,7 +5067,7 @@ def test_multi_role(t, prefix, ctx):
     # ===== 教师角色数据隔离 =====
     print('  [阶段] 教师角色数据隔离')
     # 教师查排课（应只返回自己的排课）
-    _, t_sched = t.get(f'/api/schedules?studentId={ctx["stu"]}')
+    _, t_sched = t.get(f'/api/schedules?studentId={ctx["stu"]["id"]}')
     t.assert_ok((200, t_sched), '教师查排课(用 admin token 测同接口)')
 
     # 教师查教师绩效（应只返回自己的）
@@ -5092,7 +5093,7 @@ def test_multi_role(t, prefix, ctx):
     # ===== 家长端 H5 =====
     print('  [阶段] 家长端 H5')
     # GET 脱敏查询（无需 token）
-    _, pa_get = t.get(f'/api/parent-access?s={ctx["stu"]}')
+    _, pa_get = t.get(f'/api/parent-access?s={ctx["stu"]["id"]}')
     t.assert_ok((200, pa_get), '家长端 GET 脱敏查询成功')
 
     # 验证脱敏（学员名应被脱敏）
@@ -5102,10 +5103,10 @@ def test_multi_role(t, prefix, ctx):
 
     # POST 验真（需要手机号后4位）
     # 先查学员手机号
-    _, stu_body = t.get(f'/api/students?q={ctx["stu"]}')
+    _, stu_body = t.get(f'/api/students?q={ctx["stu"]["id"]}')
     # 用错误手机号后4位应拒绝
     _, pa_bad = t.post('/api/parent-access', {
-        'studentId': ctx['stu'], 'phoneSuffix': '0000',
+        'studentId': ctx['stu']['id'], 'phoneSuffix': '0000',
     })
     t.assert_fail((200, pa_bad), '家长端错误手机号应拒绝')
 
@@ -5191,7 +5192,7 @@ def test_error_boundary(t, prefix, ctx):
     print('  [阶段] 上限边界')
     # class-members 超过 500 学员应拒绝
     huge_ids = [f'fake_id_{i}' for i in range(501)]
-    _, cm_big = t.post('/api/class-members', {'classId': ctx['cls'], 'studentIds': huge_ids})
+    _, cm_big = t.post('/api/class-members', {'classId': ctx['cls']['id'], 'studentIds': huge_ids})
     t.assert_fail((200, cm_big), 'class-members 超 500 应拒绝')
 
     # 超大 pageSize
@@ -5217,7 +5218,7 @@ def test_error_boundary(t, prefix, ctx):
     stu = stu_body['data'].get('student') or stu_body['data']
 
     _, enr_body = t.post('/api/enrollment-add', {'enrollment': {
-        'studentId': stu['id'], 'courseId': ctx['math'],
+        'studentId': stu['id'], 'courseId': ctx['math']['id'],
         'purchasedHours': 10, 'giftHours': 0,
         'unitPrice': 100, 'totalAmount': 1000, 'paidAmount': 1000,
     }})
@@ -5225,17 +5226,17 @@ def test_error_boundary(t, prefix, ctx):
 
     sm_date = date_offset(8)
     _, sm_sc = t.post('/api/schedule-add', {'schedule': {
-        'studentId': stu['id'], 'courseId': ctx['math'], 'courseName': '状态机测',
-        'classId': 'none', 'studentName': stu['name'],
+        'studentId': stu['id'], 'courseId': ctx['math']['id'], 'courseName': '状态机测',
+        'classId': ctx['cls']['id']['id'], 'studentName': stu['name'],
         'date': sm_date, 'startTime': '10:00', 'endTime': '11:00',
     }})
     t.assert_ok((200, sm_sc), '创建状态机测试排课')
     sm_sched = sm_sc['data']['schedule']
 
     # 点名（到课）
-    _, att = t.post('/api/attendance', {'attendance': [{
+    _, att = t.post('/api/attendance', {'date': sm_date, 'items': [{
         'scheduleId': sm_sched['id'], 'studentId': stu['id'],
-        'attended': True, 'date': sm_date,
+        'attended': True,
     }]})
     t.assert_ok((200, att), '状态机:点名到课')
 
@@ -5295,7 +5296,7 @@ def run_flow():
     # 测试组执行序列（顺序与 test_suite.main 一致，test_full_flow 必须最先跑）
     groups = [
         ("组1完整流程",    lambda t, p, ctx: test_full_flow(t, p)),
-        ("组2安全性",      lambda t, p, ctx: test_security(t, p)),
+        ("组2安全性",      lambda t, p, ctx: test_security(t, p, ctx)),
         ("组3业务流程",    lambda t, p, ctx: test_business_flow(t, p, ctx)),
         ("组4非流程拦截",  lambda t, p, ctx: test_non_flow_intercept(t, p, ctx)),
         ("组5业务规则",     lambda t, p, ctx: test_business_rules(t, p, ctx)),
