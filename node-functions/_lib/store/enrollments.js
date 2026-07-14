@@ -198,15 +198,6 @@ export async function updateEnrollment(enrollment) {
   return { updated: true, notFound: false, before, after, purchasedDelta: r.purchasedDelta, giftDelta: r.giftDelta }
 }
 
-export async function deleteEnrollment(id) {
-  validateStorageId(id, 'enrollment.id')
-  const db = getDb()
-  const oldRow = db.prepare('SELECT * FROM enrollments WHERE id=?').get(id)
-  const before = oldRow ? rowToEnrollment(oldRow) : null
-  const info = db.prepare('DELETE FROM enrollments WHERE id=?').run(id)
-  return { deleted: info.changes > 0, before }
-}
-
 // 学员报名汇总（供学员管理页展示总购课/总剩余）
 export async function getEnrollmentSummaryByStudent(studentId) {
   validateStorageId(studentId, 'studentId')

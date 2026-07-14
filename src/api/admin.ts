@@ -673,15 +673,6 @@ export async function updateEnrollment(
   })
 }
 
-export async function deleteEnrollment(
-  id: string,
-): Promise<ApiResult<{ deleted: boolean }>> {
-  return request(`${API_BASE}/enrollment-delete`, {
-    method: 'DELETE',
-    body: JSON.stringify({ id }),
-  })
-}
-
 // ========== 退课/结转管理 ==========
 
 export async function listTransfers(params: {
@@ -908,17 +899,6 @@ export async function restoreBackup(filename: string): Promise<ApiResult<{ ok: b
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ filename }),
     signal: AbortSignal.timeout(30000),
-  })
-  return resp.json()
-}
-
-// ========== 课时过期处理 ==========
-
-export async function expireOverdue(): Promise<ApiResult<{ affected: number }>> {
-  const resp = await fetch(`${API_BASE}/expire`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    signal: AbortSignal.timeout(15000),
   })
   return resp.json()
 }

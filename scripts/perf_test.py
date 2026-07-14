@@ -1894,14 +1894,6 @@ def s12_crud_update_delete(student_ids, course_id):
             passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
             print(f"  报名PUT  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
             results.append({"阶梯": "报名PUT", "P99": s["p99_ms"], "错误率": er, "达标": passed})
-            # 报名 DELETE 系统设计为始终拒绝（要求走退课流程），测它是否正确拒绝
-            lats, ok, err = measure(lambda: http("DELETE", "/api/enrollment-delete", {"id": enr_id}, token=TOKEN), 5)
-            s = stats(lats)
-            # 报名删除应返回 code=1（拒绝），这是正确行为，不算错误
-            er = 0
-            passed = s["p99_ms"] < SLA_P99_MS
-            print(f"  报名DELETE(应拒绝)  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  {'✓' if passed else '✗'}")
-            results.append({"阶梯": "报名DELETE(拒绝)", "P99": s["p99_ms"], "错误率": 0, "达标": passed})
             # 走退课清理这条报名
             create_transfer(temp_sid, enr_id, reason="压测清理")
 
@@ -4115,12 +4107,6 @@ def test_business_rules(t, prefix, ctx):
         body = t.assert_ok(t.get('/api/admins'), '查询超管权限')
         superadmin_after = next(a for a in body['data']['admins'] if a['role'] == 'superadmin')
         t.assert_eq(superadmin_after['role'], 'superadmin', '超管角色未变')
-
-    # === 报名记录完整性保护 ===
-    print('  --- 报名记录完整性保护 ---')
-    # 用 ctx 中学员的报名尝试删除
-    resp = t.delete('/api/enrollment-delete', {'id': ctx['enr_id']})
-    t.assert_fail(resp, '删除报名应被拒', '不可删除')
 
     # === 有剩余课时不可删除学员 ===
     print('  --- 有剩余课时不可删除学员 ---')

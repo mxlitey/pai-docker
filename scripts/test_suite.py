@@ -911,12 +911,6 @@ def test_bug_fixes(t, prefix, ctx):
         superadmin_after = next(a for a in body['data']['admins'] if a['role'] == 'superadmin')
         t.assert_eq(superadmin_after['role'], 'superadmin', '超管角色未变')
 
-    # === Bug5: 报名记录不可删除 ===
-    print('  --- Bug5: 报名记录不可删除 ---')
-    # 用 ctx 中学员的报名尝试删除
-    resp = t.delete('/api/enrollment-delete', {'id': ctx['enr_id']})
-    t.assert_fail(resp, '删除报名应被拒(Bug5)', '不可删除')
-
     # === Bug6: 有剩余课时不能删除学员 ===
     print('  --- Bug6: 有剩余课时不能删除学员 ---')
     # ctx['stu'] 有剩余课时（之前流程可能耗尽，创建新学员测试）
