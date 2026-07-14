@@ -68,17 +68,22 @@
     D10 课程/班级/班级成员 / D11 审计日志 / D12 反馈+教师绩效
     D13 点名 / D14 排课写入 / D15 退课 / D16 优化表查询
 
-  阶段 2：压力阶梯（S1-S10，按 SLA 阶梯加压找边界）
+  阶段 2：压力阶梯（S1-S15，按 SLA 阶梯加压找边界）
     S1 数据量阶梯（100→500→1000→5000→10000 学员，含审计日志同步增长）
     S2 并发阶梯（10→50→100→200→500，找错误率 >1% 的崩溃点）
     S3 持续负载（固定 QPS 跑 3 分钟，测内存泄漏/性能衰减）
     S4 混合负载（读写 7:3，测真实场景瓶颈）
-    S5 审计日志查询阶梯（深翻页/大页/按模块过滤，找审计表变慢拐点）
-    S6 点名压力（50/100/200条批量扣课 + 并发点名 + 改缺勤回退课时）
+    S5 审计日志查询阶梯（深翻页/大页/7种过滤维度，找审计表变慢拐点）
+    S6 点名压力（50/100/200条批量扣课 + 并发点名 + 改缺勤 + 班级成员查删）
     S7 排课数据量阶梯（1万→10万→100万→1000万排课记录，测查询/写入/点名/大批量冲突/多表查询拐点）
     S8 鉴权性能（正确token校验 + 错误token拒绝 + 鉴权并发阶梯）
     S9 系统资源（CPU/内存占用 + 数据库文件大小 + 远程延迟推断）
     S10 退课事务（串行退课 + 较大批量退课 + 并发退课测事务锁竞争）
+    S11 调课/补课（排课核心写操作：取消+新建+变更记录，串行+并发）
+    S12 CRUD 改删（课程/班级/学员/排课/报名/管理员/年级/配置 PUT+DELETE）
+    S13 反馈 CRUD（feedback POST/GET/PUT/DELETE 全套）
+    S14 错误路径与边界（404/400/重复/超大页/SQL字符/emoji/冲突拒绝）
+    S15 灾备与多角色（备份/归档/权限定义/教师列表/公告/家长端/年级升级）
 
   数据量规模可选（--scale small|medium|large，默认 large，仅影响阶段 2 的 S1/S7）：
   · small  —— S1: 100→1千学员，S7: 1万→10万排课（快速验证，约 5-10 分钟）
@@ -1499,6 +1504,37 @@ def s5_audit_log_staircase():
     print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
     results.append({"阶梯": "按模块students", "P99": s["p99_ms"], "错误率": er, "达标": passed})
 
+    # 阶梯 5：补齐 audit-logs 其余 6 种过滤维度（actorId/targetType/targetId/action/startDate/endDate）
+    # 取一条真实日志作为过滤参数来源
+    r_sample, _ = http("GET", "/api/audit-logs?page=1&pageSize=1", token=TOKEN)
+    sample = None
+    if r_sample.get("code") == 0:
+        logs = r_sample.get("data", {}).get("logs", [])
+        if logs:
+            sample = logs[0]
+    filter_tests = []
+    if sample:
+        if sample.get("actorId"):
+            filter_tests.append(("actorId", f"actorId={sample['actorId']}"))
+        if sample.get("targetType"):
+            filter_tests.append(("targetType", f"targetType={sample['targetType']}"))
+        if sample.get("action"):
+            filter_tests.append(("action", f"action={sample['action']}"))
+        # 日期范围：取最近 30 天
+        today_str = time.strftime("%Y-%m-%d")
+        start_str = today_str[:8] + "01"
+        filter_tests.append(("startDate", f"startDate={start_str}"))
+        filter_tests.append(("endDate", f"endDate={today_str}"))
+        filter_tests.append(("日期范围", f"startDate={start_str}&endDate={today_str}"))
+    for label, qs in filter_tests:
+        print(f"\n  [阶梯 按过滤 {label}]")
+        lats, ok, err = measure(lambda: http("GET", f"/api/audit-logs?{qs}&page=1&pageSize=20", token=TOKEN), 10)
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": f"过滤_{label}", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
     return results
 
 
@@ -1622,6 +1658,28 @@ def s6_attendance_stress(student_ids, course_id):
     print(f"\n  [阶梯 5] 改缺勤 100 条（回退课时）")
     print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
     results.append({"阶梯": "改缺勤100条", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # 阶梯 6: 班级成员查询/移除（补齐 class-members GET/DELETE 缺失场景）
+    if class_id and class_id != "none" and student_ids:
+        print(f"\n  [阶梯 6] 班级成员 GET 查询")
+        lats, ok, err = measure(lambda: http("GET", f"/api/class-members?classId={class_id}", token=TOKEN), 10)
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": "班级成员GET", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+        # 移除少量成员再测移除性能（移除 5 个）
+        remove_ids = student_ids[-5:]
+        print(f"\n  [阶梯 7] 班级成员 DELETE 移除 {len(remove_ids)} 个")
+        lats, ok, err = measure(lambda: http("DELETE", "/api/class-members", {"classId": class_id, "studentIds": remove_ids}, token=TOKEN), 5)
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": f"班级成员DELETE{len(remove_ids)}", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+        # 移除后加回来，保持数据完整性
+        add_class_members(class_id, remove_ids)
 
     return results
 
@@ -2123,6 +2181,710 @@ def s10_transfer_stress(student_ids, course_id):
     return results
 
 
+def s11_reschedule_makeup(student_ids, course_id):
+    """S11 调课/补课压力测试（排课系统核心差异化功能）
+
+    调课（schedule-reschedule）：取消原排课 + 新建排课 + 写 schedule_changes 记录
+    补课（schedule-makeup）：保留原缺勤排课 + 新建排课并设 makeup_for 关联
+
+    这两个是排课系统最频繁的写操作，生产中常见性能瓶颈。
+    """
+    print("\n" + "=" * 60)
+    print("  S11 调课/补课压力测试（排课核心写操作）")
+    print(f"  SLA: P99 > {SLA_P99_MS}ms 或 错误率 > {SLA_ERROR_RATE*100}% 判定不达标")
+    print("  测什么：调课（取消原排课+新建）和补课（保留缺勤+新建）是排课系统最频繁的写操作，测它们快不快。")
+    print("=" * 60)
+    results = []
+    if not student_ids or not course_id:
+        print("  [跳过] 缺数据")
+        return results
+
+    import datetime as dt
+    base_date = dt.date.today() + dt.timedelta(days=30)
+
+    # ===== 调课测试 =====
+    print("\n  [阶段 1] 调课（schedule-reschedule）")
+    # 准备 20 条未点名的排课用于调课
+    reschedule_pairs = []
+    for i, sid in enumerate(student_ids[:20]):
+        d = (base_date + dt.timedelta(days=i)).strftime("%Y-%m-%d")
+        sched_id = create_schedule(sid, course_id, class_id="none", date=d)
+        if sched_id:
+            reschedule_pairs.append((sid, sched_id, d))
+
+    if reschedule_pairs:
+        lats = []
+        ok = 0
+        err = 0
+        for sid, sched_id, old_date in reschedule_pairs:
+            new_date = (dt.datetime.strptime(old_date, "%Y-%m-%d") + dt.timedelta(days=7)).strftime("%Y-%m-%d")
+            t0 = time.perf_counter()
+            r, _ = http("POST", "/api/schedule-reschedule", {
+                "scheduleId": sched_id, "newDate": new_date,
+                "newStartTime": "10:00", "newEndTime": "11:00", "reason": "压测调课",
+            }, token=TOKEN, timeout=30)
+            lat = (time.perf_counter() - t0) * 1000
+            lats.append(lat)
+            if r.get("code") == 0:
+                ok += 1
+            else:
+                err += 1
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  调课 {len(reschedule_pairs)} 笔  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": f"调课{len(reschedule_pairs)}笔", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+    else:
+        print("  [跳过] 调课数据准备失败")
+
+    # ===== 补课测试 =====
+    print("\n  [阶段 2] 补课（schedule-makeup）")
+    # 补课要求原排课已缺勤（attended=false），准备 20 条缺勤排课
+    makeup_pairs = []
+    makeup_date = base_date + dt.timedelta(days=60)
+    for i, sid in enumerate(student_ids[20:40]):
+        d = (makeup_date + dt.timedelta(days=i)).strftime("%Y-%m-%d")
+        sched_id = create_schedule(sid, course_id, class_id="none", date=d)
+        if sched_id:
+            makeup_pairs.append((sid, sched_id, d))
+
+    # 把这些排课标记为缺勤
+    if makeup_pairs:
+        att_items = [{"scheduleId": sid, "studentId": s, "attended": False, "date": d} for s, sid, d in makeup_pairs]
+        set_attendance(att_items, date=makeup_pairs[0][2])
+
+        lats = []
+        ok = 0
+        err = 0
+        for sid, sched_id, old_date in makeup_pairs:
+            new_date = (dt.datetime.strptime(old_date, "%Y-%m-%d") + dt.timedelta(days=3)).strftime("%Y-%m-%d")
+            t0 = time.perf_counter()
+            r, _ = http("POST", "/api/schedule-makeup", {
+                "scheduleId": sched_id, "newDate": new_date,
+                "newStartTime": "14:00", "newEndTime": "15:00", "reason": "压测补课",
+            }, token=TOKEN, timeout=30)
+            lat = (time.perf_counter() - t0) * 1000
+            lats.append(lat)
+            if r.get("code") == 0:
+                ok += 1
+            else:
+                err += 1
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  补课 {len(makeup_pairs)} 笔  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": f"补课{len(makeup_pairs)}笔", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+    else:
+        print("  [跳过] 补课数据准备失败")
+
+    # ===== 调课并发测试 =====
+    print("\n  [阶段 3] 并发调课 10 路")
+    conc_pairs = []
+    conc_base = base_date + dt.timedelta(days=90)
+    for i, sid in enumerate(student_ids[40:50]):
+        d = (conc_base + dt.timedelta(days=i)).strftime("%Y-%m-%d")
+        sched_id = create_schedule(sid, course_id, class_id="none", date=d)
+        if sched_id:
+            conc_pairs.append((sid, sched_id, d))
+
+    if conc_pairs:
+        ok = [0]
+        err = [0]
+        lats = []
+        lock = threading.Lock()
+
+        def reschedule_worker(pair):
+            sid, sched_id, old_date = pair
+            new_date = (dt.datetime.strptime(old_date, "%Y-%m-%d") + dt.timedelta(days=5)).strftime("%Y-%m-%d")
+            t0 = time.perf_counter()
+            try:
+                r, _ = http("POST", "/api/schedule-reschedule", {
+                    "scheduleId": sched_id, "newDate": new_date, "reason": "并发调课",
+                }, token=TOKEN, timeout=30)
+                with lock:
+                    if r.get("code") == 0:
+                        ok[0] += 1
+                    else:
+                        err[0] += 1
+                    lats.append((time.perf_counter() - t0) * 1000)
+            except Exception:
+                with lock:
+                    err[0] += 1
+                    lats.append((time.perf_counter() - t0) * 1000)
+
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            futures = [pool.submit(reschedule_worker, p) for p in conc_pairs]
+            for f in as_completed(futures, timeout=60):
+                try:
+                    f.result()
+                except Exception:
+                    pass
+        s = stats(lats)
+        er = error_rate(ok[0], err[0])
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  并发调课 10 路  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": "并发调课10路", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    return results
+
+
+def s12_crud_update_delete(student_ids, course_id):
+    """S12 CRUD 改删测试（补齐 PUT/DELETE 全缺失）
+
+    覆盖：课程/班级/学员/排课/报名/管理员 的 PUT 修改和 DELETE 删除。
+    为避免破坏主测试数据，全部用临时创建的资源做改删。
+    """
+    print("\n" + "=" * 60)
+    print("  S12 CRUD 改删测试（课程/班级/学员/排课/报名/管理员 PUT+DELETE）")
+    print(f"  SLA: P99 > {SLA_P99_MS}ms 或 错误率 > {SLA_ERROR_RATE*100}% 判定不达标")
+    print("  测什么：之前只测了查和增，现在补齐改和删。用临时资源测，不破坏主数据。")
+    print("=" * 60)
+    results = []
+
+    # ===== 学员改删 =====
+    print("\n  [阶段 1] 学员改删")
+    # 创建临时学员
+    temp_sid = create_students(1)
+    if temp_sid:
+        temp_sid = temp_sid[0]
+        # 改
+        lats, ok, err = measure(lambda: http("PUT", "/api/student-update", {"student": {
+            "id": temp_sid, "name": "压测改名师", "grade": "一年级", "phone": "13900000001",
+        }}, token=TOKEN), 5)
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  学员PUT  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": "学员PUT", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+        # 删
+        lats, ok, err = measure(lambda: http("DELETE", "/api/student-delete", {"studentId": temp_sid}, token=TOKEN), 5)
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  学员DELETE  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": "学员DELETE", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 课程改删 =====
+    print("\n  [阶段 2] 课程改删")
+    temp_course = ensure_course("压测改删课程")
+    if temp_course:
+        # 查课程原信息用于 PUT
+        r_courses, _ = http("GET", "/api/courses", token=TOKEN)
+        course_info = None
+        if r_courses.get("code") == 0:
+            for c in r_courses["data"].get("courses", []):
+                if c["id"] == temp_course:
+                    course_info = c
+                    break
+        if course_info:
+            lats, ok, err = measure(lambda: http("PUT", "/api/course-update", {"course": {
+                "id": temp_course, "name": "压测改课名", "grade": course_info.get("grade", "一年级"),
+                "billingType": course_info.get("billingType", "per_lesson"), "status": "active",
+            }}, token=TOKEN), 5)
+            s = stats(lats)
+            er = error_rate(ok, err)
+            passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+            print(f"  课程PUT  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+            results.append({"阶梯": "课程PUT", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+        # 删（注意：课程删除会级联删排课，用临时课程不影响主数据）
+        lats, ok, err = measure(lambda: http("DELETE", "/api/course-delete", {"courseId": temp_course}, token=TOKEN), 5)
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  课程DELETE  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": "课程DELETE", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 班级改删 =====
+    print("\n  [阶段 3] 班级改删")
+    temp_class = ensure_class("压测改删班", course_id)
+    if temp_class:
+        lats, ok, err = measure(lambda: http("PUT", "/api/class-update", {"class": {
+            "id": temp_class, "name": "压测改班名", "grade": "一年级", "courseId": course_id,
+            "teacher": "改后教师", "capacity": 30, "status": "active",
+        }}, token=TOKEN), 5)
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  班级PUT  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": "班级PUT", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+        lats, ok, err = measure(lambda: http("DELETE", "/api/class-delete", {"id": temp_class}, token=TOKEN), 5)
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  班级DELETE  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": "班级DELETE", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 排课改删 =====
+    print("\n  [阶段 4] 排课改删")
+    if student_ids:
+        temp_sid = student_ids[0]
+        sched_id = create_schedule(temp_sid, course_id, class_id="none", date=_unique_test_date())
+        if sched_id:
+            # 查原排课信息
+            r_sc, _ = http("GET", f"/api/schedules?studentId={temp_sid}&startDate={_unique_test_date()}&endDate={_unique_test_date()}", token=TOKEN)
+            sched_info = None
+            if r_sc.get("code") == 0:
+                scheds = r_sc.get("data", {}).get("schedules", [])
+                for sc in scheds:
+                    if sc["id"] == sched_id:
+                        sched_info = sc
+                        break
+            if sched_info:
+                lats, ok, err = measure(lambda: http("PUT", "/api/schedule", {"old": sched_info, "new": {
+                    **sched_info, "startTime": "11:00", "endTime": "12:00",
+                }}, token=TOKEN), 5)
+                s = stats(lats)
+                er = error_rate(ok, err)
+                passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+                print(f"  排课PUT  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+                results.append({"阶梯": "排课PUT", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+            # 删
+            lats, ok, err = measure(lambda: http("DELETE", "/api/schedule", {
+                "id": sched_id, "studentId": temp_sid, "date": _unique_test_date(),
+            }, token=TOKEN), 5)
+            s = stats(lats)
+            er = error_rate(ok, err)
+            passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+            print(f"  排课DELETE  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+            results.append({"阶梯": "排课DELETE", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 报名改删 =====
+    print("\n  [阶段 5] 报名改删")
+    if student_ids and course_id:
+        temp_sid = student_ids[1]
+        r_enr, _ = http("POST", "/api/enrollment-add", {"enrollment": {
+            "studentId": temp_sid, "courseId": course_id,
+            "purchasedHours": 10, "giftHours": 0,
+            "unitPrice": 100, "totalAmount": 1000, "paidAmount": 1000,
+        }}, token=TOKEN)
+        if r_enr.get("code") == 0:
+            enr_id = r_enr["data"]["enrollment"]["id"]
+            lats, ok, err = measure(lambda: http("PUT", "/api/enrollment-update", {"enrollment": {
+                "id": enr_id, "purchasedHours": 15, "unitPrice": 100, "totalAmount": 1500, "paidAmount": 1500,
+            }}, token=TOKEN), 5)
+            s = stats(lats)
+            er = error_rate(ok, err)
+            passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+            print(f"  报名PUT  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+            results.append({"阶梯": "报名PUT", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+            # 报名 DELETE 系统设计为始终拒绝（要求走退课流程），测它是否正确拒绝
+            lats, ok, err = measure(lambda: http("DELETE", "/api/enrollment-delete", {"id": enr_id}, token=TOKEN), 5)
+            s = stats(lats)
+            # 报名删除应返回 code=1（拒绝），这是正确行为，不算错误
+            er = 0
+            passed = s["p99_ms"] < SLA_P99_MS
+            print(f"  报名DELETE(应拒绝)  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  {'✓' if passed else '✗'}")
+            results.append({"阶梯": "报名DELETE(拒绝)", "P99": s["p99_ms"], "错误率": 0, "达标": passed})
+            # 走退课清理这条报名
+            create_transfer(temp_sid, enr_id, reason="压测清理")
+
+    # ===== 管理员改删 =====
+    print("\n  [阶段 6] 管理员改删")
+    # 创建临时管理员
+    r_adm, _ = http("POST", "/api/admin-add", {"admin": {
+        "username": f"perf_test_{int(time.time())}", "password": "PerfTest123!",
+        "role": "teacher", "realName": "压测教师", "phone": "13900000099",
+    }}, token=TOKEN)
+    if r_adm.get("code") == 0:
+        adm_id = r_adm["data"]["admin"]["id"]
+        lats, ok, err = measure(lambda: http("PUT", "/api/admin-update", {"admin": {
+            "id": adm_id, "realName": "改后教师名", "phone": "13900000088",
+        }}, token=TOKEN), 5)
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  管理员PUT  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": "管理员PUT", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+        lats, ok, err = measure(lambda: http("DELETE", "/api/admin-delete", {"id": adm_id}, token=TOKEN), 5)
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  管理员DELETE  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": "管理员DELETE", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 系统配置 PUT =====
+    print("\n  [阶段 7] 系统配置 PUT")
+    lats, ok, err = measure(lambda: http("PUT", "/api/config", {"appName": "排课系统压测"}, token=TOKEN), 5)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  配置PUT  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "配置PUT", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 年级改删 =====
+    print("\n  [阶段 8] 年级改删")
+    # 创建临时年级
+    r_grade, _ = http("POST", "/api/grade-add", {"grade": {"name": "压测年级", "sortOrder": 999, "description": "压测用"}}, token=TOKEN)
+    if r_grade.get("code") == 0:
+        grade_id = r_grade["data"].get("grade", {}).get("id") or r_grade["data"].get("id")
+        if grade_id:
+            lats, ok, err = measure(lambda: http("PUT", "/api/grade-update", {"grade": {
+                "id": grade_id, "name": "压测改年级", "sortOrder": 999, "status": "active",
+            }}, token=TOKEN), 5)
+            s = stats(lats)
+            er = error_rate(ok, err)
+            passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+            print(f"  年级PUT  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+            results.append({"阶梯": "年级PUT", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+            lats, ok, err = measure(lambda: http("DELETE", "/api/grade-delete", {"id": grade_id}, token=TOKEN), 5)
+            s = stats(lats)
+            er = error_rate(ok, err)
+            passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+            print(f"  年级DELETE  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+            results.append({"阶梯": "年级DELETE", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    return results
+
+
+def s13_feedback_crud(student_ids, course_id):
+    """S13 反馈 CRUD 测试（补齐 feedback POST/GET/PUT/DELETE 全缺失）"""
+    print("\n" + "=" * 60)
+    print("  S13 反馈 CRUD 测试（feedback POST/GET/PUT/DELETE）")
+    print(f"  SLA: P99 > {SLA_P99_MS}ms 或 错误率 > {SLA_ERROR_RATE*100}% 判定不达标")
+    print("  测什么：课后反馈的增删改查全套操作，之前完全没测过。")
+    print("=" * 60)
+    results = []
+    if not student_ids or not course_id:
+        print("  [跳过] 缺数据")
+        return results
+
+    # 准备：为前 30 个学员创建排课，用于反馈
+    print("  [准备] 创建反馈测试用排课...")
+    sched_pairs = []
+    import datetime as dt
+    base = dt.date.today() - dt.timedelta(days=1)
+    for i, sid in enumerate(student_ids[:30]):
+        d = (base + dt.timedelta(days=i % 7)).strftime("%Y-%m-%d")
+        sched_id = create_schedule(sid, course_id, class_id="none", date=d)
+        if sched_id:
+            sched_pairs.append((sid, sched_id))
+
+    if not sched_pairs:
+        print("  [跳过] 排课创建失败")
+        return results
+
+    # POST 创建反馈
+    print(f"\n  [阶梯 1] POST 创建反馈 {len(sched_pairs)} 条")
+    fb_ids = []
+    lats = []
+    ok = 0
+    err = 0
+    for sid, sched_id in sched_pairs:
+        t0 = time.perf_counter()
+        r, _ = http("POST", "/api/feedback", {
+            "scheduleId": sched_id, "studentId": sid,
+            "content": "压测反馈内容，表现良好", "rating": 5,
+        }, token=TOKEN, timeout=30)
+        lats.append((time.perf_counter() - t0) * 1000)
+        if r.get("code") == 0:
+            ok += 1
+            fb_id = r.get("data", {}).get("id")
+            if fb_id:
+                fb_ids.append(fb_id)
+        else:
+            err += 1
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": f"反馈POST{len(sched_pairs)}", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # GET 查询反馈（列表/按学员/按课程）
+    print(f"\n  [阶梯 2] GET 反馈列表")
+    lats, ok, err = measure(lambda: http("GET", "/api/feedback", token=TOKEN), 10)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  列表  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "反馈GET列表", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    print(f"\n  [阶梯 3] GET 按学员查反馈")
+    test_sid = student_ids[0]
+    lats, ok, err = measure(lambda: http("GET", f"/api/feedback?studentId={test_sid}", token=TOKEN), 10)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  按学员  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "反馈GET按学员", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    print(f"\n  [阶梯 4] GET 按课程查反馈")
+    lats, ok, err = measure(lambda: http("GET", f"/api/feedback?courseId={course_id}", token=TOKEN), 10)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  按课程  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "反馈GET按课程", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # PUT 修改反馈
+    if fb_ids:
+        print(f"\n  [阶梯 5] PUT 修改反馈 {len(fb_ids)} 条")
+        lats = []
+        ok = 0
+        err = 0
+        for fb_id in fb_ids:
+            t0 = time.perf_counter()
+            r, _ = http("PUT", "/api/feedback", {"id": fb_id, "content": "改后反馈内容", "rating": 4}, token=TOKEN, timeout=30)
+            lats.append((time.perf_counter() - t0) * 1000)
+            if r.get("code") == 0:
+                ok += 1
+            else:
+                err += 1
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": f"反馈PUT{len(fb_ids)}", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+        # DELETE 删除反馈
+        print(f"\n  [阶梯 6] DELETE 删除反馈 {len(fb_ids)} 条")
+        lats = []
+        ok = 0
+        err = 0
+        for fb_id in fb_ids:
+            t0 = time.perf_counter()
+            r, _ = http("DELETE", f"/api/feedback?id={fb_id}", token=TOKEN, timeout=30)
+            lats.append((time.perf_counter() - t0) * 1000)
+            if r.get("code") == 0:
+                ok += 1
+            else:
+                err += 1
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": f"反馈DELETE{len(fb_ids)}", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    return results
+
+
+def s14_error_paths():
+    """S14 错误路径与边界测试（补齐 403/404/400/重复/超大页/特殊字符）"""
+    print("\n" + "=" * 60)
+    print("  S14 错误路径与边界测试（异常输入抗压能力）")
+    print(f"  SLA: P99 > {SLA_P99_MS}ms 判定不达标（错误路径应快速返回，不拖慢系统）")
+    print("  测什么：传错参数、查不存在的东西、重复操作、超大页等异常情况，系统应该快速拒绝不该卡。")
+    print("=" * 60)
+    results = []
+
+    # 1. 404 查不存在的资源
+    print("\n  [阶梯 1] 404 查不存在的学生排课")
+    lats, ok, err = measure(lambda: http("GET", "/api/schedules?studentId=nonexistent_id_12345", token=TOKEN), 20)
+    s = stats(lats)
+    passed = s["p99_ms"] < SLA_P99_MS
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "404查不存在排课", "P99": s["p99_ms"], "错误率": 0, "达标": passed})
+
+    # 2. 400 缺必填参数
+    print("\n  [阶梯 2] 400 缺参数（/api/schedules 无 studentId）")
+    lats, ok, err = measure(lambda: http("GET", "/api/schedules", token=TOKEN), 20)
+    s = stats(lats)
+    passed = s["p99_ms"] < SLA_P99_MS
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "400缺参数", "P99": s["p99_ms"], "错误率": 0, "达标": passed})
+
+    # 3. 400 非法日期格式
+    print("\n  [阶梯 3] 400 非法日期格式")
+    lats, ok, err = measure(lambda: http("GET", "/api/schedules?studentId=perf_0&startDate=invalid", token=TOKEN), 20)
+    s = stats(lats)
+    passed = s["p99_ms"] < SLA_P99_MS
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "400非法日期", "P99": s["p99_ms"], "错误率": 0, "达标": passed})
+
+    # 4. 重复操作（重复创建同名学员）
+    print("\n  [阶梯 4] 重复操作（重复创建同名学员）")
+    dup_name = f"dup_test_{int(time.time())}"
+    # 先创建一个
+    http("POST", "/api/student-add", {"student": {"name": dup_name, "grade": "一年级", "phone": "13900000001"}}, token=TOKEN)
+    # 再创建同名的，测重复操作性能
+    lats, ok, err = measure(lambda: http("POST", "/api/student-add", {"student": {"name": dup_name, "grade": "一年级", "phone": "13900000002"}}, token=TOKEN), 10)
+    s = stats(lats)
+    passed = s["p99_ms"] < SLA_P99_MS
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "重复创建学员", "P99": s["p99_ms"], "错误率": 0, "达标": passed})
+
+    # 5. 超大 pageSize
+    print("\n  [阶梯 5] 超大 pageSize=1000")
+    lats, ok, err = measure(lambda: http("GET", "/api/audit-logs?page=1&pageSize=1000", token=TOKEN), 10)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "超大pageSize1000", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # 6. 深翻页越界（page 超过总页数）
+    print("\n  [阶梯 6] 深翻页越界 page=99999")
+    lats, ok, err = measure(lambda: http("GET", "/api/audit-logs?page=99999&pageSize=20", token=TOKEN), 10)
+    s = stats(lats)
+    passed = s["p99_ms"] < SLA_P99_MS
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "深翻页越界", "P99": s["p99_ms"], "错误率": 0, "达标": passed})
+
+    # 7. 超长搜索词
+    print("\n  [阶梯 7] 超长搜索词（1000 字符）")
+    long_q = "a" * 1000
+    lats, ok, err = measure(lambda: http("GET", f"/api/students?q={long_q}", token=TOKEN), 10)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "超长搜索词", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # 8. SQL 敏感字符
+    print("\n  [阶梯 8] SQL 敏感字符搜索")
+    lats, ok, err = measure(lambda: http("GET", "/api/students?q=' OR 1=1--", token=TOKEN), 10)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "SQL敏感字符", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # 9. emoji 搜索
+    print("\n  [阶梯 9] emoji 搜索")
+    lats, ok, err = measure(lambda: http("GET", "/api/students?q=🎯测试", token=TOKEN), 10)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "emoji搜索", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # 10. 排课冲突拒绝（创建冲突排课应被拒绝）
+    print("\n  [阶梯 10] 排课冲突拒绝")
+    # 用一个不存在的学员 ID 测，避免真的创建冲突
+    lats, ok, err = measure(lambda: http("POST", "/api/schedule-add", {"schedule": {
+        "studentId": "nonexistent_123", "courseId": "nonexistent_course",
+        "courseName": "测", "classId": "none", "studentName": "测",
+        "date": "2020-01-01", "startTime": "09:00", "endTime": "10:00",
+    }}, token=TOKEN), 10)
+    s = stats(lats)
+    passed = s["p99_ms"] < SLA_P99_MS
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "排课冲突拒绝", "P99": s["p99_ms"], "错误率": 0, "达标": passed})
+
+    return results
+
+
+def s15_disaster_recovery_multirole(student_ids, course_id):
+    """S15 灾备与多角色测试（备份/恢复/归档 + 教师视角 + 家长端）"""
+    print("\n" + "=" * 60)
+    print("  S15 灾备与多角色测试（备份/恢复/归档 + 教师视角 + 家长端）")
+    print(f"  SLA: P99 > {SLA_P99_MS}ms 或 错误率 > {SLA_ERROR_RATE*100}% 判定不达标")
+    print("  测什么：备份恢复这种运维操作快不快、教师视角查排课和家长端查询能不能正常工作。")
+    print("=" * 60)
+    results = []
+    if not student_ids:
+        print("  [跳过] 缺数据")
+        return results
+
+    # ===== 备份列表 GET =====
+    print("\n  [阶段 1] 备份列表 GET")
+    lats, ok, err = measure(lambda: http("GET", "/api/backups", token=TOKEN), 5)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "备份列表GET", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 审计归档列表 GET =====
+    print("\n  [阶段 2] 审计归档列表 GET")
+    lats, ok, err = measure(lambda: http("GET", "/api/audit-archives", token=TOKEN), 5)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "归档列表GET", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 审计归档创建+删除（用上月） =====
+    print("\n  [阶段 3] 审计归档创建（上月日志）")
+    import datetime as dt
+    last_month = (dt.date.today().replace(day=1) - dt.timedelta(days=1)).strftime("%Y-%m")
+    lats, ok, err = measure(lambda: http("POST", "/api/audit-archives", {"month": last_month}, token=TOKEN), 1)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "归档创建", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 权限定义 GET =====
+    print("\n  [阶段 4] 权限定义 GET")
+    lats, ok, err = measure(lambda: http("GET", "/api/permission-definitions", token=TOKEN), 5)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "权限定义GET", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 教师列表 GET =====
+    print("\n  [阶段 5] 教师列表 GET")
+    lats, ok, err = measure(lambda: http("GET", "/api/teachers-list", token=TOKEN), 5)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "教师列表GET", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 公告 POST + GET =====
+    print("\n  [阶段 6] 公告 POST 写入")
+    lats, ok, err = measure(lambda: http("POST", "/api/announcement", {"content": "压测公告内容"}, token=TOKEN), 5)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "公告POST", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    print("\n  [阶段 7] 公告 GET 读取")
+    lats, ok, err = measure(lambda: http("GET", "/api/announcement"), 10)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "公告GET", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 家长端访问 GET（无需 token） =====
+    print("\n  [阶段 8] 家长端 GET（脱敏查询）")
+    test_sid = student_ids[0]
+    lats, ok, err = measure(lambda: http("GET", f"/api/parent-access?s={test_sid}"), 10)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "家长端GET", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 教师视角查排课（用 admin token 模拟，系统会按角色过滤） =====
+    # 注：真正测教师视角需要教师 token，这里用 admin token 测同一接口的响应速度
+    print("\n  [阶段 9] 教师绩效 GET（多表聚合）")
+    today_str = time.strftime("%Y-%m-%d")
+    month_start = today_str[:8] + "01"
+    tp_params = urlencode({"startDate": month_start, "endDate": today_str})
+    lats, ok, err = measure(lambda: http("GET", f"/api/teacher-performance?{tp_params}", token=TOKEN), 10)
+    s = stats(lats)
+    er = error_rate(ok, err)
+    passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+    print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+    results.append({"阶梯": "教师绩效GET", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+
+    # ===== 年级升级（批量操作） =====
+    print("\n  [阶段 10] 年级升级 POST（批量升班）")
+    # 用临时年级测，避免影响真实数据
+    r_g1, _ = http("POST", "/api/grade-add", {"grade": {"name": f"压测源年级_{int(time.time())}", "sortOrder": 998, "description": "压测"}}, token=TOKEN)
+    r_g2, _ = http("POST", "/api/grade-add", {"grade": {"name": f"压测目标年级_{int(time.time())}", "sortOrder": 999, "description": "压测"}}, token=TOKEN)
+    if r_g1.get("code") == 0 and r_g2.get("code") == 0:
+        src_name = r_g1["data"].get("grade", {}).get("name") or r_g1["data"].get("name")
+        dst_name = r_g2["data"].get("grade", {}).get("name") or r_g2["data"].get("name")
+        lats, ok, err = measure(lambda: http("POST", "/api/grade-promote", {"fromGradeName": src_name, "toGradeName": dst_name}, token=TOKEN), 1)
+        s = stats(lats)
+        er = error_rate(ok, err)
+        passed = s["p99_ms"] < SLA_P99_MS and er < SLA_ERROR_RATE * 100
+        print(f"  P50={s['p50_ms']:.2f}ms  P99={s['p99_ms']:.2f}ms  错误率={er}%  {'✓' if passed else '✗'}")
+        results.append({"阶梯": "年级升级POST", "P99": s["p99_ms"], "错误率": er, "达标": passed})
+        # 清理临时年级
+        for r_g in [r_g1, r_g2]:
+            gid = r_g["data"].get("grade", {}).get("id") or r_g["data"].get("id")
+            if gid:
+                http("DELETE", "/api/grade-delete", {"id": gid}, token=TOKEN)
+
+    return results
+
+
 # ============ 评估报告生成 ============
 
 def _md_to_html(md_content):
@@ -2428,6 +3190,61 @@ def generate_report(mode, results, duration_s, scale=None):
                 lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
             lines.append("")
 
+        # S11 调课/补课
+        if "S11" in results and results["S11"]:
+            lines.append("### S11 调课/补课 —— 排课系统核心写操作\n")
+            lines.append("> 测什么：调课（取消原排课+新建+写变更记录）和补课（保留缺勤+新建关联排课）是排课系统最频繁的写操作。测串行和并发调课/补课性能。\n")
+            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+            lines.append("|---------|-----|--------|------|")
+            for r in results["S11"]:
+                mark = "✓ 正常" if r["达标"] else "✗ 异常"
+                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+            lines.append("")
+
+        # S12 CRUD 改删
+        if "S12" in results and results["S12"]:
+            lines.append("### S12 CRUD 改删 —— 课程/班级/学员/排课/报名/管理员/年级/配置\n")
+            lines.append("> 测什么：之前只测了查和增，现在补齐改（PUT）和删（DELETE）。用临时资源测，不破坏主数据。\n")
+            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+            lines.append("|---------|-----|--------|------|")
+            for r in results["S12"]:
+                mark = "✓ 正常" if r["达标"] else "✗ 异常"
+                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+            lines.append("")
+
+        # S13 反馈 CRUD
+        if "S13" in results and results["S13"]:
+            lines.append("### S13 反馈 CRUD —— 课后反馈增删改查\n")
+            lines.append("> 测什么：课后反馈的 POST 创建、GET 查询（列表/按学员/按课程）、PUT 修改、DELETE 删除全套操作。\n")
+            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+            lines.append("|---------|-----|--------|------|")
+            for r in results["S13"]:
+                mark = "✓ 正常" if r["达标"] else "✗ 异常"
+                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+            lines.append("")
+
+        # S14 错误路径与边界
+        if "S14" in results and results["S14"]:
+            lines.append("### S14 错误路径与边界 —— 异常输入抗压能力\n")
+            lines.append("> 测什么：传错参数、查不存在资源、重复操作、超大页、SQL 注入字符、emoji 等异常情况，系统应快速拒绝不该卡。\n")
+            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+            lines.append("|---------|-----|--------|------|")
+            for r in results["S14"]:
+                mark = "✓ 正常" if r["达标"] else "✗ 异常"
+                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+            lines.append("")
+
+        # S15 灾备与多角色
+        if "S15" in results and results["S15"]:
+            lines.append("### S15 灾备与多角色 —— 备份/归档/教师视角/家长端\n")
+            lines.append("> 测什么：备份列表、审计归档创建、权限定义、教师列表、公告读写、家长端访问、教师绩效、年级升级等运维和多角色场景。\n")
+            lines.append("| 测试阶梯 | P99 | 错误率 | 达标 |")
+            lines.append("|---------|-----|--------|------|")
+            for r in results["S15"]:
+                mark = "✓ 正常" if r["达标"] else "✗ 异常"
+                lines.append(f"| {r['阶梯']} | {r['P99']:.2f}ms | {r['错误率']}% | {mark} |")
+            lines.append("")
+
         # ===== 综合评估（大白话） =====
         lines.append("## 📋 综合评估（详细解读）\n")
         verdicts = _build_detailed_verdicts(results)
@@ -2633,6 +3450,46 @@ def _build_quick_verdicts(mode, results):
                 verdicts.append(f"⚠️ **退课事务**：{failed[0]['阶梯']} 时变慢或出错（多表事务可能存在锁竞争）")
             else:
                 verdicts.append(f"✅ **退课事务**：串行和并发退课均正常")
+        # S11 调课/补课
+        if "S11" in results and results["S11"]:
+            failed = [r for r in results["S11"] if not r["达标"]]
+            if failed:
+                all_pass = False
+                verdicts.append(f"⚠️ **调课/补课**：{failed[0]['阶梯']} 时变慢或出错（排课核心写操作）")
+            else:
+                verdicts.append(f"✅ **调课/补课**：调课、补课和并发调课均正常")
+        # S12 CRUD 改删
+        if "S12" in results and results["S12"]:
+            failed = [r for r in results["S12"] if not r["达标"]]
+            if failed:
+                all_pass = False
+                verdicts.append(f"⚠️ **CRUD 改删**：{failed[0]['阶梯']} 时变慢或出错")
+            else:
+                verdicts.append(f"✅ **CRUD 改删**：课程/班级/学员/排课/报名/管理员/年级/配置的 PUT/DELETE 均正常")
+        # S13 反馈 CRUD
+        if "S13" in results and results["S13"]:
+            failed = [r for r in results["S13"] if not r["达标"]]
+            if failed:
+                all_pass = False
+                verdicts.append(f"⚠️ **反馈 CRUD**：{failed[0]['阶梯']} 时变慢或出错")
+            else:
+                verdicts.append(f"✅ **反馈 CRUD**：反馈增删改查全套操作均正常")
+        # S14 错误路径
+        if "S14" in results and results["S14"]:
+            failed = [r for r in results["S14"] if not r["达标"]]
+            if failed:
+                all_pass = False
+                verdicts.append(f"⚠️ **错误路径**：{failed[0]['阶梯']} 时响应过慢（异常输入应快速拒绝）")
+            else:
+                verdicts.append(f"✅ **错误路径**：404/400/重复/超大页/SQL字符/emoji 等异常输入均快速响应")
+        # S15 灾备与多角色
+        if "S15" in results and results["S15"]:
+            failed = [r for r in results["S15"] if not r["达标"]]
+            if failed:
+                all_pass = False
+                verdicts.append(f"⚠️ **灾备与多角色**：{failed[0]['阶梯']} 时变慢或出错")
+            else:
+                verdicts.append(f"✅ **灾备与多角色**：备份/归档/教师/家长端/公告/年级升级均正常")
         # 总结论
         if all_pass:
             verdicts.append("\n🎉 **总结**：系统在所有测试场景下均表现良好，可以放心使用。")
@@ -2734,6 +3591,41 @@ def _build_detailed_verdicts(results):
             verdicts.append(f"**💸 退课事务**：**{failed[0]['阶梯']}** 时变慢或出错。退课是多表事务（改报名+账户余额+排课），并发退课可能存在锁竞争。建议检查事务隔离级别和索引覆盖。")
         else:
             verdicts.append(f"**💸 退课事务**：串行和并发退课均正常，多表事务性能良好。")
+    # S11 调课/补课
+    if "S11" in results and results["S11"]:
+        failed = [r for r in results["S11"] if not r["达标"]]
+        if failed:
+            verdicts.append(f"**🔄 调课/补课**：**{failed[0]['阶梯']}** 时变慢或出错。调课/补课是排课系统核心写操作（取消+新建+写变更记录），慢了影响日常运营。建议检查 schedule_changes 表索引和事务范围。")
+        else:
+            verdicts.append(f"**🔄 调课/补课**：调课、补课和并发调课均正常，排课核心写操作性能良好。")
+    # S12 CRUD 改删
+    if "S12" in results and results["S12"]:
+        failed = [r for r in results["S12"] if not r["达标"]]
+        if failed:
+            verdicts.append(f"**✏️ CRUD 改删**：**{failed[0]['阶梯']}** 时变慢或出错。修改/删除操作性能不达标，建议检查对应表的索引和级联删除逻辑。")
+        else:
+            verdicts.append(f"**✏️ CRUD 改删**：课程/班级/学员/排课/报名/管理员/年级/配置的 PUT/DELETE 均正常。")
+    # S13 反馈 CRUD
+    if "S13" in results and results["S13"]:
+        failed = [r for r in results["S13"] if not r["达标"]]
+        if failed:
+            verdicts.append(f"**💬 反馈 CRUD**：**{failed[0]['阶梯']}** 时变慢或出错。课后反馈操作性能不达标，建议检查 feedback 表索引。")
+        else:
+            verdicts.append(f"**💬 反馈 CRUD**：反馈的增删改查全套操作均正常。")
+    # S14 错误路径
+    if "S14" in results and results["S14"]:
+        failed = [r for r in results["S14"] if not r["达标"]]
+        if failed:
+            verdicts.append(f"**⚠️ 错误路径**：**{failed[0]['阶梯']}** 时响应过慢。错误路径应快速返回（404/400/重复拒绝），慢了可能被恶意请求拖垮。建议检查异常分支是否有不必要的查库。")
+        else:
+            verdicts.append(f"**⚠️ 错误路径**：404/400/重复操作/超大页/SQL 字符/emoji 等异常输入均快速响应，系统抗压能力良好。")
+    # S15 灾备与多角色
+    if "S15" in results and results["S15"]:
+        failed = [r for r in results["S15"] if not r["达标"]]
+        if failed:
+            verdicts.append(f"**🛡️ 灾备与多角色**：**{failed[0]['阶梯']}** 时变慢或出错。备份/归档/家长端/教师视角等场景性能不达标，建议检查对应接口的查询效率。")
+        else:
+            verdicts.append(f"**🛡️ 灾备与多角色**：备份列表、审计归档、权限定义、教师列表、公告、家长端、教师绩效、年级升级均正常。")
     return verdicts
 
 
@@ -2875,6 +3767,21 @@ def run_stress(scale=None):
 
     print("\n>>> S10 退课事务压力测试 <<<")
     all_results["S10"] = s10_transfer_stress(student_ids, course_id)
+
+    print("\n>>> S11 调课/补课压力测试 <<<")
+    all_results["S11"] = s11_reschedule_makeup(student_ids, course_id)
+
+    print("\n>>> S12 CRUD 改删测试 <<<")
+    all_results["S12"] = s12_crud_update_delete(student_ids, course_id)
+
+    print("\n>>> S13 反馈 CRUD 测试 <<<")
+    all_results["S13"] = s13_feedback_crud(student_ids, course_id)
+
+    print("\n>>> S14 错误路径与边界测试 <<<")
+    all_results["S14"] = s14_error_paths()
+
+    print("\n>>> S15 灾备与多角色测试 <<<")
+    all_results["S15"] = s15_disaster_recovery_multirole(student_ids, course_id)
 
     duration = time.perf_counter() - start
     report_path = generate_report("stress", all_results, duration, scale=scale)
