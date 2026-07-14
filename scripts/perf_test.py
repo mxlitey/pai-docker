@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-排课系统性能测试脚本（双入口）
+排课系统测试脚本（双入口：流程测试 flow + 压力测试 stress）
 
 用法：
   python3 scripts/perf_test.py                              # 交互式选择
-  python3 scripts/perf_test.py quick                        # 简易评估（D1-D16，约 4 分钟）
-  python3 scripts/perf_test.py stress                       # 压力测试（D1-D16 流程基线 + S1-S7 压力阶梯）
+  python3 scripts/perf_test.py flow                         # 流程测试（13 个测试组，验证功能正确性）
+  python3 scripts/perf_test.py stress                       # 压力测试（S1-S15 压力阶梯，验证性能边界）
 
   # 指定压力测试数据量规模（仅 stress 模式生效，控制 S1/S7 阶梯上限）
   python3 scripts/perf_test.py stress --scale small         # 小规模（S1: 100→1千学员，S7: 1万→10万排课）
@@ -14,22 +14,30 @@
   python3 scripts/perf_test.py stress --scale large         # 大规模（S1: 100→1万学员，S7: 1万→1000万排课，默认）
 
   # 指定测试目标环境（默认本机）
-  python3 scripts/perf_test.py quick --local                # 本机 127.0.0.1:8788
-  python3 scripts/perf_test.py quick --lan 192.168.1.100    # 局域网（默认端口 8788）
-  python3 scripts/perf_test.py quick --wan https://api.example.com  # 公网（完整 URL）
-  python3 scripts/perf_test.py quick --base http://10.0.0.5:9000    # 自定义地址
+  python3 scripts/perf_test.py flow --local                 # 本机 127.0.0.1:8788
+  python3 scripts/perf_test.py flow --lan 192.168.1.100     # 局域网（默认端口 8788）
+  python3 scripts/perf_test.py flow --wan https://api.example.com   # 公网（完整 URL）
+  python3 scripts/perf_test.py flow --base http://10.0.0.5:9000     # 自定义地址
 
   # 也可用环境变量 PERF_BASE 指定
-  PERF_BASE=http://192.168.1.100:8788 python3 scripts/perf_test.py quick
+  PERF_BASE=http://192.168.1.100:8788 python3 scripts/perf_test.py flow
 
 ================================================================
   📖 给非技术人员看的说明（看不懂术语请先读这里）
 ================================================================
 
-  这个脚本模拟「很多老师同时用排课系统」的场景，测系统扛不扛得住。
-  跑完会在 scripts/reports/ 下生成一份报告，告诉你「系统好不好用」。
+  这个脚本有两种测试模式：
 
-  报告里会出现这些词，含义如下：
+  · flow（流程测试）—— 验证「功能对不对」。跑 13 组业务场景测试，
+    检查每个功能（报名、排课、点名、退课、权限等）是否正常工作。
+    报告里只有「通过/失败」，不关心速度。适合日常功能验证。
+
+  · stress（压力测试）—— 验证「扛不扛得住」。模拟很多人同时用，
+    看系统在高负载下会不会变慢或出错。报告里有响应时间、并发数等指标。
+
+  ----------------------------------------------------------------
+  压力测试报告里会出现这些词（流程测试报告没有这些）：
+  ----------------------------------------------------------------
 
   · P50（中位数）  —— 一半的请求都在这个时间内完成。代表「正常速度」。
   · P95            —— 95% 的请求都在这个时间内完成。代表「大部分人的体验」。
@@ -42,17 +50,18 @@
   · 衰减率         —— 跑久了会不会变慢。正数=变慢，负数=变快，越小越好。
 
   怎么看结果：
-  · 看到「✓ 达标」= 这一关系统扛住了，正常。
-  · 看到「✗ 不达标」= 这一关系统扛不住，需要关注。
-  · 报告最后的「测试结果速读」会用大白话总结系统好不好用。
+  · 流程测试：看「✓ 通过 / ✗ 有失败」，全通过即功能正常。
+  · 压力测试：看到「✓ 达标」= 扛住了；看到「✗ 不达标」= 需要关注。
 
 ================================================================
 
-【简易评估 quick】
+【流程测试 flow】
   调用内联的 13 个流程测试组（原 test_suite.py 已内联，单文件零外部依赖），验证系统功能正确性：
   组1 完整业务流程 / 组2 安全性 / 组3 业务流程 / 组4 非流程拦截
   组5 Bug修复 / 组6 严重Bug / 组7 退课与流水 / 组8 CRUD改删
   组9 报表与审计 / 组10 批量与成员 / 组11 灾备 / 组12 多角色 / 组13 错误边界
+
+  报告输出：scripts/reports/flow_report_YYYYMMDD_HHMMSS.html（独立于压力测试报告）
 
 【压力测试 stress】
   按 SLA 阶梯加压找系统边界，覆盖查询/并发/持续负载/混合负载/审计/点名/排课/鉴权/资源/退课/调课/CRUD/反馈/错误路径/灾备。
@@ -81,7 +90,9 @@
 
   SLA 阈值：P99 > 1s 或 错误率 > 1% 或 CPU > 80% 判定「不好用」
 
-测试完成后输出评估报告（控制台 + scripts/reports/perf_report_YYYYMMDD_HHMMSS.html）
+测试完成后输出报告：
+  · flow   → scripts/reports/flow_report_YYYYMMDD_HHMMSS.html（流程测试报告）
+  · stress → scripts/reports/perf_report_YYYYMMDD_HHMMSS.html（压力测试报告）
 """
 
 import json
@@ -2987,6 +2998,208 @@ def _md_to_html(md_content):
     return '\n'.join(html_lines)
 
 
+# ============================================================
+# 流程测试报告（独立于压力测试报告，不含 P99/QPS/SLA 等性能指标）
+# ============================================================
+
+# 13 个测试组的说明文案（供报告展示）
+_FLOW_GROUP_DESCRIPTIONS = {
+    "组1完整流程": "完整业务流程：年级→课程→班级→学员→报名→排课→点名→反馈，验证课时扣减与回退逻辑",
+    "组2安全性": "鉴权、权限、密码策略、越权、token 失效、SQL 注入",
+    "组3业务流程": "补课（插班）、调课、退课流程",
+    "组4非流程拦截": "缺少前置条件应被拒绝（不存在的年级/课程/班级/学员、参数缺失、格式错误）",
+    "组5Bug修复": "Bug3/5/6/9/10 修复验证（超管不可降级、报名不可删除、有课时不可删学员等）",
+    "组6严重Bug": "回退课时精准回退、金额保留、排课冲突检测、删除课程保护",
+    "组7退课与流水": "transfer-add 真正退课流程、退课后排课取消、流水记录查询、重复退课拒绝",
+    "组8CRUD改删": "学员/课程/班级/排课/年级/管理员/反馈/配置的 PUT 修改 + DELETE 删除",
+    "组9报表与审计": "6 类报表 + 审计日志 7 种过滤维度 + 调课历史 + 教师绩效",
+    "组10批量与成员": "schedule-add-batch 批量排课 + class-members 成员添加/移除/查询",
+    "组11灾备": "备份创建/删除 + 审计归档创建",
+    "组12多角色": "家长端 H5 + 教师角色隔离 + 权限定义 + 教师列表 + 公告",
+    "组13错误边界": "404 资源不存在、重复操作、上限边界、排课状态机、请求体过大",
+}
+
+
+def generate_flow_report(results, duration_s, errors=None):
+    """生成流程测试专用 HTML 报告
+
+    与压力测试报告完全独立，只关注功能正确性（通过/失败），不含任何性能指标。
+
+    results: dict, key=组名, value={"通过": int, "失败": int, "错误率": float}
+    errors:  list[str], 各失败用例的明细信息（来自 TestRunner.errors）
+    """
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
+    os.makedirs(report_dir, exist_ok=True)
+    report_path = os.path.join(report_dir, f"flow_report_{ts}.html")
+
+    # 判定测试环境类型
+    if BASE.startswith("http://127.0.0.1") or BASE.startswith("http://localhost"):
+        env_type = "本机"
+    elif BASE.startswith("https://"):
+        env_type = "公网"
+    else:
+        env_type = "局域网"
+
+    # 汇总
+    total_pass = sum(d.get("通过", 0) for d in results.values() if isinstance(d, dict))
+    total_fail = sum(d.get("失败", 0) for d in results.values() if isinstance(d, dict))
+    total = total_pass + total_fail
+    all_pass = total_fail == 0
+    failed_groups = [(name, d) for name, d in results.items()
+                     if isinstance(d, dict) and d.get("失败", 0) > 0]
+
+    lines = []
+    lines.append("# 流程测试报告\n")
+    lines.append(f"- **测试时间**：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"- **测试耗时**：{duration_s:.0f} 秒")
+    lines.append(f"- **测试环境**：{env_type}")
+    lines.append(f"- **服务地址**：{BASE}")
+    lines.append(f"- **测试用例总数**：{total}（{total_pass} 通过 / {total_fail} 失败）\n")
+
+    if env_type != "本机":
+        lines.append(f"> ⚠️ 非**本机**测试：网络波动可能导致个别接口超时失败，建议结合失败明细判断是否为功能缺陷。\n")
+
+    # ===== 测试结果速读 =====
+    lines.append("## 🎯 测试结果速读\n")
+    if all_pass:
+        lines.append(f"✅ **全部 {len(results)} 个测试组用例均通过，系统功能正常。**")
+        lines.append(f"- 通过用例：{total_pass}")
+        lines.append(f"- 失败用例：{total_fail}")
+    else:
+        lines.append(f"⚠️ **流程测试发现 {total_fail} 个失败用例，需关注以下测试组：**")
+        lines.append(f"- 通过用例：{total_pass}")
+        lines.append(f"- 失败用例：{total_fail}")
+        lines.append(f"- 有失败的测试组：{len(failed_groups)} / {len(results)}")
+        for name, d in failed_groups:
+            lines.append(f"  - {name}：{d.get('失败', 0)} 个用例失败")
+    lines.append("")
+
+    # ===== 各测试组结果 =====
+    lines.append("## 📋 各测试组结果\n")
+    lines.append("| 测试组 | 通过 | 失败 | 错误率 | 状态 |")
+    lines.append("|--------|------|------|--------|------|")
+    for name, data in results.items():
+        if not isinstance(data, dict):
+            continue
+        p = data.get("通过", 0)
+        f = data.get("失败", 0)
+        rate = data.get("错误率", 0.0)
+        mark = "✓ 通过" if f == 0 else "✗ 有失败"
+        lines.append(f"| {name} | {p} | {f} | {rate}% | {mark} |")
+    lines.append("")
+
+    # ===== 测试组说明 =====
+    lines.append("## 📖 测试组说明\n")
+    lines.append("> 流程测试验证系统各业务功能的正确性，每个测试组覆盖一类场景。与压力测试不同，流程测试不关注响应时间或并发能力，只关注「功能对不对」。\n")
+    for name, desc in _FLOW_GROUP_DESCRIPTIONS.items():
+        lines.append(f"- **{name}**：{desc}")
+    lines.append("")
+
+    # ===== 失败用例明细 =====
+    if errors:
+        lines.append("## ❌ 失败用例明细\n")
+        lines.append(f"共 {len(errors)} 条失败记录，按出现顺序列出（前 200 条）：\n")
+        for e in errors[:200]:
+            # errors 元素形如 '[FAIL] label: message'
+            lines.append(f"- {e}")
+        if len(errors) > 200:
+            lines.append(f"\n...（还有 {len(errors) - 200} 条未列出，请查看控制台输出）")
+        lines.append("")
+
+    # ===== 修复建议 =====
+    if not all_pass:
+        lines.append("## 💡 建议\n")
+        lines.append("1. 查看上方「失败用例明细」，定位具体失败的断言")
+        lines.append("2. 结合「测试组说明」理解失败场景的业务含义")
+        lines.append("3. 排查时注意区分：功能缺陷、测试数据冲突、网络超时、token 失效")
+        lines.append("4. 修复后重跑 `python3 perf_test.py flow` 验证\n")
+
+    # ===== 转换为 HTML =====
+    content = "\n".join(lines)
+    html_body = _md_to_html(content)
+    title = f"流程测试报告 - {time.strftime('%Y-%m-%d %H:%M:%S')}"
+    html_doc = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title}</title>
+<style>
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    line-height: 1.6;
+    color: #333;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px;
+    background: #f7f7f9;
+  }}
+  h1 {{
+    color: #0d9488;
+    border-bottom: 2px solid #0d9488;
+    padding-bottom: 8px;
+  }}
+  h2 {{
+    color: #0f766e;
+    margin-top: 32px;
+    border-left: 4px solid #0d9488;
+    padding-left: 12px;
+  }}
+  h3 {{
+    color: #333;
+    margin-top: 24px;
+  }}
+  table {{
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  }}
+  th, td {{
+    border: 1px solid #e0e0e0;
+    padding: 8px 12px;
+    text-align: left;
+  }}
+  th {{
+    background: #0d9488;
+    color: #fff;
+    font-weight: 500;
+  }}
+  tr:nth-child(even) {{
+    background: #f0fdfa;
+  }}
+  blockquote {{
+    border-left: 4px solid #f59e0b;
+    background: #fffbeb;
+    padding: 8px 16px;
+    margin: 12px 0;
+    color: #78350f;
+  }}
+  blockquote p {{ margin: 4px 0; }}
+  code {{
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', monospace;
+  }}
+  p {{ margin: 8px 0; }}
+  ul {{ margin: 8px 0; padding-left: 24px; }}
+  li {{ margin: 4px 0; }}
+</style>
+</head>
+<body>
+{html_body}
+</body>
+</html>"""
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(html_doc)
+
+    print(f"\n  📄 流程测试报告已生成：{os.path.abspath(report_path)}")
+    return report_path
+
+
 def generate_report(mode, results, duration_s, scale=None):
     """生成 HTML 评估报告（含通俗说明，方便非技术人员阅读）"""
     ts = time.strftime("%Y%m%d_%H%M%S")
@@ -3005,7 +3218,7 @@ def generate_report(mode, results, duration_s, scale=None):
     lines = []
     lines.append(f"# 性能测试评估报告\n")
     lines.append(f"- **测试时间**：{time.strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append(f"- **测试模式**：{'简易评估 (quick)' if mode == 'quick' else '压力测试 (stress)'}")
+    lines.append(f"- **测试模式**：{'流程测试 (flow)' if mode == 'flow' else '压力测试 (stress)'}")
     if mode == "stress" and scale and scale in SCALE_PRESETS:
         preset = SCALE_PRESETS[scale]
         lines.append(f"- **数据量预设**：{scale}（{preset['label']}）")
@@ -3041,9 +3254,11 @@ def generate_report(mode, results, duration_s, scale=None):
         lines.append(f"- {v}")
     lines.append("")
 
-    if mode == "quick":
-        lines.append("## 流程测试结果（各测试组通过/失败统计）\n")
-        lines.append("调用 test_suite.py 的 13 个流程测试组，覆盖完整业务流程、安全性、Bug 修复、退课与流水、CRUD 改删、报表与审计、批量与成员、灾备、多角色、错误边界。\n")
+    if mode == "flow":
+        # flow 模式已改用独立的 generate_flow_report，本函数仅处理 stress
+        # 若误入此分支，给出提示并返回
+        lines.append("## ⚠️ 流程测试报告应通过 generate_flow_report 生成\n")
+        lines.append("flow 模式已独立，本函数（generate_report）仅用于压力测试。\n")
         for dim, data in results.items():
             lines.append(f"### {dim}\n")
             lines.append("| 指标 | 值 |")
@@ -3332,32 +3547,18 @@ def generate_report(mode, results, duration_s, scale=None):
 
 
 def _build_quick_verdicts(mode, results):
-    """生成「测试结果速读」——一句话结论，用大白话告诉用户系统好不好用"""
+    """生成「测试结果速读」——一句话结论，用大白话告诉用户系统好不好用
+
+    注：flow 模式已改用 generate_flow_report 自带的速读逻辑，本函数仅处理 stress。
+    """
     verdicts = []
-    if mode == "quick":
-        # 流程测试：汇总各测试组通过/失败
-        verdicts.append("✅ 流程测试已完成")
-        # 检查是否有失败用例
-        issues = []
-        total_pass = 0
-        total_fail = 0
-        for dim, data in results.items():
-            if not isinstance(data, dict):
-                continue
-            failed = data.get("失败", 0)
-            passed = data.get("通过", 0)
-            total_pass += passed if isinstance(passed, int) else 0
-            total_fail += failed if isinstance(failed, int) else 0
-            if isinstance(failed, int) and failed > 0:
-                issues.append(f"{dim} 有 {failed} 个用例失败")
+    if mode == "flow":
+        # flow 模式已独立，若误入此分支给出提示
+        verdicts.append("✅ 流程测试已完成（注：flow 报告应通过 generate_flow_report 生成）")
+        total_pass = sum(d.get("通过", 0) for d in results.values() if isinstance(d, dict))
+        total_fail = sum(d.get("失败", 0) for d in results.values() if isinstance(d, dict))
         if total_pass + total_fail > 0:
             verdicts.append(f"**总计**：{total_pass} 通过 / {total_fail} 失败")
-        if issues:
-            verdicts.append("⚠️ 以下测试组有失败用例需关注：")
-            for i in issues[:10]:
-                verdicts.append(f"   - {i}")
-        else:
-            verdicts.append("✅ 全部 13 个测试组用例均通过，系统功能正常。")
     else:
         # 压力测试：汇总各阶梯结论
         verdicts.append(f"✅ 压力测试已完成")
@@ -5697,16 +5898,18 @@ def test_error_boundary(t, prefix, ctx):
         print('  [FAIL] 超大请求体应被拒绝但实际成功')
 
 
-def run_quick():
-    """简易评估：调用内联的 13 个流程测试组
+def run_flow():
+    """流程测试：调用内联的 13 个流程测试组，验证系统功能正确性
 
-    quick 模式已从「固定 200 学员的性能快照（D1-D16）」改为
-    「调用内联的 13 个流程测试组（原 test_suite.py，已内联消除外部依赖）」，
+    flow 模式调用内联的 13 个流程测试组（原 test_suite.py，已内联消除外部依赖），
     覆盖完整业务流程、安全性、Bug 修复验证、退课与流水、CRUD 改删、
     报表与审计、批量与成员、灾备、多角色、错误边界等场景。
+
+    与 stress（压力测试）完全独立：flow 关注「功能对不对」，stress 关注「扛不扛得住」。
+    flow 报告由 generate_flow_report 独立生成，不含 P99/QPS/SLA 等性能指标。
     """
     print("=" * 60)
-    print("  排课系统简易评估 (quick) — 流程测试")
+    print("  排课系统流程测试 (flow)")
     print("  时间: " + time.strftime("%Y-%m-%d %H:%M:%S"))
     print("=" * 60)
 
@@ -5777,9 +5980,10 @@ def run_quick():
     # 汇总打印
     t.summary()
 
-    report_path = generate_report("quick", results, duration)
+    # 流程测试使用独立的报告生成函数，不复用压力测试报告
+    report_path = generate_flow_report(results, duration, errors=t.errors)
     print("\n" + "=" * 60)
-    print("  简易评估完成")
+    print("  流程测试完成")
     print("=" * 60)
     return report_path
 
@@ -5903,23 +6107,23 @@ def parse_target(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="排课系统性能测试脚本",
+        description="排课系统测试脚本（流程测试 flow + 压力测试 stress）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  %(prog)s quick --local                       本机测试
-  %(prog)s stress --lan 192.168.1.100          局域网测试（默认端口 8788）
-  %(prog)s quick --lan 192.168.1.100 --lan-port 9000  指定局域网端口
-  %(prog)s stress --wan https://api.example.com       公网测试
-  %(prog)s quick --base http://10.0.0.5:9000          自定义地址
-  %(prog)s stress --scale small                     小规模压力测试（快速验证）
-  %(prog)s stress --scale medium --lan 192.168.1.100  中规模 + 局域网
+  %(prog)s flow --local                         本机流程测试
+  %(prog)s stress --lan 192.168.1.100           局域网压力测试（默认端口 8788）
+  %(prog)s flow --lan 192.168.1.100 --lan-port 9000   指定局域网端口
+  %(prog)s stress --wan https://api.example.com        公网压力测试
+  %(prog)s flow --base http://10.0.0.5:9000            自定义地址流程测试
+  %(prog)s stress --scale small                  小规模压力测试（快速验证）
+  %(prog)s stress --scale medium --lan 192.168.1.100   中规模 + 局域网
 
 环境变量:
   PERF_BASE    默认测试目标（如 http://192.168.1.100:8788）
 """,
     )
-    parser.add_argument("mode", nargs="?", choices=["quick", "stress"], help="测试模式：quick 或 stress")
+    parser.add_argument("mode", nargs="?", choices=["flow", "stress"], help="测试模式：flow（流程测试，验证功能正确性）或 stress（压力测试，验证性能边界）")
     parser.add_argument("--scale", choices=list(SCALE_PRESETS.keys()), default=None,
                         help="压力测试数据量预设：small（快速验证）/ medium（常规）/ large（深度压测，默认）。"
                              "仅 stress 模式生效，控制 S1 学员阶梯和 S7 排课记录阶梯上限")
@@ -5940,10 +6144,10 @@ def main():
     # 交互式选择模式
     if not args.mode:
         print("请选择测试模式：")
-        print("  1. quick  - 简易评估（约 4 分钟，固定规模性能快照）")
-        print("  2. stress - 压力测试（约 20 分钟，SLA 阶梯找边界）")
+        print("  1. flow   - 流程测试（验证功能正确性，13 个测试组）")
+        print("  2. stress - 压力测试（SLA 阶梯找性能边界）")
         choice = input("\n输入 1 或 2: ").strip()
-        args.mode = "quick" if choice == "1" else "stress"
+        args.mode = "flow" if choice == "1" else "stress"
         interactive = True
 
     # 交互式选择数据量预设（仅 stress 模式，且未通过 --scale 指定时）
@@ -5970,8 +6174,8 @@ def main():
     elif args.mode == "stress" and args.scale:
         # 命令行已指定 --scale，无需交互
         pass
-    elif args.mode == "quick" and args.scale:
-        print(f"  [提示] --scale 仅对 stress 模式生效，quick 模式将忽略")
+    elif args.mode == "flow" and args.scale:
+        print(f"  [提示] --scale 仅对 stress 模式生效，flow 模式将忽略")
 
     # 交互式选择目标环境（未显式指定时）
     if not (args.local or args.lan or args.wan or args.base):
@@ -6084,8 +6288,8 @@ def main():
                 except Exception:
                     pass
 
-        if args.mode == "quick":
-            run_quick()
+        if args.mode == "flow":
+            run_flow()
         elif args.mode == "stress":
             run_stress(scale=args.scale or DEFAULT_SCALE)
     except SystemExit:
