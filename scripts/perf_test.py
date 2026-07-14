@@ -95,15 +95,6 @@ import http.client as httplib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlencode, urlparse
 
-# 复用 test_suite.py 的流程测试（quick 模式调用）
-from test_suite import (
-    TestRunner,
-    test_full_flow, test_security, test_business_flow, test_non_flow_intercept,
-    test_bug_fixes, test_severe_bugs, test_transfer_and_flow,
-    test_crud_update_delete, test_reports_and_audit, test_batch_and_members,
-    test_disaster_recovery, test_multi_role, test_error_boundary,
-)
-
 BASE = os.environ.get("PERF_BASE", "http://127.0.0.1:8788")
 TOKEN = None
 ADMIN_ID = None
@@ -3673,6 +3664,21 @@ def run_quick():
     print("  排课系统简易评估 (quick) — 流程测试")
     print("  时间: " + time.strftime("%Y-%m-%d %H:%M:%S"))
     print("=" * 60)
+
+    # 延迟导入 test_suite（仅在 quick 模式需要，避免模块加载阶段依赖缺失导致闪退）
+    try:
+        from test_suite import (
+            TestRunner,
+            test_full_flow, test_security, test_business_flow, test_non_flow_intercept,
+            test_bug_fixes, test_severe_bugs, test_transfer_and_flow,
+            test_crud_update_delete, test_reports_and_audit, test_batch_and_members,
+            test_disaster_recovery, test_multi_role, test_error_boundary,
+        )
+    except ImportError as e:
+        print(f"[错误] 无法导入 test_suite 模块: {e}")
+        print("  请确认 test_suite.py 与 perf_test.py 在同一目录下。")
+        print("  quick 模式依赖 test_suite.py 的流程测试，stress 模式不受影响。")
+        return None
 
     # perf_test 自己登录，写全局 TOKEN；test_suite 的 TestRunner 复用此 token
     login()
