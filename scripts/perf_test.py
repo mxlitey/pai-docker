@@ -3954,6 +3954,33 @@ def test_business_flow(t, prefix, ctx):
     })
     t.assert_fail(resp, '课时不足时调课应被拦截', '剩余课时不足')
 
+    # === 3.1c 点名时剩余课时不足，点名失败并提示学员名+原因 ===
+    print('  --- 3.1c 点名课时不足拦截 ---')
+    # stu_1h 剩余课时已为0，排新课点名到课应失败
+    date_d = date_offset(9)
+    resp, sched_d_id = add_single_schedule(t, {
+        'studentId': stu_1h['id'], 'studentName': stu_1h['name'],
+        'classId': cls['id'], 'courseId': math['id'], 'courseName': math['name'],
+        'teacher': cls['teacher'], 'location': cls['location'],
+        'date': date_d, 'startTime': '09:00', 'endTime': '10:30',
+        'color': math['color']
+    })
+    t.assert_ok(resp, '排课D(课时已耗尽,待点名)')
+    body = t.assert_ok(
+        t.post('/api/attendance', {'date': date_d, 'items': [
+            {'scheduleId': sched_d_id, 'studentId': stu_1h['id'], 'attended': True}
+        ]}),
+        '点名请求(课时不足)'
+    )
+    errors = body['data'].get('errors', [])
+    t.assert_true(len(errors) > 0, f'应有点名错误(课时不足),实际errors={errors}')
+    if errors:
+        err_msg = str(errors[0])
+        t.assert_true(name_1h in err_msg, f'错误提示应含学员名「{name_1h}」,实际「{err_msg}」')
+        t.assert_true('剩余课时不足' in err_msg, f'错误提示应含「剩余课时不足」,实际「{err_msg}」')
+    # 到课未扣课时，attended 应保持未点名状态
+    t.assert_eq(body['data']['updatedSchedules'], 0, '课时不足时不应更新排课状态')
+
     # === 3.2 调课流程 ===
     print('  --- 3.2 调课 ---')
     resched_date = date_offset(3)

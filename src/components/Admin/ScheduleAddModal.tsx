@@ -20,6 +20,8 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
   const [classId, setClassId] = useState('')
   const [loadingMembers, setLoadingMembers] = useState(false)
   const [classMembers, setClassMembers] = useState<ClassMember[]>([])
+  // 选中的学员 id 集合（默认全选，可取消勾选个别学员）
+  const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set())
   // 多日期：用户输入日期后点"添加"加入列表
   const [dateInput, setDateInput] = useState(() => todayLocal())
   const [dates, setDates] = useState<string[]>([])
@@ -93,18 +95,40 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
       const result = await getClassMembers(nextClassId)
       if (result.code === 0) {
         setClassMembers(result.data.members)
+        // 默认全选，操作员可取消勾选个别学员
+        setSelectedMemberIds(new Set(result.data.members.map((m) => m.id)))
         if (result.data.members.length === 0) {
           setError('该班级暂无成员，请先在「班级管理」中添加成员')
         }
       } else {
         setError(result.message || '加载班级成员失败')
         setClassMembers([])
+        setSelectedMemberIds(new Set())
       }
     } catch (e) {
       setError('加载班级成员失败：' + (e as Error).message)
       setClassMembers([])
+      setSelectedMemberIds(new Set())
     } finally {
       setLoadingMembers(false)
+    }
+  }
+
+  // 切换学员勾选
+  const toggleMember = (id: string) => {
+    setSelectedMemberIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  // 全选 / 取消全选
+  const toggleAllMembers = () => {
+    if (selectedMemberIds.size === classMembers.length) {
+      setSelectedMemberIds(new Set())
+    } else {
+      setSelectedMemberIds(new Set(classMembers.map((m) => m.id)))
     }
   }
 
@@ -144,8 +168,9 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
       setError('请至少添加一个日期')
       return
     }
-    if (classMembers.length === 0) {
-      setError('该班级暂无成员，无法排课')
+    const studentIds = Array.from(selectedMemberIds)
+    if (studentIds.length === 0) {
+      setError('请至少选择一名学员进行排课')
       return
     }
 
@@ -162,7 +187,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
         startTime,
         endTime,
         note,
-        studentIds: classMembers.map((m) => m.id),
+        studentIds,
         classId,
       })
       if (result.code === 0) {
@@ -183,10 +208,10 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
   }
 
   // 确认按钮文案：含已选数量统计
-  const plannedCount = dates.length * classMembers.length
+  const plannedCount = dates.length * selectedMemberIds.size
   const confirmText =
     plannedCount > 0
-      ? `新增排课（${dates.length} 日 × ${classMembers.length} 人 = ${plannedCount} 条）`
+      ? `新增排课（${dates.length} 日 × ${selectedMemberIds.size} 人 = ${plannedCount} 条）`
       : '新增排课'
 
   return (
@@ -207,7 +232,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
       <div className="space-y-4">
         {/* 必填说明 */}
         <div className="text-xs text-muted-foreground/70">
-          <span className="text-destructive">*</span> 为必填项，选择班级后自动带出成员名单，为每位成员在所选每个日期生成一条排课
+          <span className="text-destructive">*</span> 为必填项，选择班级后自动带出成员名单，勾选要排课的学员，为每位已选学员在所选每个日期生成一条排课
         </div>
 
         {/* 课程选择 */}
@@ -274,7 +299,7 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
             )}
             {selectedClass && !loadingMembers && (
               <div className="mt-1 text-xs text-muted-foreground">
-                班级成员已自动带出，排课仅包含以下学员
+                班级成员已自动带出，默认全选，可取消勾选不排课的学员
               </div>
             )}
           </div>
@@ -366,20 +391,31 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
           />
         </div>
 
-        {/* 班级成员（只读展示） */}
+        {/* 班级成员（可勾选） */}
         <div className="flex items-start gap-4">
           <span className="text-sm text-muted-foreground/70 w-20 flex-shrink-0 pt-2">
             <span className="text-destructive mr-0.5">*</span>{'学员'}
           </span>
           <div className="flex-1 border border-border rounded-md overflow-hidden">
-            {/* 已选计数 */}
-            <div className="px-2 py-1 text-xs text-muted-foreground border-b border-border bg-background">
-              共 <span className="font-medium text-primary">{classMembers.length}</span> 名学员
-              {selectedClass && (
-                <span className="text-muted-foreground/70"> · 来自班级「{selectedClass.name}」</span>
+            {/* 计数 + 全选 */}
+            <div className="px-2 py-1.5 text-xs text-muted-foreground border-b border-border bg-background flex items-center justify-between">
+              <span>
+                已选 <span className="font-medium text-primary">{selectedMemberIds.size}</span> / {classMembers.length} 名学员
+                {selectedClass && (
+                  <span className="text-muted-foreground/70"> · 来自班级「{selectedClass.name}」</span>
+                )}
+              </span>
+              {classMembers.length > 0 && (
+                <button
+                  type="button"
+                  onClick={toggleAllMembers}
+                  className="text-primary hover:underline"
+                >
+                  {selectedMemberIds.size === classMembers.length ? '取消全选' : '全选'}
+                </button>
               )}
             </div>
-            {/* 成员列表（只读） */}
+            {/* 成员列表（可勾选） */}
             <div className="max-h-48 overflow-y-auto">
               {!classId ? (
                 <div className="px-3 py-6 text-center text-xs text-muted-foreground/70">
@@ -394,18 +430,30 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
                   该班级暂无成员，请先在「班级管理」中添加成员
                 </div>
               ) : (
-                classMembers.map((s) => (
-                  <div
-                    key={s.id}
-                    className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-50 last:border-0 bg-primary/5"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm text-foreground font-medium">{s.name}</span>
-                      <span className="text-xs text-muted-foreground/70 ml-2 font-mono">{s.id}</span>
-                      {s.grade && <span className="text-xs text-muted-foreground/70 ml-1">· {s.grade}</span>}
-                    </div>
-                  </div>
-                ))
+                classMembers.map((s) => {
+                  const checked = selectedMemberIds.has(s.id)
+                  return (
+                    <label
+                      key={s.id}
+                      className={cn(
+                        'flex items-center gap-2 px-3 py-1.5 border-b border-slate-50 last:border-0 cursor-pointer hover:bg-slate-50',
+                        checked ? 'bg-primary/5' : 'opacity-60',
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleMember(s.id)}
+                        className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-foreground font-medium">{s.name}</span>
+                        <span className="text-xs text-muted-foreground/70 ml-2 font-mono">{s.id}</span>
+                        {s.grade && <span className="text-xs text-muted-foreground/70 ml-1">· {s.grade}</span>}
+                      </div>
+                    </label>
+                  )
+                })
               )}
             </div>
           </div>

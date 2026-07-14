@@ -310,7 +310,7 @@ export async function batchSetAttendance(items) {
       }
       // 已取消的排课不允许点名（避免误扣课时）
       if (row.status === 'cancelled') {
-        errors.push(`排课 ${item.scheduleId} 已取消，不可点名`)
+        errors.push(`学员「${row.student_name || row.student_id}」排课已取消，不可点名`)
         continue
       }
       const oldAttended = row.attended === null ? undefined : !!row.attended
@@ -325,46 +325,44 @@ export async function batchSetAttendance(items) {
       }
 
       if (!row.course_id) {
-        errors.push(`排课 ${item.scheduleId} 未关联课程，跳过课时扣减`)
+        errors.push(`学员「${row.student_name || row.student_id}」排课未关联课程，无法点名`)
         continue
       }
-      // 查找报名记录用于扣减课时
-      // 插班补课场景：新排课的 course_id 可能是插班课程，学员未报名该课程。
-      // 此时回退到原排课（makeup_for 指向）的 course_id 查找报名，扣原课程的课时。
-      const findEnrollment = (courseId) => {
-        const withRemaining = db.prepare(`SELECT * FROM enrollments
+      // 查找有剩余课时的报名记录（只返回 remaining > 0 的，找不到返回 null）
+      const findEnrollmentWithRemaining = (courseId) => {
+        return db.prepare(`SELECT * FROM enrollments
           WHERE student_id=? AND course_id=? AND status='active' AND (remaining_paid_hours > 0 OR remaining_gift_hours > 0)
           ORDER BY enrolled_at, created_at LIMIT 1`).get(row.student_id, courseId)
-        if (withRemaining) return withRemaining
+      }
+      // 查找任意 active 报名（用于区分"没报名" vs "有报名但课时为0"）
+      const findAnyEnrollment = (courseId) => {
         return db.prepare(`SELECT * FROM enrollments WHERE student_id=? AND course_id=? AND status='active'
           ORDER BY enrolled_at, created_at LIMIT 1`).get(row.student_id, courseId)
       }
-
-      if (newAttended) {
-        // === 到课：扣减课时 ===
-        // 补课优先扣原排课课程的报名（请假→补课场景：扣的是请请假那门课的课时）
-        // 只有原排课课程没报名时，才按当前排课课程扣（普通排课/非插班补课）
-        let enr
-        let deductedCourseName = row.course_name || row.course_id
+      // 确定扣课时的课程：补课扣原排课课程，普通排课扣当前课程
+      // （调课/补课 API 已校验原排课课程有报名且课时充足，此处不再回退到当前课程）
+      const getDeductCourse = () => {
         if (row.makeup_for) {
           const originalRow = db.prepare('SELECT * FROM schedules WHERE id=?').get(row.makeup_for)
           if (originalRow && originalRow.course_id) {
-            enr = findEnrollment(originalRow.course_id)
-            deductedCourseName = originalRow.course_name || originalRow.course_id
+            return { courseId: originalRow.course_id, courseName: originalRow.course_name || originalRow.course_id }
           }
         }
-        // 非补课，或补课但原排课课程找不到报名时，按当前排课课程扣
+        return { courseId: row.course_id, courseName: row.course_name || row.course_id }
+      }
+
+      if (newAttended) {
+        // === 到课：扣减课时（剩余课时不足则点名失败） ===
+        const { courseId: deductCourseId, courseName: deductCourseName } = getDeductCourse()
+        const enr = findEnrollmentWithRemaining(deductCourseId)
         if (!enr) {
-          enr = findEnrollment(row.course_id)
-          deductedCourseName = row.course_name || row.course_id
-        }
-        if (!enr) {
-          errors.push(`学员 ${row.student_id} 未报名课程 ${row.course_name || row.course_id}（含原排课课程），跳过课时扣减`)
-          continue
-        }
-        // 到课但剩余课时为 0：不更新 attended，保持状态一致（避免"已到课但未扣课时"）
-        if (enr.remaining_paid_hours <= 0 && enr.remaining_gift_hours <= 0) {
-          errors.push(`学员 ${row.student_id} 课程 ${deductedCourseName} 剩余课时不足，无法标记到课`)
+          const stuName = row.student_name || row.student_id
+          const anyEnr = findAnyEnrollment(deductCourseId)
+          if (!anyEnr) {
+            errors.push(`学员「${stuName}」未报名课程「${deductCourseName}」，点名失败`)
+          } else {
+            errors.push(`学员「${stuName}」课程「${deductCourseName}」剩余课时不足，点名失败`)
+          }
           continue
         }
         // 扣减：先扣付费，后扣赠课；记录扣的是哪条报名、哪种类型，回退时精准回退
@@ -385,7 +383,7 @@ export async function batchSetAttendance(items) {
         touchedEnrollmentIds.add(enr.id)
       } else {
         // === 改缺勤：回退课时 ===
-        // 优先按当初扣减记录的 enrollment_id 和 type 精准回退（修复回退到错误报名/错误课时类型）
+        // 优先按当初扣减记录的 enrollment_id 和 type 精准回退
         const deductedEnrollmentId = row.deducted_enrollment_id
         const deductedType = row.deducted_type
         let enr = null
@@ -399,18 +397,11 @@ export async function batchSetAttendance(items) {
           // 当初扣的是赠课，回退到赠课
           enr.remaining_gift_hours += 1
         } else {
-          // 无扣减记录（旧数据兼容）：回退到启发式查找的报名
-          enr = findEnrollment(row.course_id)
-          let deductedCourseName = row.course_name || row.course_id
-          if (!enr && row.makeup_for) {
-            const originalRow = db.prepare('SELECT * FROM schedules WHERE id=?').get(row.makeup_for)
-            if (originalRow && originalRow.course_id && originalRow.course_id !== row.course_id) {
-              enr = findEnrollment(originalRow.course_id)
-              deductedCourseName = originalRow.course_name || originalRow.course_id
-            }
-          }
+          // 无扣减记录（旧数据兼容）：按原排课课程回退（补课场景回退到原排课课程）
+          const { courseId: deductCourseId, courseName: deductCourseName } = getDeductCourse()
+          enr = findAnyEnrollment(deductCourseId)
           if (!enr) {
-            errors.push(`学员 ${row.student_id} 回退课时找不到报名记录，跳过`)
+            errors.push(`学员「${row.student_name || row.student_id}」回退课时找不到课程「${deductCourseName}」的报名记录，跳过`)
             continue
           }
           // 启发式回退：先回赠课（不超过 gift_hours 上限），后回付费
