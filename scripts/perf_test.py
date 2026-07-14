@@ -6,7 +6,7 @@
 用法：
   python3 scripts/perf_test.py                              # 交互式选择
   python3 scripts/perf_test.py quick                        # 简易评估（D1-D16，约 4 分钟）
-  python3 scripts/perf_test.py stress                       # 压力测试（S1-S7 + 评估报告，含大数据量测试）
+  python3 scripts/perf_test.py stress                       # 压力测试（D1-D16 流程基线 + S1-S7 压力阶梯）
 
   # 指定压力测试数据量规模（仅 stress 模式生效，控制 S1/S7 阶梯上限）
   python3 scripts/perf_test.py stress --scale small         # 小规模（S1: 100→1千学员，S7: 1万→10万排课）
@@ -59,20 +59,29 @@
   D16 优化表查询（报名/账户流水/退课/调课/管理员）
 
 【压力测试 stress】
-  按标准 SLA 阶梯加压，找到「系统不好用」的边界：
-  S1 数据量阶梯（100→500→1000→5000→10000 学员，含审计日志同步增长）
-  S2 并发阶梯（10→50→100→200→500，找错误率 >1% 的崩溃点）
-  S3 持续负载（固定 QPS 跑 3 分钟，测内存泄漏/性能衰减）
-  S4 混合负载（读写 7:3，测真实场景瓶颈）
-  S5 审计日志查询阶梯（深翻页/大页/按模块过滤，找审计表变慢拐点）
-  S6 点名压力（50/100/200条批量扣课 + 并发点名）
-  S7 排课数据量阶梯（1万→10万→100万→1000万排课记录，测大数据量下查询/写入/点名性能拐点）
+  两阶段流程：先跑流程测试做基线/冒烟，再跑压力阶梯找系统边界。
 
-  数据量规模可选（--scale small|medium|large，默认 large）：
+  阶段 1：流程测试（D1-D16，固定 200+ 学员规模，与 quick 模式内容相同）
+    跑通每个核心业务流程并采集性能快照，作为后续压力阶梯的对照基线。
+    D1 基础响应延迟 / D2 并发吞吐 / D3 DB查询 / D4 业务事务
+    D5 报表聚合 / D6 搜索 / D7 鉴权 / D8 写吞吐 / D9 系统资源
+    D10 课程/班级/班级成员 / D11 审计日志 / D12 反馈+教师绩效
+    D13 点名 / D14 排课写入 / D15 退课 / D16 优化表查询
+
+  阶段 2：压力阶梯（S1-S7，按 SLA 阶梯加压找边界）
+    S1 数据量阶梯（100→500→1000→5000→10000 学员，含审计日志同步增长）
+    S2 并发阶梯（10→50→100→200→500，找错误率 >1% 的崩溃点）
+    S3 持续负载（固定 QPS 跑 3 分钟，测内存泄漏/性能衰减）
+    S4 混合负载（读写 7:3，测真实场景瓶颈）
+    S5 审计日志查询阶梯（深翻页/大页/按模块过滤，找审计表变慢拐点）
+    S6 点名压力（50/100/200条批量扣课 + 并发点名）
+    S7 排课数据量阶梯（1万→10万→100万→1000万排课记录，测大数据量下查询/写入/点名性能拐点）
+
+  数据量规模可选（--scale small|medium|large，默认 large，仅影响阶段 2 的 S1/S7）：
   · small  —— S1: 100→1千学员，S7: 1万→10万排课（快速验证，约 5-10 分钟）
   · medium —— S1: 100→5千学员，S7: 1万→100万排课（常规压测，约 15-30 分钟）
   · large  —— S1: 100→1万学员，S7: 1万→1000万排课（深度压测，可能 30 分钟以上）
-  注：S2/S3/S4/S5/S6 不受 --scale 影响，规模固定。
+  注：阶段 1（D1-D16）和 S2/S3/S4/S5/S6 不受 --scale 影响，规模固定。
 
   SLA 阈值：P99 > 1s 或 错误率 > 1% 或 CPU > 80% 判定「不好用」
 
@@ -2003,7 +2012,26 @@ def generate_report(mode, results, duration_s, scale=None):
             lines.append("")
     else:
         # 压力测试报告
-        lines.append("## 压力测试结果（详细数据）\n")
+        # ===== 阶段 1：流程测试结果（D1-D16，若存在） =====
+        process_results = results.get("_process")
+        if process_results:
+            lines.append("## 阶段 1：流程测试结果（D1-D16 业务流程基线）\n")
+            lines.append("> 在固定 200+ 学员规模下逐项跑通核心业务流程，确认功能正常并采集性能基线。这是后续压力阶梯的对照基线。\n")
+            for dim, data in process_results.items():
+                if not isinstance(data, dict):
+                    continue
+                lines.append(f"### {dim}\n")
+                lines.append("| 指标 | 值 |")
+                lines.append("|------|-----|")
+                for k, v in data.items():
+                    if isinstance(v, float):
+                        lines.append(f"| {k} | {v:.2f} |")
+                    else:
+                        lines.append(f"| {k} | {v} |")
+                lines.append("")
+
+        # ===== 阶段 2：压力阶梯结果（S1-S7） =====
+        lines.append("## 阶段 2：压力测试结果（详细数据）\n")
 
         # S1 数据量
         if "S1" in results:
@@ -2213,6 +2241,26 @@ def _build_quick_verdicts(mode, results):
         # 压力测试：汇总各阶梯结论
         verdicts.append(f"✅ 压力测试已完成")
         all_pass = True
+        # 流程测试结论（D1-D16 前置基线）
+        process_results = results.get("_process")
+        if process_results:
+            process_issues = []
+            for dim, data in process_results.items():
+                if not isinstance(data, dict):
+                    continue
+                for k, v in data.items():
+                    if not isinstance(v, (int, float)):
+                        continue
+                    if "P99" in k and v > SLA_P99_MS:
+                        process_issues.append(f"{dim}.{k}={v:.0f}ms")
+                    elif "错误率" in k and v > SLA_ERROR_RATE * 100:
+                        process_issues.append(f"{dim}.{k}={v}%")
+                    elif "CPU" in k and v > SLA_CPU_PERCENT:
+                        process_issues.append(f"{dim}.{k}={v}%")
+            if process_issues:
+                verdicts.append(f"⚠️ **流程基线**：D1-D16 中有 {len(process_issues)} 项指标异常（如 {process_issues[0]} 等），压力阶梯结果需结合此基线解读")
+            else:
+                verdicts.append(f"✅ **流程基线**：D1-D16 业务流程全部跑通，基线性能正常")
         # S1 数据量
         if "S1" in results:
             failed = [r for r in results["S1"] if not r["达标"]]
@@ -2349,6 +2397,38 @@ def _build_detailed_verdicts(results):
 
 # ============ 主流程 ============
 
+def run_process_tests(student_ids, course_id):
+    """流程测试：D1-D16 业务流程功能+性能基线
+
+    在固定 200+ 学员规模下，逐项跑通系统的核心业务流程并采集性能快照。
+    既作为 quick 模式的主体，也作为 stress 模式的前置流程基线（冒烟+基线）。
+    返回 dict: {维度名: {指标: 值}}
+    """
+    print("\n" + "=" * 60)
+    print("  流程测试 (D1-D16)：业务流程功能 + 性能基线")
+    print("  测什么：在固定规模下跑通每个核心业务流程，确认功能正常并采集基线性能。")
+    print("=" * 60)
+
+    results = {}
+    results["D1基础延迟"] = d1_basic_latency()
+    results["D2并发吞吐"] = d2_concurrency()
+    results["D3DB查询"] = d3_db_query(student_ids)
+    results["D4业务事务"] = d4_business_tx(student_ids, course_id)
+    results["D5报表聚合"] = d5_reports()
+    results["D6搜索性能"] = d6_search(student_ids)
+    results["D7鉴权性能"] = d7_auth()
+    results["D8写吞吐"] = d8_write_throughput(course_id)
+    results["D9系统资源"] = d9_system()
+    results["D10课程班级"] = d10_courses_classes(student_ids, course_id)
+    results["D11审计日志"] = d11_audit_logs()
+    results["D12反馈绩效"] = d12_feedback_perf(student_ids, course_id)
+    results["D13点名性能"] = d13_attendance(student_ids, course_id)
+    results["D14排课写入"] = d14_schedule_write(student_ids, course_id)
+    results["D15退课性能"] = d15_transfer(student_ids, course_id)
+    results["D16优化表查询"] = d16_optimized_tables(student_ids)
+    return results
+
+
 def run_quick():
     """简易评估：D1-D9"""
     print("=" * 60)
@@ -2374,23 +2454,7 @@ def run_quick():
     print(f"[准备] 测试学员: {len(student_ids)}")
 
     start = time.perf_counter()
-    all_results = {}
-    all_results["D1基础延迟"] = d1_basic_latency()
-    all_results["D2并发吞吐"] = d2_concurrency()
-    all_results["D3DB查询"] = d3_db_query(student_ids)
-    all_results["D4业务事务"] = d4_business_tx(student_ids, course_id)
-    all_results["D5报表聚合"] = d5_reports()
-    all_results["D6搜索性能"] = d6_search(student_ids)
-    all_results["D7鉴权性能"] = d7_auth()
-    all_results["D8写吞吐"] = d8_write_throughput(course_id)
-    all_results["D9系统资源"] = d9_system()
-    all_results["D10课程班级"] = d10_courses_classes(student_ids, course_id)
-    all_results["D11审计日志"] = d11_audit_logs()
-    all_results["D12反馈绩效"] = d12_feedback_perf(student_ids, course_id)
-    all_results["D13点名性能"] = d13_attendance(student_ids, course_id)
-    all_results["D14排课写入"] = d14_schedule_write(student_ids, course_id)
-    all_results["D15退课性能"] = d15_transfer(student_ids, course_id)
-    all_results["D16优化表查询"] = d16_optimized_tables(student_ids)
+    all_results = run_process_tests(student_ids, course_id)
     duration = time.perf_counter() - start
 
     report_path = generate_report("quick", all_results, duration)
@@ -2423,15 +2487,31 @@ def run_stress(scale=None):
     ensure_grade("一年级")
     course_id = ensure_course("性能测试课程")
 
-    # 预热：确保至少 100 学员
+    # 预热：确保至少 200 学员（流程测试 D1-D16 的固定规模基线）
     existing = get_perf_students()
-    if len(existing) < 100:
-        create_students(100 - len(existing))
+    if len(existing) < 200:
+        need = 200 - len(existing)
+        print(f"[准备] 补充 {need} 个学员到流程测试基线规模...")
+        new_ids = create_students(need)
+        for sid in new_ids:
+            create_enrollment(sid, course_id, hours=20)
     student_ids = [s["id"] for s in get_perf_students()]
     print(f"[准备] 初始学员: {len(student_ids)}")
 
     start = time.perf_counter()
     all_results = {}
+
+    # ===== 阶段 1：流程测试（D1-D16）—— 业务流程功能 + 性能基线 =====
+    print("\n" + "#" * 60)
+    print("# 阶段 1/2：流程测试 (D1-D16)")
+    print("#" * 60)
+    all_results["_process"] = run_process_tests(student_ids, course_id)
+
+    # ===== 阶段 2：压力阶梯（S1-S7）—— 找系统边界 =====
+    print("\n" + "#" * 60)
+    print("# 阶段 2/2：压力阶梯 (S1-S7)")
+    print("#" * 60)
+
     print("\n>>> S1 数据量阶梯测试 <<<")
     all_results["S1"] = s1_data_volume_staircase(course_id, target_sizes=preset["s1_sizes"])
 
