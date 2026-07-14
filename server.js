@@ -37,8 +37,9 @@ const ROOT = __dirname
 
 const PORT = Number(process.env.PORT) || 8788
 const STATIC_DIR = join(ROOT, 'dist')
-// 上传文件存储根目录：uploads/feedback/{studentId}/{feedbackId}/{file}
-const UPLOADS_DIR = join(ROOT, 'uploads')
+// 上传文件存储根目录：data/uploads/{学员姓名}-{studentId}/{年}/{月-日}-{feedbackId}/{file}
+// 放在 data 目录下，便于备份和数据迁移；按学员姓名+ID 分门别类
+const UPLOADS_DIR = join(ROOT, 'data', 'uploads')
 // 启动时确保上传目录存在
 mkdirSync(UPLOADS_DIR, { recursive: true })
 
@@ -153,7 +154,9 @@ async function serveStatic(req, res) {
   }
 }
 
-// 上传文件静态访问：/uploads/* → UPLOADS_DIR/*
+// 上传文件静态访问：/uploads/* → UPLOADS_DIR/*（UPLOADS_DIR = data/uploads）
+// 图片物理路径：data/uploads/{学员姓名}-{studentId}/{年}/{月-日}-{feedbackId}/{file}
+// URL 路径：/uploads/{学员姓名}-{studentId}/{年}/{月-日}-{feedbackId}/{file}
 // 仅允许图片扩展名（.jpg/.jpeg/.png/.gif/.webp），其他一律 404
 // 防止上传的 HTML/SVG 等被浏览器当页面执行（XSS）
 async function serveUploads(req, res) {
@@ -269,8 +272,8 @@ async function handleRequest(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`)
   const pathname = url.pathname
 
-  // 上传文件静态访问：/uploads/* → UPLOADS_DIR/*
-  // 用于反馈图片等静态资源访问（图片在 UPLOADS_DIR/feedback/{studentId}/{feedbackId}/ 下）
+  // 上传文件静态访问：/uploads/* → UPLOADS_DIR/*（data/uploads）
+  // 图片在 data/uploads/{学员姓名}-{studentId}/{年}/{月-日}-{feedbackId}/ 下
   if (pathname.startsWith('/uploads/')) {
     await serveUploads(req, res)
     return

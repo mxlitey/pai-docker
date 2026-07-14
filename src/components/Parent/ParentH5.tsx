@@ -76,6 +76,12 @@ export function ParentH5({ appName }: { appName: string }) {
   const [data, setData] = useState<ParentAccessData | null>(null)
   // 公告板弹窗：验证通过后若有未读公告则弹出
   const [showAnnouncement, setShowAnnouncement] = useState(false)
+  // 日历视图状态提升到外层，供"教师课后反馈"区块按视图范围过滤
+  // 注意：所有 useState 必须在任何 early return 之前调用，否则 Hook 顺序不一致会触发 React #310
+  const [view, setView] = useState<ViewMode>('month')
+  const [currentDate, setCurrentDate] = useState(new Date())
+  // 图片预览（点击反馈缩略图放大查看）
+  const [previewImage, setPreviewImage] = useState<string>('')
 
   // 从 URL 读取 s 参数（学员 ID）
   const params = new URLSearchParams(window.location.search)
@@ -255,12 +261,6 @@ export function ParentH5({ appName }: { appName: string }) {
   }
 
   // ===== 已验证：学员信息主页 =====
-  // 日历视图状态提升到外层，供"教师课后反馈"区块按视图范围过滤
-  const [view, setView] = useState<ViewMode>('month')
-  const [currentDate, setCurrentDate] = useState(new Date())
-  // 图片预览（点击反馈缩略图放大查看）
-  const [previewImage, setPreviewImage] = useState<string>('')
-
   // 按当前日历视图过滤反馈：月→当月，周→当周，日→当天
   const visibleFeedback = filterFeedbackByView(data.feedback, view, currentDate)
 

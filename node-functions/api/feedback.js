@@ -60,7 +60,7 @@ async function handlePost(context) {
   if (fb.content.length > 2000) {
     return json({ code: 1, message: '反馈内容不能超过2000字', data: null }, 400)
   }
-  // images 校验：必须是字符串数组，每项以 /uploads/ 开头，最多 9 张
+  // images 校验：必须是字符串数组，每项以 /uploads/ 开头（由 upload API 生成的合法路径），最多 9 张
   if (fb.images !== undefined) {
     if (!Array.isArray(fb.images)) {
       return json({ code: 1, message: 'images 必须是数组', data: null }, 400)
@@ -69,7 +69,7 @@ async function handlePost(context) {
       return json({ code: 1, message: '图片不能超过 9 张', data: null }, 400)
     }
     for (const img of fb.images) {
-      if (typeof img !== 'string' || !img.startsWith('/uploads/feedback/')) {
+      if (typeof img !== 'string' || !img.startsWith('/uploads/')) {
         return json({ code: 1, message: '图片路径非法', data: null }, 400)
       }
     }
@@ -127,7 +127,7 @@ async function handlePut(context) {
       return json({ code: 1, message: '图片不能超过 9 张', data: null }, 400)
     }
     for (const img of patch.images) {
-      if (typeof img !== 'string' || !img.startsWith('/uploads/feedback/')) {
+      if (typeof img !== 'string' || !img.startsWith('/uploads/')) {
         return json({ code: 1, message: '图片路径非法', data: null }, 400)
       }
     }
@@ -168,11 +168,15 @@ async function handleDelete(context) {
   try {
     const result = await deleteFeedback(id, context.admin)
     // 清理物理图片文件（失败不阻断删除流程，仅记录日志）
+    // 图片在 data/uploads/ 下，URL 路径 /uploads/... 对应物理路径 data/uploads/...
     if (result.images && result.images.length > 0) {
       const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
       for (const imgPath of result.images) {
         try {
-          const fsPath = join(rootDir, imgPath)
+          // imgPath 形如 /uploads/张三-stu123/2026/07-14-fdb456/file.jpg
+          // 物理路径 = rootDir/data + imgPath（去掉开头的 /）
+          const relPath = imgPath.replace(/^\//, '') // uploads/张三-.../...
+          const fsPath = join(rootDir, 'data', relPath)
           await unlink(fsPath)
         } catch (e) {
           console.warn('[feedback] 清理图片文件失败:', imgPath, e?.message)

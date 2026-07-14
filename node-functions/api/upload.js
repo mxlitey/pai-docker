@@ -1,8 +1,9 @@
 // 文件上传 API（用于课后反馈图片）
 // POST /api/upload  multipart/form-data: field "file" + field "feedbackId"
 // 需 feedback:create 或 feedback:update 权限
-// 存储路径：uploads/feedback/{studentId}/{feedbackId}/{timestamp}-{seq}.{ext}
-// 返回 { url: "/uploads/feedback/..." }
+// 存储路径：data/uploads/{学员姓名}-{studentId}/{年}/{月-日}-{feedbackId}/{timestamp}-{random}.{ext}
+// URL 路径：/uploads/{学员姓名}-{studentId}/{年}/{月-日}-{feedbackId}/{timestamp}-{random}.{ext}
+// 返回 { url: "/uploads/..." }
 import { getFeedbackById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
@@ -11,7 +12,13 @@ import { join, dirname, resolve, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const UPLOADS_ROOT = join(ROOT_DIR, 'uploads')
+const UPLOADS_ROOT = join(ROOT_DIR, 'data', 'uploads')
+
+// 清理文件系统非法字符（学员姓名可能含 / \ : * ? " < > | 等）
+function sanitizeName(name) {
+  if (!name) return ''
+  return String(name).replace(/[/\\:*?"<>|]/g, '_').trim()
+}
 
 // 允许的图片扩展名（白名单，防上传 HTML/JS 等可执行文件）
 const ALLOWED_EXT = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
@@ -80,13 +87,23 @@ export default async function onRequestPost(context) {
       return json({ code: 1, message: '反馈未关联学员，无法确定存储目录', data: null }, 400)
     }
 
-    // 拼存储路径：uploads/feedback/{studentId}/{feedbackId}/{timestamp}-{random}{ext}
-    // 用 studentId 一级目录按学员分门别类，feedbackId 二级目录便于整条删除时清理
-    // 文件名用时间戳+随机串防冲突
+    // 拼存储路径：data/uploads/{学员姓名}-{studentId}/{年}/{月-日}-{feedbackId}/{timestamp}-{random}{ext}
+    // 一级目录：学员姓名-{studentId}，按学员分门别类（用 ID 避免重名冲突）
+    // 二级目录：年（如 2026）
+    // 三级目录：月-日-{feedbackId}（如 07-14-fdb456），按反馈日期归档，便于按日清理
+    // 文件名：时间戳+随机串防冲突
+    const safeName = sanitizeName(fb.studentName) || fb.studentId
+    const stuDir = `${safeName}-${fb.studentId}`
+    // fb.date 格式 yyyy-MM-dd，提取年和月-日
+    const fbDate = fb.date || ''
+    const year = fbDate.slice(0, 4) || String(new Date().getFullYear())
+    const monthDay = fbDate.slice(5) || '01-01'
+    const dateDir = `${monthDay}-${feedbackId}`
+
     const ts = Date.now()
     const rand = Math.random().toString(36).slice(2, 8)
     const fileName = `${ts}-${rand}${ext}`
-    const dir = join(UPLOADS_ROOT, 'feedback', fb.studentId, feedbackId)
+    const dir = join(UPLOADS_ROOT, stuDir, year, dateDir)
     await mkdir(dir, { recursive: true })
     const fsPath = join(dir, fileName)
 
@@ -94,8 +111,8 @@ export default async function onRequestPost(context) {
     const arrayBuffer = await file.arrayBuffer()
     await writeFile(fsPath, Buffer.from(arrayBuffer))
 
-    // 返回可访问的 URL 路径（相对站点根）
-    const url = `/uploads/feedback/${fb.studentId}/${feedbackId}/${fileName}`
+    // 返回可访问的 URL 路径（相对站点根，/uploads/ 前缀由 server.js 映射到 data/uploads/）
+    const url = `/uploads/${stuDir}/${year}/${dateDir}/${fileName}`
 
     await writeAudit(context, {
       action: 'create',
