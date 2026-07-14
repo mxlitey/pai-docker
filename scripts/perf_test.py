@@ -3794,6 +3794,15 @@ def test_business_flow(t, prefix, ctx):
         t.post('/api/class-members', {'classId': eng_cls['id'], 'studentIds': [stu['id']]}),
         '学员加入英语班级'
     )
+    # 学员报名英语（插班补课到英语班需有英语报名记录）
+    t.assert_ok(
+        t.post('/api/enrollment-add', {'enrollment': {
+            'studentId': stu['id'], 'courseId': english['id'],
+            'purchasedHours': 10, 'unitPrice': 100,
+            'totalAmount': 1000, 'paidAmount': 1000
+        }}),
+        '学员报名英语(插班补课前置)'
+    )
 
     # === 3.1 插班补课流程 ===
     # 排一堂数学课→缺勤→插班补课到英语班→点名到课→验证数学课时扣减
@@ -3858,15 +3867,16 @@ def test_business_flow(t, prefix, ctx):
         '补课点名到课'
     )
 
-    # 验证: 数学课时应扣减(补课扣原排课课程课时)
-    body = t.assert_ok(t.get(f'/api/enrollments?studentId={stu["id"]}'), '查询数学报名(补课后)')
-    math_enr = next(e for e in body['data']['enrollments'] if e['courseId'] == math['id'])
-    hours_after = math_enr['remainingPaidHours'] + math_enr['remainingGiftHours']
-    t.assert_eq(hours_after, hours_before - 1, f'插班补课扣数学课时({hours_before}→{hours_after})')
+    # 验证: 英语课时应扣减（补课插班到英语课，点名按补课排课的 courseId 扣课时）
+    body = t.assert_ok(t.get(f'/api/enrollments?studentId={stu["id"]}'), '查询英语报名(补课后)')
+    eng_enr = next(e for e in body['data']['enrollments'] if e['courseId'] == english['id'])
+    eng_hours_after = eng_enr['remainingPaidHours'] + eng_enr['remainingGiftHours']
+    t.assert_eq(eng_hours_after, 10 - 1, f'插班补课扣英语课时(10→{eng_hours_after})')
 
-    # 验证: 英语课时不变(学员没报名英语)
-    eng_enr = next((e for e in body['data']['enrollments'] if e['courseId'] == english['id']), None)
-    t.assert_true(eng_enr is None, '英语无报名记录(插班补课不创建英语报名)')
+    # 验证: 数学课时不变（补课点名按补课排课的课程扣，不扣原排课课程）
+    math_enr = next(e for e in body['data']['enrollments'] if e['courseId'] == math['id'])
+    math_hours_after = math_enr['remainingPaidHours'] + math_enr['remainingGiftHours']
+    t.assert_eq(math_hours_after, hours_before, f'数学课时不变({hours_before}→{math_hours_after})')
 
     # === 3.2 调课流程 ===
     print('  --- 3.2 调课 ---')
@@ -4137,7 +4147,14 @@ def test_non_flow_intercept(t, prefix, ctx):
     })
     t.assert_fail(resp, '排课班级与课程不匹配应被拒', '不一致')
 
-    # 4.10 排课未报名课程 —— 已删除（batch API 不校验报名）
+    # 4.10 排课未报名课程应被拒（batch 校验报名）
+    # 学员加入了 nf_eng_cls 但没报名 nf_english，排 nf_english 课应被拒
+    resp = t.post('/api/schedule-add-batch', {
+        'studentIds': [stu['id']], 'classId': nf_eng_cls['id'],
+        'courseId': nf_english['id'], 'courseName': nf_english['name'],
+        'dates': [date_offset(2)], 'startTime': '10:00', 'endTime': '11:30'
+    })
+    t.assert_fail(resp, '排课未报名课程应被拒', '未报名')
 
     # 4.11 排课不存在的学员(应被拒)
     # batch API 先校验班级成员资格，非成员返回"不属于班级"
@@ -4710,7 +4727,15 @@ def test_crud_update_delete(t, prefix, ctx):
     t.assert_ok((200, upd_body), '学员 PUT 修改成功')
 
     # 验证姓名变更级联更新排课 studentName（创建排课后改名）
-    # 该学员未报名，用 makeupFor 标记补课以绕过报名校验，便于后续直接删除学员
+    # 先报名（排课要求学员有 active 报名）
+    t.assert_ok(
+        t.post('/api/enrollment-add', {'enrollment': {
+            'studentId': stu_id, 'courseId': ctx['math']['id'],
+            'purchasedHours': 5, 'unitPrice': 100,
+            'totalAmount': 500, 'paidAmount': 500
+        }}),
+        '为改名测试学员报名'
+    )
     future_date = date_offset(5)
     resp, _ = add_single_schedule(t, {
         'studentId': stu_id, 'courseId': ctx['math']['id'], 'courseName': '改删测',
@@ -4726,7 +4751,18 @@ def test_crud_update_delete(t, prefix, ctx):
     }})
     t.assert_ok((200, upd2), '学员改名后级联更新排课')
 
-    # 删（学员无剩余课时报名，应成功）
+    # 删前先退课（学员有剩余课时报名，需先走退课流程）
+    _, enrs_body = t.get(f'/api/enrollments?studentId={stu_id}')
+    for e in enrs_body.get('data', {}).get('enrollments', []):
+        if e.get('status') == 'active' and (e.get('remainingPaidHours', 0) > 0 or e.get('remainingGiftHours', 0) > 0):
+            t.assert_ok(
+                t.post('/api/transfer-add', {'transfer': {
+                    'studentId': stu_id, 'fromEnrollmentId': e['id'],
+                    'giftMode': 'discard', 'note': '删除前退课'
+                }}),
+                '删除前退课'
+            )
+    # 删（学员已退课，应成功）
     _, del_body = t.delete('/api/student-delete', {'studentId': stu_id})
     t.assert_ok((200, del_body), '学员 DELETE 删除成功')
 

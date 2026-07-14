@@ -4,7 +4,7 @@
 // 为每个 (date, studentId) 组合生成一条排课记录，一次性写入
 // classId 必填：排课以班级为单位，studentIds 必须全部为该班级成员
 // dates 为多日期数组，支持一次性排多天的课
-import { batchAddSchedules, getStudents, getCourseById, getClassById, getClassMembers, findScheduleConflicts, findBatchScheduleConflicts, json } from '../_lib/store.js'
+import { batchAddSchedules, getStudents, getCourseById, getClassById, getClassMembers, getEnrollments, findScheduleConflicts, findBatchScheduleConflicts, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 import { genScheduleId } from '../_lib/id.js'
@@ -116,6 +116,21 @@ export default async function onRequestPost(context) {
     if (invalidIds.length > 0) {
       return json(
         { code: 1, message: `以下 studentId 不存在: ${invalidIds.join(', ')}`, data: null },
+        400,
+      )
+    }
+    // 报名校验：每个学员必须有该课程的 active 报名（排课前须先报名）
+    const noEnrollment = []
+    for (const sid of studentIds) {
+      const enrs = await getEnrollments({ studentId: sid, courseId, status: 'active' })
+      if (!enrs || enrs.length === 0) {
+        noEnrollment.push(sid)
+      }
+    }
+    if (noEnrollment.length > 0) {
+      const names = noEnrollment.map((sid) => studentMap.get(sid)?.name || sid).join('、')
+      return json(
+        { code: 1, message: `以下学员未报名该课程，请先报名：${names}`, data: { noEnrollment: true, studentIds: noEnrollment } },
         400,
       )
     }

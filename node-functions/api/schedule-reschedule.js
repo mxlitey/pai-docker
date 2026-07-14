@@ -3,7 +3,7 @@
 // body: { scheduleId, newDate, newStartTime?, newEndTime?, reason? }
 // 逻辑：原排课标记 cancelled → 新排课插入（复制原数据改时间）→ 写入 schedule_changes 记录
 // 约束：已点名的排课不允许调课（需先改缺勤回退课时）；已取消的排课不允许重复调课
-import { getScheduleById, rescheduleSchedule, getClassById, getClassMembers, json } from '../_lib/store.js'
+import { getScheduleById, rescheduleSchedule, getClassById, getClassMembers, getEnrollments, getStudentById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -88,6 +88,15 @@ export default async function onRequestPost(context) {
       const members = await getClassMembers(newClassId)
       if (!members.some((m) => m.id === original.studentId)) {
         return json({ code: 1, message: `学员不属于班级「${cls.name}」，请先在班级管理中将其加入班级`, data: null }, 400)
+      }
+    }
+    // 若改了课程，校验学员已报名新课程（调课改课程=插班到另一门课，须先报名）
+    if (newCourseId !== undefined && newCourseId !== (original.courseId || '')) {
+      const enrs = await getEnrollments({ studentId: original.studentId, courseId: newCourseId, status: 'active' })
+      if (!enrs || enrs.length === 0) {
+        const stu = await getStudentById(original.studentId)
+        const stuName = stu?.name || original.studentId
+        return json({ code: 1, message: `学员「${stuName}」未报名该课程，请先报名`, data: { noEnrollment: true } }, 400)
       }
     }
 

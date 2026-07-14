@@ -2,7 +2,7 @@
 // PUT /api/schedule-update-batch  body: { items: [{ old: Schedule, new: Schedule }] }
 // 用于"聚合全班修改"：操作员选择同班同时段的多条排课，统一修改时间/教师/地点等字段
 // 每条排课独立处理，单条失败不影响其他条
-import { updateSchedule, getScheduleById, getStudentById, getCourseById, getClassById, getClassMembers, json } from '../_lib/store.js'
+import { updateSchedule, getScheduleById, getStudentById, getCourseById, getClassById, getClassMembers, getEnrollments, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit, buildUpdateSummary } from '../_lib/audit.js'
 
@@ -101,6 +101,13 @@ export default async function onRequestPut(context) {
         const members = await getClassMembers(newSchedule.classId)
         if (!members.some((m) => m.id === newSchedule.studentId)) {
           throw new Error(`${itemLabel}: 学员「${student.name}」不属于班级「${cls.name}」`)
+        }
+      }
+      // 报名校验：改了课程时，学员必须已报名新课程
+      if (newSchedule.courseId && newSchedule.courseId !== (oldSchedule.courseId || '')) {
+        const enrs = await getEnrollments({ studentId: newSchedule.studentId, courseId: newSchedule.courseId, status: 'active' })
+        if (!enrs || enrs.length === 0) {
+          throw new Error(`${itemLabel}: 学员「${student.name}」未报名该课程`)
         }
       }
 

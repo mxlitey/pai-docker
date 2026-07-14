@@ -3,7 +3,7 @@
 // body: { scheduleId, newDate, newStartTime?, newEndTime?, reason? }
 // 逻辑：保留原缺勤排课（不取消） → 生成新排课（设 makeup_for）
 // 约束：原排课必须 attended===false（已缺勤）；已取消的排课不允许补课
-import { getScheduleById, makeupSchedule, getClassById, getClassMembers, json } from '../_lib/store.js'
+import { getScheduleById, makeupSchedule, getClassById, getClassMembers, getEnrollments, getStudentById, json } from '../_lib/store.js'
 import { requirePermission } from '../_lib/auth.js'
 import { writeAudit } from '../_lib/audit.js'
 
@@ -88,6 +88,15 @@ export default async function onRequestPost(context) {
       const members = await getClassMembers(newClassId)
       if (!members.some((m) => m.id === original.studentId)) {
         return json({ code: 1, message: `学员不属于班级「${cls.name}」，请先在班级管理中将其加入班级`, data: null }, 400)
+      }
+    }
+    // 若改了课程，校验学员已报名新课程（补课改课程=插班到另一门课，须先报名）
+    if (newCourseId !== undefined && newCourseId !== (original.courseId || '')) {
+      const enrs = await getEnrollments({ studentId: original.studentId, courseId: newCourseId, status: 'active' })
+      if (!enrs || enrs.length === 0) {
+        const stu = await getStudentById(original.studentId)
+        const stuName = stu?.name || original.studentId
+        return json({ code: 1, message: `学员「${stuName}」未报名该课程，请先报名`, data: { noEnrollment: true } }, 400)
       }
     }
 
