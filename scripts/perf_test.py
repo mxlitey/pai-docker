@@ -4488,20 +4488,27 @@ def test_transfer_and_flow(t, prefix, ctx):
     t.assert_ok((200, enr_body), '创建退课测试报名(20+2课时)')
     enr_id = enr_body['data']['enrollment']['id']
 
+    # 为退课测试课程创建专属班级（班级关联课程须与排课课程一致）
+    _, rf_cls_body = t.post('/api/class-add', {'class': {
+        'name': f'{prefix}_退课班级', 'courseId': course_id, 'grade': grade_name,
+    }})
+    t.assert_ok((200, rf_cls_body), '创建退课测试班级')
+    rf_cls = rf_cls_body['data'].get('class') or rf_cls_body['data']
+
     # 创建未来排课（退课时应被取消）
     future_date = date_offset(7)
     _, sched_body = t.post('/api/schedule-add', {'schedule': {
         'studentId': stu_id, 'courseId': course_id, 'courseName': '退课测',
-        'classId': ctx['cls']['id']['id'], 'studentName': stu_name,
+        'classId': rf_cls['id'], 'studentName': stu_name,
         'date': future_date, 'startTime': '10:00', 'endTime': '11:00',
     }})
     t.assert_ok((200, sched_body), '创建退课测试排课(未来)')
     sched_id = sched_body['data']['schedule']['id']
 
-    # 真正的退课 transfer-add
+    # 真正的退课 transfer-add（refundAmount 由剩余课时×单价自动折算）
     _, tf_body = t.post('/api/transfer-add', {'transfer': {
-        'studentId': stu_id, 'enrollmentId': enr_id,
-        'reason': '退课测试', 'refundAmount': 1500,
+        'studentId': stu_id, 'fromEnrollmentId': enr_id,
+        'reason': '退课测试',
     }})
     t.assert_ok((200, tf_body), 'transfer-add 退课成功')
 
@@ -4513,11 +4520,14 @@ def test_transfer_and_flow(t, prefix, ctx):
     t.assert_true(settled_found, '退课后报名状态变为 settled')
 
     # 验证退课后排课被取消
+    # 注：/api/schedules 会过滤掉 status='cancelled' 的排课，故通过 transfer 返回的
+    # cancelledSchedules 计数 + 该排课已不在活跃列表中 双重验证
+    cancel_count = tf_body.get('data', {}).get('cancelledSchedules', 0)
     _, sched_after = t.get(f'/api/schedules?studentId={stu_id}')
     t.assert_ok((200, sched_after), '查询退课后排课')
     schedules = sched_after.get('data', {}).get('schedules', [])
-    cancelled_found = any(s.get('id') == sched_id and s.get('status') == 'cancelled' for s in schedules)
-    t.assert_true(cancelled_found, '退课后未来排课被取消')
+    still_active = any(s.get('id') == sched_id for s in schedules)
+    t.assert_true(cancel_count > 0 and not still_active, '退课后未来排课被取消')
 
     # 查询退课流水
     _, transfers = t.get(f'/api/transfers?studentId={stu_id}')
@@ -4533,13 +4543,13 @@ def test_transfer_and_flow(t, prefix, ctx):
 
     # 退课后再退课应拒绝（重复退课）
     _, tf_dup = t.post('/api/transfer-add', {'transfer': {
-        'studentId': stu_id, 'enrollmentId': enr_id, 'reason': '重复退课',
+        'studentId': stu_id, 'fromEnrollmentId': enr_id, 'reason': '重复退课',
     }})
     t.assert_fail((200, tf_dup), '重复退课应拒绝')
 
     # 退课不存在报名ID
     _, tf_fake = t.post('/api/transfer-add', {'transfer': {
-        'studentId': stu_id, 'enrollmentId': 'fake_enr_id', 'reason': '不存在报名',
+        'studentId': stu_id, 'fromEnrollmentId': 'fake_enr_id', 'reason': '不存在报名',
     }})
     t.assert_fail((200, tf_fake), '退课不存在报名应拒绝')
 
@@ -4568,11 +4578,13 @@ def test_crud_update_delete(t, prefix, ctx):
     t.assert_ok((200, upd_body), '学员 PUT 修改成功')
 
     # 验证姓名变更级联更新排课 studentName（创建排课后改名）
+    # 该学员未报名，用 makeupFor 标记补课以绕过报名校验，便于后续直接删除学员
     future_date = date_offset(5)
     _, sched_body = t.post('/api/schedule-add', {'schedule': {
         'studentId': stu_id, 'courseId': ctx['math']['id'], 'courseName': '改删测',
-        'classId': ctx['cls']['id']['id'], 'studentName': f'{prefix}_改前学员',
+        'classId': ctx['cls']['id'], 'studentName': f'{prefix}_改前学员',
         'date': future_date, 'startTime': '10:00', 'endTime': '11:00',
+        'makeupFor': f'{prefix}_改名级联',
     }})
     t.assert_ok((200, sched_body), '为改名测试创建排课')
 
@@ -4667,20 +4679,20 @@ def test_crud_update_delete(t, prefix, ctx):
     sched_date = date_offset(10)
     _, sc_body = t.post('/api/schedule-add', {'schedule': {
         'studentId': stu2['id'], 'courseId': ctx['math']['id'], 'courseName': '改删测',
-        'classId': ctx['cls']['id']['id'], 'studentName': stu2['name'],
+        'classId': ctx['cls']['id'], 'studentName': stu2['name'],
         'date': sched_date, 'startTime': '10:00', 'endTime': '11:00',
     }})
     t.assert_ok((200, sc_body), '创建排课改删测试排课')
     sched = sc_body['data']['schedule']
 
     # 改（修改时间）
-    _, scu = t.put('/api/schedule', {'old': sched, 'new': {
+    _, scu = t.put('/api/schedule-update', {'old': sched, 'new': {
         **sched, 'startTime': '14:00', 'endTime': '15:00',
     }})
     t.assert_ok((200, scu), '排课 PUT 修改成功')
 
     # 删
-    _, scd = t.delete('/api/schedule', {
+    _, scd = t.delete('/api/schedule-delete', {
         'id': sched['id'], 'studentId': stu2['id'], 'date': sched_date,
     })
     t.assert_ok((200, scd), '排课 DELETE 删除成功')
@@ -4689,7 +4701,7 @@ def test_crud_update_delete(t, prefix, ctx):
     sched_date2 = date_offset(11)
     _, sc2_body = t.post('/api/schedule-add', {'schedule': {
         'studentId': stu2['id'], 'courseId': ctx['math']['id'], 'courseName': '改删测',
-        'classId': ctx['cls']['id']['id'], 'studentName': stu2['name'],
+        'classId': ctx['cls']['id'], 'studentName': stu2['name'],
         'date': sched_date2, 'startTime': '10:00', 'endTime': '11:00',
     }})
     t.assert_ok((200, sc2_body), '创建状态机测试排课')
@@ -4702,7 +4714,7 @@ def test_crud_update_delete(t, prefix, ctx):
     }]})
 
     # 已到课排课删除应拒绝
-    _, scd_fail = t.delete('/api/schedule', {
+    _, scd_fail = t.delete('/api/schedule-delete', {
         'id': sched2['id'], 'studentId': stu2['id'], 'date': sched_date2,
     })
     t.assert_fail((200, scd_fail), '已到课排课删除应拒绝(状态机)')
@@ -4765,11 +4777,11 @@ def test_crud_update_delete(t, prefix, ctx):
     fb_date = date_offset(2)
     _, fb_sc = t.post('/api/schedule-add', {'schedule': {
         'studentId': ctx['stu']['id'], 'courseId': ctx['math']['id'], 'courseName': '反馈测',
-        'classId': ctx['cls']['id']['id'], 'studentName': '反馈测',
+        'classId': ctx['cls']['id'], 'studentName': '反馈测',
         'date': fb_date, 'startTime': '10:00', 'endTime': '11:00',
     }})
-    if fb_sc[1].get('code') == 0:
-        fb_sched_id = fb_sc[1]['data']['schedule']['id']
+    if fb_sc.get('code') == 0:
+        fb_sched_id = fb_sc['data']['schedule']['id']
         _, fb_create = t.post('/api/feedback', {
             'scheduleId': fb_sched_id, 'studentId': ctx['stu']['id'],
             'content': '测试反馈内容', 'rating': 5,
@@ -4780,9 +4792,9 @@ def test_crud_update_delete(t, prefix, ctx):
         # 查询反馈
         _, fb_list = t.get('/api/feedback')
         t.assert_ok((200, fb_list), '查询反馈列表')
-        _, fb_by_stu = t.get(f'/api/feedback?studentId={ctx["stu"]}')
+        _, fb_by_stu = t.get(f'/api/feedback?studentId={ctx["stu"]["id"]}')
         t.assert_ok((200, fb_by_stu), '按学员查反馈')
-        _, fb_by_course = t.get(f'/api/feedback?courseId={ctx["math"]}')
+        _, fb_by_course = t.get(f'/api/feedback?courseId={ctx["math"]["id"]}')
         t.assert_ok((200, fb_by_course), '按课程查反馈')
 
         # 改
@@ -4957,8 +4969,8 @@ def test_batch_and_members(t, prefix, ctx):
         'classId': class_id, 'startTime': '10:00', 'endTime': '11:00',
     })
     # 冲突时应返回 code!=0 或 created=0
-    if batch_conflict[1].get('code') == 0:
-        conflict_created = batch_conflict[1].get('data', {}).get('created', 0)
+    if batch_conflict.get('code') == 0:
+        conflict_created = batch_conflict.get('data', {}).get('created', 0)
         t.assert_true(conflict_created == 0, '批量排课冲突时创建数为 0')
 
     # 批量排课缺参应拒绝
@@ -5007,13 +5019,13 @@ def test_disaster_recovery(t, prefix, ctx):
     last_month = (datetime.date.today().replace(day=1) - datetime.timedelta(days=1)).strftime('%Y-%m')
     _, ar_create = t.post('/api/audit-archives', {'month': last_month})
     # 归档可能成功（有日志）或返回提示（无日志），都算通过
-    if ar_create[1].get('code') == 0:
+    if ar_create.get('code') == 0:
         t.passed += 1
         print('  [PASS] 创建审计归档成功')
     else:
         # 无日志可归档也算正常
         t.passed += 1
-        print(f'  [PASS] 审计归档返回提示: {ar_create[1].get("message")}')
+        print(f'  [PASS] 审计归档返回提示: {ar_create.get("message")}')
 
     # 归档非法月份格式应拒绝
     _, ar_bad = t.post('/api/audit-archives', {'month': 'invalid'})
@@ -5184,8 +5196,8 @@ def test_error_boundary(t, prefix, ctx):
     t.assert_fail((200, du2), '重复 username 应拒绝')
 
     # 清理重复管理员
-    if du1[1].get('code') == 0:
-        admin1 = du1[1]['data'].get('admin') or du1[1]['data']
+    if du1.get('code') == 0:
+        admin1 = du1['data'].get('admin') or du1['data']
         t.delete('/api/admin-delete', {'id': admin1['id']})
 
     # ===== 上限边界 =====
@@ -5227,7 +5239,7 @@ def test_error_boundary(t, prefix, ctx):
     sm_date = date_offset(8)
     _, sm_sc = t.post('/api/schedule-add', {'schedule': {
         'studentId': stu['id'], 'courseId': ctx['math']['id'], 'courseName': '状态机测',
-        'classId': ctx['cls']['id']['id'], 'studentName': stu['name'],
+        'classId': ctx['cls']['id'], 'studentName': stu['name'],
         'date': sm_date, 'startTime': '10:00', 'endTime': '11:00',
     }})
     t.assert_ok((200, sm_sc), '创建状态机测试排课')
@@ -5257,7 +5269,7 @@ def test_error_boundary(t, prefix, ctx):
     huge_body = {'content': 'x' * (3 * 1024 * 1024)}  # 3MB
     _, huge = t.post('/api/announcement', huge_body)
     # 系统应拒绝（413 或 code!=0）
-    if huge[1].get('code') != 0:
+    if huge.get('code') != 0:
         t.passed += 1
         print('  [PASS] 超大请求体被拒绝')
     else:
