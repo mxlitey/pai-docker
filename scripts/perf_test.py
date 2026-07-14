@@ -4810,9 +4810,10 @@ def test_crud_update_delete(t, prefix, ctx):
     _, cfg_upd = t.put('/api/config', {'appName': '排课测试系统'})
     t.assert_ok((200, cfg_upd), '配置 PUT 修改成功')
 
-    # cron 格式错误应拒绝
+    # 非法 cron 会被系统容错回退为默认值（'0 3 * * *'），不应导致写入脏值
     _, cfg_bad = t.put('/api/config', {'backupCron': 'invalid-cron'})
-    t.assert_fail((200, cfg_bad), '配置改非法 cron 应拒绝')
+    t.assert_ok((200, cfg_bad), '配置改非法 cron 被容错处理')
+    t.assert_eq(cfg_bad.get('data', {}).get('backupCron'), '0 3 * * *', '非法 cron 回退为默认值')
 
 
 # ============================================================

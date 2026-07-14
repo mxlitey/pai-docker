@@ -209,15 +209,10 @@ export function getBackupCron() {
   return cfg.backupCron
 }
 
-// 修改备份 cron 表达式（非法值抛错，由调用方捕获后返回 400）
-// 注：启动加载时用 normalizeBackupCron 做容错回退，此处是用户显式设置，须严格校验
+// 修改备份 cron 表达式（非法值回退默认）
 export function setBackupCron(val) {
   const cfg = loadConfig()
-  if (typeof val !== 'string' || !val.trim()) {
-    throw new Error('cron 表达式不能为空')
-  }
-  parseCron(val.trim()) // 非法表达式抛错
-  cfg.backupCron = val.trim()
+  cfg.backupCron = normalizeBackupCron(val)
   persist()
   return cfg.backupCron
 }
