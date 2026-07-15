@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { Course, BillingType, CourseStatus, Grade } from '@/types'
 import { cn } from '@/utils/cn'
-import { COURSE_COLOR_OPTIONS, getCourseDotClass } from '@/utils/courseColors'
+import { COURSE_COLOR_OPTIONS, getCourseDotStyle } from '@/utils/courseColors'
 import {
   Button,
   EmptyState,
@@ -77,9 +77,10 @@ export function CourseAdmin({ courses, grades, busy, onBack, onDelete, onAdd, on
                     >
                       <td className="py-2.5 px-2">
                         <span
+                          style={getCourseDotStyle(c.color).style}
                           className={cn(
                             'inline-block w-4 h-4 rounded-full',
-                            getCourseDotClass(c.color),
+                            getCourseDotStyle(c.color).className,
                           )}
                         />
                       </td>

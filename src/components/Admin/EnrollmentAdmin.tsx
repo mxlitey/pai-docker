@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Course, Enrollment, EnrollmentStatus, Student } from '@/types'
 import { cn } from '@/utils/cn'
-import { getCourseDotClass } from '@/utils/courseColors'
+import { getCourseDotStyle } from '@/utils/courseColors'
 import { fmtDateTime } from '@/utils/tz'
 import { formatMoney, round2 } from '@/utils/money'
 import { isAuthError } from '@/utils/auth'
@@ -227,9 +227,10 @@ export function EnrollmentAdmin({
                         <td className="py-2.5 px-2 text-foreground">
                           <div className="flex items-center gap-1.5 whitespace-nowrap">
                             <span
+                              style={getCourseDotStyle(course?.color).style}
                               className={cn(
                                 'inline-block w-2.5 h-2.5 rounded-full flex-shrink-0',
-                                getCourseDotClass(course?.color),
+                                getCourseDotStyle(course?.color).className,
                               )}
                             />
                             {course ? (

@@ -1,6 +1,9 @@
 // 课程颜色映射
 // color key → Tailwind 类名（卡片背景/文字/边框 + 圆点色）
 // 用于课程管理选择颜色、日历卡片按课程着色
+// 同时支持十六进制颜色值（#rrggbb / #rgb），hex 时用 inline style 渲染
+
+import type { CSSProperties } from 'react'
 
 export interface CourseColorOption {
   key: string
@@ -45,12 +48,74 @@ const KEYWORD_COLORS: Record<string, string> = {
   生物: 'teal',
 }
 
-// 获取卡片样式类名
-// 优先使用 schedule.color，其次按课程名关键词匹配（向后兼容），最后默认灰色
-export function getCourseCardClass(color?: string, courseName?: string): string {
+// 颜色样式：className + 可选 inline style（hex 颜色时使用）
+export interface ColorStyle {
+  className: string
+  style?: CSSProperties
+}
+
+// 判断是否为十六进制颜色（#rgb 或 #rrggbb）
+function isHexColor(color?: string): boolean {
+  return !!color && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color)
+}
+
+// hex 转 rgb 三元组，失败返回 null
+function hexToRgb(hex: string): [number, number, number] | null {
+  let h = hex.replace('#', '')
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('')
+  const num = parseInt(h, 16)
+  if (isNaN(num)) return null
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255]
+}
+
+// 获取卡片样式（支持 key 与 hex）
+// 优先级：color 命中 COLOR_MAP → color 为 hex（inline style）→ 课程名关键词 → 默认灰色
+export function getCourseCardStyle(color?: string, courseName?: string): ColorStyle {
+  // 1. key 命中预定义颜色
   if (color && COLOR_MAP.has(color)) {
-    return COLOR_MAP.get(color)!.card
+    return { className: COLOR_MAP.get(color)!.card }
   }
+  // 2. 十六进制颜色：用 inline style 渲染半透明背景 + 纯色文字 + 半透明边框
+  if (isHexColor(color)) {
+    const rgb = hexToRgb(color!)
+    if (rgb) {
+      const [r, g, b] = rgb
+      return {
+        className: 'border',
+        style: {
+          backgroundColor: `rgba(${r}, ${g}, ${b}, 0.1)`,
+          color: color,
+          borderColor: `rgba(${r}, ${g}, ${b}, 0.3)`,
+        },
+      }
+    }
+  }
+  // 3. 按课程名关键词匹配（向后兼容历史无 color 字段的排课）
+  if (courseName) {
+    for (const [keyword, key] of Object.entries(KEYWORD_COLORS)) {
+      if (courseName.includes(keyword) && COLOR_MAP.has(key)) {
+        return { className: COLOR_MAP.get(key)!.card }
+      }
+    }
+  }
+  // 4. 默认灰色
+  return { className: DEFAULT_COLOR.card }
+}
+
+// 获取圆点样式（支持 key 与 hex）
+export function getCourseDotStyle(color?: string): ColorStyle {
+  if (color && COLOR_MAP.has(color)) {
+    return { className: COLOR_MAP.get(color)!.dot }
+  }
+  if (isHexColor(color)) {
+    return { className: '', style: { backgroundColor: color } }
+  }
+  return { className: DEFAULT_COLOR.dot }
+}
+
+// ===== 向后兼容：旧函数仅返回 className，hex 时回退到关键词/默认 =====
+export function getCourseCardClass(color?: string, courseName?: string): string {
+  if (color && COLOR_MAP.has(color)) return COLOR_MAP.get(color)!.card
   if (courseName) {
     for (const [keyword, key] of Object.entries(KEYWORD_COLORS)) {
       if (courseName.includes(keyword) && COLOR_MAP.has(key)) {
@@ -61,7 +126,6 @@ export function getCourseCardClass(color?: string, courseName?: string): string 
   return DEFAULT_COLOR.card
 }
 
-// 获取圆点色类名
 export function getCourseDotClass(color?: string): string {
   if (color && COLOR_MAP.has(color)) return COLOR_MAP.get(color)!.dot
   return DEFAULT_COLOR.dot

@@ -1,6 +1,6 @@
 import type { Schedule } from '@/types'
 import { cn } from '@/utils/cn'
-import { getCourseCardClass } from '@/utils/courseColors'
+import { getCourseCardStyle } from '@/utils/courseColors'
 import { Check, X } from 'lucide-react'
 
 interface ScheduleCardProps {
@@ -10,7 +10,7 @@ interface ScheduleCardProps {
 }
 
 export function ScheduleCard({ schedule, compact = false, onClick }: ScheduleCardProps) {
-  const colorClass = getCourseCardClass(schedule.color, schedule.courseName)
+  const cardStyle = getCourseCardStyle(schedule.color, schedule.courseName)
 
   if (compact) {
     // 月视图中的紧凑卡片
@@ -20,9 +20,10 @@ export function ScheduleCard({ schedule, compact = false, onClick }: ScheduleCar
           e.stopPropagation()
           onClick?.(schedule)
         }}
+        style={cardStyle.style}
         className={cn(
           'relative block w-full text-left px-1.5 py-0.5 text-xs rounded truncate border transition-opacity hover:opacity-80',
-          colorClass,
+          cardStyle.className,
         )}
       >
         <span className="font-medium">{formatTimeShort(schedule.startTime)}</span>{' '}
@@ -36,9 +37,10 @@ export function ScheduleCard({ schedule, compact = false, onClick }: ScheduleCar
   return (
     <button
       onClick={() => onClick?.(schedule)}
+      style={cardStyle.style}
       className={cn(
         'relative block w-full text-left p-3 rounded-lg border transition-all hover:shadow-md hover:scale-[1.01]',
-        colorClass,
+        cardStyle.className,
       )}
     >
       <div className="flex items-start justify-between gap-2">

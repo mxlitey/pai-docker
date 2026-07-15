@@ -12,7 +12,7 @@ import {
 } from '@/api'
 import { inputClass } from '@/components/ui'
 import { cn } from '@/utils/cn'
-import { getCourseDotClass } from '@/utils/courseColors'
+import { getCourseDotStyle } from '@/utils/courseColors'
 import { formatMoney } from '@/utils/money'
 import { CalendarToolbar } from '../Calendar/CalendarToolbar'
 import { MonthView } from '../Calendar/MonthView'
@@ -323,17 +323,21 @@ export function ParentH5({ appName }: { appName: string }) {
           {/* 第二行：课时余额（横向滚动，手机端不拥挤），仅展示仍有剩余课时的课程 */}
           {activeEnrollments.length > 0 && (
             <div className="mt-2 pt-2 border-t border-border/60 flex items-center gap-4 overflow-x-auto no-scrollbar">
-              {activeEnrollments.map((e, i) => (
-                <div key={`${e.courseId}-${i}`} className="flex items-center gap-1.5 text-xs whitespace-nowrap flex-shrink-0">
+              {activeEnrollments.map((e, i) => {
+                const dotStyle = getCourseDotStyle(e.courseColor)
+                return (
+                  <div key={`${e.courseId}-${i}`} className="flex items-center gap-1.5 text-xs whitespace-nowrap flex-shrink-0">
                   <span
-                    className={cn('inline-block w-2 h-2 rounded-full flex-shrink-0', getCourseDotClass(e.courseColor))}
+                    style={dotStyle.style}
+                    className={cn('inline-block w-2 h-2 rounded-full flex-shrink-0', dotStyle.className)}
                   />
                   <span className="text-muted-foreground">{e.courseName || `课程 ${e.courseId.slice(-6)}`}</span>
                   <span className="font-medium text-primary">
                     剩 {e.remainingHours} 课时
                   </span>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

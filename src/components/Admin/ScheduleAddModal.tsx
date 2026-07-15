@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import type { Course, ClassInfo, ClassMember } from '@/types'
 import { batchAddSchedules, getClassMembers } from '@/api/admin'
 import { cn } from '@/utils/cn'
-import { getCourseDotClass } from '@/utils/courseColors'
+import { getCourseDotStyle } from '@/utils/courseColors'
 import { todayLocal } from '@/utils/date'
 import { Modal, ModalFooter, Button, inputClass } from '@/components/ui'
 import { TeacherSelect } from '@/components/Admin/TeacherSelect'
@@ -261,7 +261,10 @@ export function ScheduleAddModal({ courses, classes, onClose, onUpdated }: Sched
             )}
             {selectedCourse && (
               <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
-                <span className={cn('inline-block w-2.5 h-2.5 rounded-full', getCourseDotClass(selectedCourse.color))} />
+                <span
+                  style={getCourseDotStyle(selectedCourse.color).style}
+                  className={cn('inline-block w-2.5 h-2.5 rounded-full', getCourseDotStyle(selectedCourse.color).className)}
+                />
                 <span className="font-mono">{selectedCourse.id}</span>
               </div>
             )}
