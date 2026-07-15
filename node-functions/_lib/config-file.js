@@ -61,7 +61,7 @@ const DEFAULT_CDN_PROVIDER = 'generic'
 export const CDN_PROVIDERS = [
   { value: 'cloudflare',  label: 'Cloudflare',          header: 'cf-connecting-ip' },
   { value: 'ali-cdn',     label: '阿里云 CDN/DCDN',     header: 'ali-cdn-real-ip' },
-  { value: 'ali-esa',     label: '阿里云 ESA 边缘安全加速', header: '' },
+  { value: 'ali-esa',     label: '阿里云 ESA 边缘安全加速', header: 'ali-real-client-ip（需开启 Managed Transform）' },
   { value: 'tencent-cdn', label: '腾讯云 CDN',          header: '' },
   { value: 'tencent-eo',  label: '腾讯云 EdgeOne (EO)', header: '' },
   { value: 'huawei',      label: '华为云 CDN',          header: '' },

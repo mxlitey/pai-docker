@@ -581,6 +581,12 @@ export function SystemSettingsAdmin({
                   <p className="text-xs text-muted-foreground/70 mt-1.5">
                     无 CDN 或使用 Nginx 等普通反代时选「通用代理」即可，系统会从 X-Forwarded-For 读取真实 IP
                   </p>
+                  {cdnProvider === 'ali-esa' && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 leading-relaxed">
+                      ⚠️ 需在阿里云 ESA 控制台开启「规则 → 转换规则 → Managed transforms → Add real client IP header」，
+                      否则 ESA 不会传递真实客户端 IP，只会写入自己的节点 IP，导致审计日志记录的全是 ESA 节点 IP。
+                    </p>
+                  )}
                 </div>
 
                 {/* 保存按钮 */}

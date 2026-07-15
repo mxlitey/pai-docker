@@ -488,10 +488,16 @@ export function getClientIp(context) {
 }
 
 // CDN 厂商 -> 真实客户端 IP 专用头映射
+// 需在 CDN 控制台开启对应功能才会写入这些头：
+//   - cloudflare: 默认开启 CF-Connecting-IP
+//   - ali-cdn:    默认开启 Ali-CDN-Real-Ip
+//   - ali-esa:    需在「转换规则 > Managed transforms」开启 Add real client IP header
+//   - upyun:      默认开启 X-Real-IP
+//   - 其他厂商无专用头，走 XFF 最左值
 const CDN_PROVIDER_HEADERS = {
   cloudflare:  'cf-connecting-ip',
   'ali-cdn':   'ali-cdn-real-ip',
-  'ali-esa':   '',  // 阿里云 ESA 无专用头，走 XFF
+  'ali-esa':   'ali-real-client-ip',
   'tencent-cdn': '', // 腾讯云 CDN 无专用头，走 XFF
   'tencent-eo': '',  // EdgeOne 无专用头，走 XFF
   huawei:      '',   // 华为云 CDN 无专用头，走 XFF
