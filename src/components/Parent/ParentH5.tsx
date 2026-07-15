@@ -175,6 +175,25 @@ export function ParentH5({ appName }: { appName: string }) {
     }
   }
 
+  // 派生值：仅在 verified 阶段使用，但 useMemo 必须在所有 early return 之前调用，
+  // 否则 Hook 顺序不一致会触发 React #310。data 为 null 时返回空集合兜底。
+  const monthScheduleCount = useMemo(
+    () => (data ? filterSchedulesByMonth(data.schedules, currentDate).length : 0),
+    [data, currentDate],
+  )
+  const activeEnrollments = useMemo(
+    () => (data ? data.enrollments.filter((e) => e.remainingHours > 0) : []),
+    [data],
+  )
+  const toggleFeedback = (id: string) => {
+    setExpandedFeedback((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   // ===== 错误页 =====
   if (phase === 'error') {
     return (
@@ -266,31 +285,9 @@ export function ParentH5({ appName }: { appName: string }) {
   }
 
   // ===== 已验证：学员信息主页 =====
-  // 按当前日历视图过滤反馈：月→当月，周→当周，日→当天
+  // data 在 verified 阶段保证非 null
   const visibleFeedback = filterFeedbackByView(data.feedback, view, currentDate)
-
-  // 当月排课数（基于当前日历视图所在月份）
-  const monthScheduleCount = useMemo(
-    () => filterSchedulesByMonth(data.schedules, currentDate).length,
-    [data.schedules, currentDate],
-  )
-  // 仍有剩余课时的报名（课程数与余额列表都只展示这些）
-  const activeEnrollments = useMemo(
-    () => data.enrollments.filter((e) => e.remainingHours > 0),
-    [data.enrollments],
-  )
   const studentBalance = data.student.balance || 0
-
-  // 切换某条反馈的展开/折叠状态
-  const toggleFeedback = (id: string) => {
-    setExpandedFeedback((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
   return (
     <div className="min-h-screen bg-background">
       {showAnnouncement && data?.announcement && (
