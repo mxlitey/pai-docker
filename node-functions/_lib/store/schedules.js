@@ -21,7 +21,8 @@ function rowToSchedule(r) {
     startTime: r.start_time || '',
     endTime: r.end_time || '',
     note: r.note || '',
-    color: r.color || '',
+    // 排课颜色优先用排课记录自带值，为空时回退到课程颜色（course_color 由 JOIN 带出）
+    color: r.color || r.course_color || '',
     attended: r.attended === null ? undefined : !!r.attended,
     status: r.status || 'scheduled',
     makeupFor: r.makeup_for || '',
@@ -59,9 +60,11 @@ export async function getAllSchedulesByStudent(studentId) {
   validateStorageId(studentId, 'studentId')
   const db = getDb()
   // 加 LIMIT 防止大数据量下返回过多记录导致 OOM/超时
-  // LEFT JOIN classes 取班级名，供家长端排课详情展示班级字段
-  const rows = db.prepare(`SELECT s.*, c.name AS class_name FROM schedules s
+  // LEFT JOIN classes 取班级名；LEFT JOIN courses 取课程颜色，排课无颜色时回退课程颜色
+  const rows = db.prepare(`SELECT s.*, c.name AS class_name, co.color AS course_color
+    FROM schedules s
     LEFT JOIN classes c ON c.id = s.class_id
+    LEFT JOIN courses co ON co.id = s.course_id
     WHERE s.student_id=?
     ORDER BY s.date DESC, s.start_time DESC LIMIT 2000`).all(studentId)
   return rows.map(rowToSchedule)
@@ -87,8 +90,8 @@ export async function searchSchedules({ startDate, endDate, courseId, grade, tea
     startDate = `${now.getFullYear()}-${p(now.getMonth() + 1)}-01`
     endDate = `${next.getFullYear()}-${p(next.getMonth() + 1)}-01`
   }
-  // LEFT JOIN classes/courses 取班级名和年级，供点名页按「班级(课程)年级」分组展示
-  let sql = `SELECT s.*, c.name AS class_name, COALESCE(c.grade, co.grade) AS grade
+  // LEFT JOIN classes/courses 取班级名、年级和课程颜色（排课无颜色时回退课程颜色），供点名页按「班级(课程)年级」分组展示
+  let sql = `SELECT s.*, c.name AS class_name, COALESCE(c.grade, co.grade) AS grade, co.color AS course_color
     FROM schedules s
     LEFT JOIN classes c ON c.id = s.class_id
     LEFT JOIN courses co ON co.id = s.course_id

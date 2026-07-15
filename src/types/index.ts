@@ -367,7 +367,7 @@ export interface Feedback {
   studentName: string
   date: string
   content: string
-  rating: number
+  rating?: number
   images: string[]
   createdAt: string
 }

@@ -196,7 +196,7 @@ export function EnrollmentAdmin({
                     <th className="text-left py-2 px-2 font-medium">{'学员'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'课程'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'状态'}</th>
-                    <th className="text-left py-2 px-2 font-medium">{'课时 [剩余付费(剩余赠课)/购课(赠课)]'}</th>
+                    <th className="text-left py-2 px-2 font-medium">{'课时 [剩余(赠)/购(赠)]'}</th>
                     <th className="text-right py-2 px-2 font-medium">{'单价'}</th>
                     <th className="text-right py-2 px-2 font-medium">应付</th>
                     <th className="text-right py-2 px-2 font-medium">实付</th>
@@ -337,15 +337,15 @@ function StatusBadge({ status }: { status: EnrollmentStatus }) {
   )
 }
 
-// 合并课时展示：[剩余付费(剩余赠课)]/[购课(赠课)]，仅已用完（剩余=0）时红色显示
+// 合并课时展示：[剩余x(赠x)/购x(赠x)]，仅已用完（剩余=0）时红色显示
 function renderMergedHours(e: Enrollment) {
   const remaining = e.remainingPaidHours + e.remainingGiftHours
   const usedUp = remaining <= 0
-  const giftPart = e.giftHours > 0 ? `(${e.giftHours})` : ''
-  const remGiftPart = e.remainingGiftHours > 0 ? `(${e.remainingGiftHours})` : ''
+  const remGiftPart = e.remainingGiftHours > 0 ? `(赠${e.remainingGiftHours})` : ''
+  const giftPart = e.giftHours > 0 ? `(赠${e.giftHours})` : ''
   return (
     <span className={usedUp ? 'text-destructive' : 'text-foreground'}>
-      [{e.remainingPaidHours}{remGiftPart}]/{e.purchasedHours}{giftPart}
+      [剩余{e.remainingPaidHours}{remGiftPart}/购{e.purchasedHours}{giftPart}]
     </span>
   )
 }

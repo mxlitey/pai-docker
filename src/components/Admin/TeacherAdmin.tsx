@@ -98,7 +98,6 @@ function FeedbackPanel() {
   const [page, setPage] = useState(1)
   const [editing, setEditing] = useState<Feedback | null>(null)
   const [editContent, setEditContent] = useState('')
-  const [editRating, setEditRating] = useState(5)
   const [saving, setSaving] = useState(false)
   const [adding, setAdding] = useState(false)
   // 编辑弹窗：图片列表、图片上传中标记、列表预览大图
@@ -143,7 +142,6 @@ function FeedbackPanel() {
   const openEdit = (fb: Feedback) => {
     setEditing(fb)
     setEditContent(fb.content || '')
-    setEditRating(fb.rating ?? 5)
     setEditImages(fb.images || [])
   }
 
@@ -158,7 +156,6 @@ function FeedbackPanel() {
     try {
       const result = await updateFeedback(editing.id, {
         content: editContent,
-        rating: editRating,
         images: editImages,
       })
       if (result.code === 0) {
@@ -211,7 +208,7 @@ function FeedbackPanel() {
       ) : list.length === 0 ? (
         <EmptyState title={'暂无课后反馈'} description="点击右上角「新增反馈」提交课后反馈" />
       ) : isMobile ? (
-        // 移动端：卡片列表，前方展开按钮，折叠时隐藏反馈内容与图片
+        // 移动端：单行展示 日期/学员/班级/课程/操作人/编辑/删除，前方展开按钮控制反馈内容与图片
         <section className="card p-3 space-y-2">
           {pageItems.map((fb) => {
             const expanded = expandedIds.has(fb.id)
@@ -219,69 +216,63 @@ function FeedbackPanel() {
             const hasImages = !!(fb.images && fb.images.length > 0)
             const hasDetail = hasContent || hasImages
             return (
-              <div key={fb.id} className="border border-border rounded-md p-3">
-                <div className="flex items-start gap-2">
+              <div key={fb.id} className="border border-border rounded-md p-2.5">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                   {/* 展开按钮：仅有反馈内容或图片时显示 */}
                   {hasDetail ? (
                     <button
                       type="button"
                       onClick={() => toggleExpand(fb.id)}
-                      className="mt-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                      className="text-muted-foreground hover:text-foreground transition-colors"
                       aria-label={expanded ? '收起反馈' : '展开反馈'}
                     >
-                      {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </button>
                   ) : (
-                    <span className="w-4" />
+                    <span className="w-3.5" />
                   )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">{fb.date || '—'}</span>
-                      <span className="text-amber-500 text-xs">{renderStars(fb.rating)}</span>
-                    </div>
-                    <div className="text-sm text-foreground font-medium mt-0.5">{fb.studentName || '—'}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-x-2">
-                      <span>{fb.courseName || '—'}</span>
-                      <span>{fb.className || '—'}</span>
-                      <span>{fb.teacherName || '—'}</span>
-                    </div>
-                    {/* 反馈内容与图片：折叠时不显示，展开时显示 */}
-                    {expanded && hasDetail && (
-                      <div className="mt-2 pt-2 border-t border-border/60">
-                        {hasContent && (
-                          <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{fb.content}</p>
-                        )}
-                        {hasImages && (
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {fb.images.map((url, idx) => (
-                              <img
-                                key={idx}
-                                src={url}
-                                alt={`图片${idx + 1}`}
-                                className="w-12 h-12 object-cover rounded border border-border cursor-pointer hover:opacity-80 transition-opacity"
-                                onClick={() => setPreviewImage(url)}
-                              />
-                            ))}
-                          </div>
-                        )}
+                  <span className="text-muted-foreground whitespace-nowrap">{fb.date || '—'}</span>
+                  <span className="text-foreground font-medium whitespace-nowrap">{fb.studentName || '—'}</span>
+                  <span className="text-muted-foreground whitespace-nowrap">{fb.className || '—'}</span>
+                  <span className="text-muted-foreground whitespace-nowrap">{fb.courseName || '—'}</span>
+                  <span className="text-muted-foreground whitespace-nowrap">{fb.teacherName || '—'}</span>
+                  {/* 操作按钮靠右 */}
+                  <span className="ml-auto flex gap-3 whitespace-nowrap">
+                    <button
+                      onClick={() => openEdit(fb)}
+                      className="text-primary text-xs"
+                    >
+                      {'编辑'}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(fb)}
+                      className="text-destructive text-xs"
+                    >
+                      {'删除'}
+                    </button>
+                  </span>
+                </div>
+                {/* 反馈内容与图片：折叠时不显示，展开时显示 */}
+                {expanded && hasDetail && (
+                  <div className="mt-2 pt-2 border-t border-border/60 pl-5">
+                    {hasContent && (
+                      <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{fb.content}</p>
+                    )}
+                    {hasImages && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {fb.images.map((url, idx) => (
+                          <img
+                            key={idx}
+                            src={url}
+                            alt={`图片${idx + 1}`}
+                            className="w-12 h-12 object-cover rounded border border-border cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => setPreviewImage(url)}
+                          />
+                        ))}
                       </div>
                     )}
-                    <div className="flex gap-3 mt-2">
-                      <button
-                        onClick={() => openEdit(fb)}
-                        className="text-primary hover:text-primary text-xs"
-                      >
-                        {'编辑'}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(fb)}
-                        className="text-destructive hover:text-destructive text-xs"
-                      >
-                        {'删除'}
-                      </button>
-                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )
           })}
@@ -306,7 +297,6 @@ function FeedbackPanel() {
                   <th className="text-left py-2 px-2 font-medium whitespace-nowrap">{'班级'}</th>
                   <th className="text-left py-2 px-2 font-medium whitespace-nowrap">{'课程'}</th>
                   <th className="text-left py-2 px-2 font-medium whitespace-nowrap">{'教师'}</th>
-                  <th className="text-left py-2 px-2 font-medium whitespace-nowrap">{'评分'}</th>
                   <th className="text-left py-2 px-2 font-medium">{'反馈内容'}</th>
                   <th className="text-right py-2 px-2 font-medium whitespace-nowrap">{'操作'}</th>
                 </tr>
@@ -323,9 +313,6 @@ function FeedbackPanel() {
                     <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{fb.className || '—'}</td>
                     <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{fb.courseName || '—'}</td>
                     <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{fb.teacherName || '—'}</td>
-                    <td className="py-2 px-2 text-amber-500 whitespace-nowrap" title={`${fb.rating} 星`}>
-                      {renderStars(fb.rating)}
-                    </td>
                     <td className="py-2 px-2 text-muted-foreground max-w-xs" title={fb.content}>
                       {fb.content ? truncate(fb.content) : <span className="text-muted-foreground/40">—</span>}
                       {/* 图片缩略图行：最多显示前 4 张，超出显示 +N */}
@@ -408,19 +395,6 @@ function FeedbackPanel() {
                 className={cn(inputClass, 'resize-y')}
               />
             </Field>
-            <Field label={'评分'}>
-              <select
-                value={editRating}
-                onChange={(e) => setEditRating(Number(e.target.value))}
-                className={inputClass}
-              >
-                {[0, 1, 2, 3, 4, 5].map((n) => (
-                  <option key={n} value={n}>
-                    {n} 星（{renderStars(n)}）
-                  </option>
-                ))}
-              </select>
-            </Field>
             <Field label={'图片'}>
               <FeedbackImageUploader
                 feedbackId={editing.id}
@@ -489,7 +463,6 @@ function AddFeedbackModal({
   const [loadingSchedules, setLoadingSchedules] = useState(false)
   const [selectedId, setSelectedId] = useState('')
   const [content, setContent] = useState('')
-  const [rating, setRating] = useState(5)
   const [saving, setSaving] = useState(false)
   const [loaded, setLoaded] = useState(false)
   // 提交前暂存的图片文件（含本地预览 URL），提交时先创建反馈再上传
@@ -609,7 +582,6 @@ function AddFeedbackModal({
         studentName: selected.studentName,
         date: selected.date,
         content,
-        rating,
         images: [],
       })
       if (result.code !== 0) {
@@ -760,20 +732,6 @@ function AddFeedbackModal({
             placeholder="请输入课后反馈内容（学习表现、掌握情况、改进建议等）"
             className={cn(inputClass, 'resize-y')}
           />
-        </Field>
-
-        <Field label={'评分'}>
-          <select
-            value={rating}
-            onChange={(e) => setRating(Number(e.target.value))}
-            className={inputClass}
-          >
-            {[0, 1, 2, 3, 4, 5].map((n) => (
-              <option key={n} value={n}>
-                {n} 星（{renderStars(n)}）
-              </option>
-            ))}
-          </select>
         </Field>
 
         {/* 图片：提交前仅暂存 File 并显示本地预览，提交时先创建反馈再上传 */}

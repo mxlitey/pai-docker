@@ -511,12 +511,11 @@ function RefundTab({ showToast, onAuthError }: RefundTabProps) {
           退费学员查询
         </h2>
         <p className="text-sm text-muted-foreground">
-          此处展示已删除的学员（软删除）。删除学员时若有账户余额，系统会提示需退费，但不会自动退款。
-          余额 <span className="text-destructive font-medium">大于 0</span> 的学员为待退费学员，请线下处理后核对。
+          这里显示已删除的学员。删除时如果账户里还有余额，会标记为"待退费"，请线下退还家长后核对。
         </p>
         {deletedStudents.length > 0 && (
           <div className="mt-3 flex gap-4 text-sm">
-            <span className="text-muted-foreground">共 {deletedStudents.length} 名已删除学员</span>
+            <span className="text-muted-foreground">共 {deletedStudents.length} 名</span>
             {refundCount > 0 && (
               <span className="text-destructive font-medium">待退费 {refundCount} 名</span>
             )}
@@ -538,7 +537,7 @@ function RefundTab({ showToast, onAuthError }: RefundTabProps) {
       {loading ? (
         <LoadingBlock />
       ) : deletedStudents.length === 0 ? (
-        <EmptyState title={'暂无已删除学员'} description="删除的学员会在此处显示，便于退费核对" />
+        <EmptyState title={'暂无记录'} description="删除的学员会在这里显示，方便核对退费" />
       ) : (
         <section className="card p-5">
           <div className="overflow-x-auto">
@@ -546,11 +545,10 @@ function RefundTab({ showToast, onAuthError }: RefundTabProps) {
               <thead>
                 <tr className="border-b border-border text-muted-foreground text-xs">
                   <th className="text-left py-2 px-2 font-medium">{'姓名'}</th>
-                  <th className="text-left py-2 px-2 font-medium">{'年级'}</th>
                   <th className="text-left py-2 px-2 font-medium">{'联系电话'}</th>
                   <th className="text-right py-2 px-2 font-medium">{'账户余额'}</th>
-                  <th className="text-left py-2 px-2 font-medium">{'删除时间'}</th>
                   <th className="text-left py-2 px-2 font-medium">{'状态'}</th>
+                  <th className="text-left py-2 px-2 font-medium">{'删除时间'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -564,16 +562,10 @@ function RefundTab({ showToast, onAuthError }: RefundTabProps) {
                     >
                       <td className="py-2.5 px-2 font-medium text-foreground">{s.name}</td>
                       <td className="py-2.5 px-2 text-muted-foreground">
-                        {s.grade || <span className="text-muted-foreground/40">—</span>}
-                      </td>
-                      <td className="py-2.5 px-2 text-muted-foreground">
                         {s.phone || <span className="text-muted-foreground/40">—</span>}
                       </td>
                       <td className={cn('py-2.5 px-2 text-right font-medium', needRefund ? 'text-destructive' : 'text-muted-foreground')}>
                         {formatMoney(balance)}
-                      </td>
-                      <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap text-xs">
-                        {fmtDateTime(s.deletedAt)}
                       </td>
                       <td className="py-2.5 px-2">
                         {needRefund ? (
@@ -585,6 +577,9 @@ function RefundTab({ showToast, onAuthError }: RefundTabProps) {
                             已结清
                           </span>
                         )}
+                      </td>
+                      <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap text-xs">
+                        {fmtDateTime(s.deletedAt)}
                       </td>
                     </tr>
                   )

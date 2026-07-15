@@ -522,7 +522,7 @@ export function AdminPanel({ onExit }: AdminPanelProps) {
       : ''
     const ok = await confirmDialog({
       title: '删除学员',
-      message: `确认删除学员「${student.name}」(${student.id})？\n该操作将删除该学员的未点名排课与班级成员关系，保留已点名排课、报名记录、退课记录用于报表统计，且不可恢复。${balanceHint}`,
+      message: `确认删除学员「${student.name}」(${student.id})？\n删除后该学员不再显示，未点名的排课会一并删除；已上过的课、报名和退课记录会保留用于统计。此操作不可恢复。${balanceHint}`,
       danger: true,
       requireText: student.name,
       confirmText: '确认删除',
