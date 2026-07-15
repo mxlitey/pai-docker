@@ -51,6 +51,27 @@ export async function getStudentById(studentId) {
   return row ? rowToStudent(row) : null
 }
 
+// 查询已软删除的学员（退费学员查询）：返回 deleted_at IS NOT NULL 的学员
+// 用于结转退课-退费子页，展示被删除时仍有余额的学员（需退费）
+export async function getDeletedStudents(q) {
+  const db = getDb()
+  let rows
+  if (!q || !q.trim()) {
+    rows = db.prepare('SELECT * FROM students WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, created_at DESC').all()
+  } else {
+    const kw = q.trim()
+    rows = db.prepare(
+      `SELECT * FROM students
+       WHERE deleted_at IS NOT NULL AND (name = ? OR name LIKE ?)
+       ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END, deleted_at DESC`,
+    ).all(kw, `%${kw}%`, kw)
+  }
+  return rows.map((r) => ({
+    ...rowToStudent(r),
+    deletedAt: r.deleted_at || '',
+  }))
+}
+
 export async function addStudent(student) {
   const db = getDb()
   // id 由后端统一生成（前端不再传 id）；兼容旧前端传入 id

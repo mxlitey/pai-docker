@@ -8,6 +8,7 @@ import type {
   PermissionModule, Grade, ClassInfo, ClassMember,
   ScheduleChange, AccountTransaction,
   AuditArchiveInfo, AuditArchiveContent,
+  DeletedStudent,
 } from '@/types'
 
 const API_BASE = '/api'
@@ -386,6 +387,16 @@ export async function searchStudents(
   if (q) qs.set('q', q)
   const query = qs.toString()
   return request(`${API_BASE}/students${query ? '?' + query : ''}`, { method: 'GET' })
+}
+
+// 查询已软删除学员（退费学员查询入口，用于结转退课-退费子页）
+export async function listDeletedStudents(
+  q: string,
+): Promise<ApiResult<{ students: DeletedStudent[] }>> {
+  const qs = new URLSearchParams()
+  if (q) qs.set('q', q)
+  const query = qs.toString()
+  return request(`${API_BASE}/students-deleted${query ? '?' + query : ''}`, { method: 'GET' })
 }
 
 // ========== 课程管理 ==========

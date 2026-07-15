@@ -29,13 +29,6 @@ export default async function onRequestDelete(context) {
     if (result.notFound) {
       return json({ code: 1, message: '班级不存在', data: null }, 404)
     }
-    if (result.blocked) {
-      return json({
-        code: 1,
-        message: result.message,
-        data: result,
-      }, 400)
-    }
     if (result.inUse) {
       return json({
         code: 1,
@@ -45,13 +38,14 @@ export default async function onRequestDelete(context) {
     }
     const before = result.before || null
     const className = before?.name || id.trim()
+    const memberHint = result.memberCount > 0 ? `（含 ${result.memberCount} 名成员关联）` : ''
     await writeAudit(context, {
       action: 'delete',
       module: 'classes',
       targetType: 'class',
       targetId: id.trim(),
       targetName: className,
-      summary: `删除班级「${className}」及其成员关联`,
+      summary: `删除班级「${className}」${memberHint}`,
       before,
     })
     return json({ code: 0, message: '班级已删除', data: result })

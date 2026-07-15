@@ -47,6 +47,7 @@ export const ROLE_PERMISSIONS = {
     'schedules:view', 'schedules:reschedule', 'attendance:view', 'attendance:update',
     'enrollments:view', 'students:view', 'courses:view', 'grades:view', 'classes:view',
     'feedback:view', 'feedback:create', 'feedback:update',
+    'teachers:view',
   ],
 }
 

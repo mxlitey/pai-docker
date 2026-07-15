@@ -124,7 +124,10 @@ export function StudentAdmin({ students, grades, summaries, enrollmentsByStudent
                 <tbody>
                   {pageItems.map((s) => {
                     const sum = summaries[s.id]
-                    const enrList = enrollmentsByStudent[s.id] || []
+                    // 过滤掉已用完（剩余课时=0）的课程，不再显示
+                    const enrList = (enrollmentsByStudent[s.id] || []).filter(
+                      (e) => e.remainingPaidHours + e.remainingGiftHours > 0,
+                    )
                     const hasEnrollments = !!sum && sum.count > 0 && enrList.length > 0
                     return (
                     <tr

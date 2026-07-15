@@ -36,6 +36,11 @@ export interface Student {
   createdAt?: string
 }
 
+// 已软删除学员（退费学员查询）
+export interface DeletedStudent extends Student {
+  deletedAt: string
+}
+
 // 课程信息
 export interface Course {
   id: string
