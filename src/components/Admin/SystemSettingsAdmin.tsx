@@ -68,10 +68,6 @@ export function SystemSettingsAdmin({
   // 自动备份最大保留份数
   const [backupMaxCount, setBackupMaxCount] = useState(500)
   const [originalBackupMaxCount, setOriginalBackupMaxCount] = useState(500)
-  // CDN 设置：CDN 厂商（决定优先读取哪个真实 IP 请求头）
-  const [cdnProvider, setCdnProvider] = useState('generic')
-  const [originalCdnProvider, setOriginalCdnProvider] = useState('generic')
-  const [savingCdn, setSavingCdn] = useState(false)
   const [loading, setLoading] = useState(true)
 
   // 备份列表
@@ -116,8 +112,6 @@ export function SystemSettingsAdmin({
         setOriginalBackupCron(cfg.backupCron || '0 3 * * *')
         setBackupMaxCount(cfg.backupMaxCount)
         setOriginalBackupMaxCount(cfg.backupMaxCount)
-        setCdnProvider(cfg.cdnProvider || 'generic')
-        setOriginalCdnProvider(cfg.cdnProvider || 'generic')
       } else if (fullR.status === 'rejected') {
         toast.error((fullR.reason as Error)?.message || '加载配置失败')
       }
@@ -252,33 +246,6 @@ export function SystemSettingsAdmin({
     } finally {
       setBackupCreating(false)
     }
-  }
-
-  // CDN 设置变更标记
-  const cdnDirty = cdnProvider !== originalCdnProvider
-
-  // 保存 CDN 设置
-  const handleSaveCdn = async () => {
-    setSavingCdn(true)
-    try {
-      const result = await updateSystemConfig({
-        cdnProvider,
-      })
-      if (result.code === 0) {
-        setOriginalCdnProvider(cdnProvider)
-        toast.success('CDN 设置已保存')
-      } else {
-        toast.error(result.message || '保存失败')
-      }
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setSavingCdn(false)
-    }
-  }
-
-  const handleResetCdn = () => {
-    setCdnProvider(originalCdnProvider)
   }
 
   // 恢复备份（恢复前自动创建当前数据快照）
@@ -546,66 +513,6 @@ export function SystemSettingsAdmin({
                       </table>
                     </div>
                   )}
-                </div>
-              </div>
-            </section>
-
-            {/* CDN 设置 */}
-            <section className="card p-5">
-              <h2 className="text-base font-semibold text-foreground mb-1 flex items-center gap-2">
-                <span className="w-1 h-4 bg-cyan-500 rounded"></span>
-                CDN 设置
-              </h2>
-              <p className="text-xs text-muted-foreground/70 mb-4">
-                系统会从请求头读取访客真实 IP（用于审计日志）。选择你使用的 CDN 厂商，系统会优先读取该厂商的真实 IP 请求头，读不到则回退到 X-Forwarded-For。
-              </p>
-              <div className="space-y-4">
-                {/* 厂商选择 */}
-                <div>
-                  <label className="block text-sm text-muted-foreground mb-1.5">CDN 厂商</label>
-                  <select
-                    value={cdnProvider}
-                    onChange={(e) => setCdnProvider(e.target.value)}
-                    className={cn(inputClass, 'bg-background')}
-                  >
-                    <option value="cloudflare">Cloudflare</option>
-                    <option value="ali-cdn">阿里云 CDN/DCDN</option>
-                    <option value="ali-esa">阿里云 ESA 边缘安全加速</option>
-                    <option value="tencent-cdn">腾讯云 CDN</option>
-                    <option value="tencent-eo">腾讯云 EdgeOne (EO)</option>
-                    <option value="huawei">华为云 CDN</option>
-                    <option value="upyun">又拍云 CDN</option>
-                    <option value="qiniu">七牛云 CDN</option>
-                    <option value="generic">通用代理（Nginx 等）</option>
-                  </select>
-                  <p className="text-xs text-muted-foreground/70 mt-1.5">
-                    无 CDN 或使用 Nginx 等普通反代时选「通用代理」即可，系统会从 X-Forwarded-For 读取真实 IP
-                  </p>
-                  {cdnProvider === 'ali-esa' && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 leading-relaxed">
-                      ⚠️ 需在阿里云 ESA 控制台开启「规则 → 转换规则 → Managed transforms → Add real client IP header」，
-                      否则 ESA 不会传递真实客户端 IP，只会写入自己的节点 IP，导致审计日志记录的全是 ESA 节点 IP。
-                    </p>
-                  )}
-                </div>
-
-                {/* 保存按钮 */}
-                <div className="flex items-center gap-3 pt-2">
-                  <Button
-                    variant="primary"
-                    loading={savingCdn}
-                    disabled={busy || !cdnDirty}
-                    onClick={handleSaveCdn}
-                  >
-                    {'保存'}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    disabled={!cdnDirty}
-                    onClick={handleResetCdn}
-                  >
-                    {'取消'}
-                  </Button>
                 </div>
               </div>
             </section>

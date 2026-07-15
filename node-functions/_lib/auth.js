@@ -14,7 +14,7 @@ import {
   getAdminById,
   createSuperAdmin,
 } from './store.js'
-import { getTokenSecret as getTokenSecretFromConfig, getCdnProvider } from './config-file.js'
+import { getTokenSecret as getTokenSecretFromConfig } from './config-file.js'
 
 // re-export，供 api 层直接从 auth.js 引入
 export { createSuperAdmin }
@@ -461,7 +461,8 @@ export async function requirePermission(context, permission) {
 // 限流已不依赖 IP（按账号/学员维度），IP 仅用于审计记录，读取头部的伪造风险可接受。
 //
 // 读取优先级：
-//   1. CDN 厂商专用头（如 Cloudflare 的 CF-Connecting-IP，单值，CDN 覆盖写入）
+//   1. CDN 专用头（自动探测 cf-connecting-ip / ali-cdn-real-ip / ali-real-client-ip，
+//      这些头由 CDN POP 写入，客户端无法伪造）
 //   2. X-Forwarded-For 链最左值（最老的客户端，多数反代/CDN 都会写入）
 //   3. X-Real-IP（部分反代如 Nginx、又拍云会写入）
 //   4. TCP 远端地址（直连场景兜底）
@@ -471,37 +472,25 @@ export function getClientIp(context) {
   const request = ctx.request
   if (!request) return ''
 
-  // 1. CDN 厂商专用头（如 Cloudflare 的 CF-Connecting-IP，单值，CDN 覆盖写入）
-  const providerHeader = CDN_PROVIDER_HEADERS[getCdnProvider()]
-  if (providerHeader) {
-    const v = request.headers.get(providerHeader)
+  // 1. 自动探测 CDN 专用头（由 CDN POP 写入，客户端无法伪造）
+  for (const header of CDN_REAL_IP_HEADERS) {
+    const v = request.headers.get(header)
     if (v) return v.trim()
   }
   // 2. X-Forwarded-For 链最左值（最老的客户端，多数反代/CDN 都会写入）
   const xff = request.headers.get('x-forwarded-for')
   if (xff) return xff.split(',')[0].trim()
-  // 3. X-Real-IP（部分反代如 Nginx、又拍云会写入）
+  // 3. X-Real-IP（部分反代如 Nginx 会写入）
   const xri = request.headers.get('x-real-ip')
   if (xri) return xri.trim()
   // 4. 都没有则回退 TCP 远端地址（直连场景）
   return ctx.remoteAddress || ''
 }
 
-// CDN 厂商 -> 真实客户端 IP 专用头映射
-// 需在 CDN 控制台开启对应功能才会写入这些头：
-//   - cloudflare: 默认开启 CF-Connecting-IP
-//   - ali-cdn:    默认开启 Ali-CDN-Real-Ip
-//   - ali-esa:    需在「转换规则 > Managed transforms」开启 Add real client IP header
-//   - upyun:      默认开启 X-Real-IP
-//   - 其他厂商无专用头，走 XFF 最左值
-const CDN_PROVIDER_HEADERS = {
-  cloudflare:  'cf-connecting-ip',
-  'ali-cdn':   'ali-cdn-real-ip',
-  'ali-esa':   'ali-real-client-ip',
-  'tencent-cdn': '', // 腾讯云 CDN 无专用头，走 XFF
-  'tencent-eo': '',  // EdgeOne 无专用头，走 XFF
-  huawei:      '',   // 华为云 CDN 无专用头，走 XFF
-  upyun:       'x-real-ip',
-  qiniu:       '',   // 七牛云无专用头，走 XFF
-  generic:     '',   // 通用代理走 XFF
-}
+// CDN 厂商专用真实客户端 IP 头（由 CDN POP 写入，客户端无法伪造）
+// 自动探测，无需用户配置厂商：只要请求里带了其中任一个，就用它
+const CDN_REAL_IP_HEADERS = [
+  'cf-connecting-ip',     // Cloudflare（默认开启）
+  'ali-cdn-real-ip',      // 阿里云 CDN/DCDN（默认开启）
+  'ali-real-client-ip',   // 阿里云 ESA（需在控制台开启 Managed Transform）
+]

@@ -40,7 +40,8 @@ export function rateLimitCheck(key, max, windowMs) {
 
 // 便捷封装：登录失败限流
 // 主维度：username（防针对特定账号撞库，每账号每分钟 10 次）
-// 辅维度：ip（防单 IP 扫多个账号，放宽到每分钟 60 次，避免 Docker/反代共用 IP 误伤）
+// 辅维度：ip（防单 IP 扫多个账号，放宽到每分钟 120 次）
+//   机构内多人同公网 IP 登录场景：120 次/分足够，避免误伤
 export function checkLoginRateLimit(ip, username) {
   // 无 username 时回退到纯 IP 维度（兼容旧调用）
   if (!username) {
@@ -48,13 +49,17 @@ export function checkLoginRateLimit(ip, username) {
   }
   const byUser = rateLimitCheck(`login-user:${username}`, 10, 60_000)
   if (!byUser.ok) return byUser
-  const byIp = rateLimitCheck(`login-ip:${ip || 'unknown'}`, 60, 60_000)
+  const byIp = rateLimitCheck(`login-ip:${ip || 'unknown'}`, 120, 60_000)
   return byIp.ok ? byUser : byIp
 }
 
 // 便捷封装：家长端 H5 校验限流
 // 主维度：studentId（防针对特定学员枚举，每学员每分钟 5 次）
-// 去掉 IP 维度：Docker/反代场景下所有用户共用容器网关 IP，按 IP 限流会误伤多人访问
+// 辅维度：ip（防单 IP 扫多个学员，放宽到每分钟 60 次）
+//   同一公网 IP 下多个家长查询各自孩子，60 次/分足够
 export function checkParentAccessRateLimit(ip, studentId) {
-  return rateLimitCheck(`parent-stu:${studentId}`, 5, 60_000)
+  const byStu = rateLimitCheck(`parent-stu:${studentId}`, 5, 60_000)
+  if (!byStu.ok) return byStu
+  const byIp = rateLimitCheck(`parent-ip:${ip || 'unknown'}`, 60, 60_000)
+  return byIp.ok ? byStu : byIp
 }
