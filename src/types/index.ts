@@ -351,8 +351,6 @@ export interface SystemConfigFull {
   backupCron: BackupCron
   backupMaxCount: number
   moduleEnabled: Record<string, boolean>
-  trustProxy: boolean
-  cdnProvider: string
 }
 
 // ========== 课后反馈 ==========

@@ -1,7 +1,7 @@
 // 系统配置 API
 // GET  /api/config   公开接口，返回前端首屏需要的配置（appName），无需鉴权
 // PUT  /api/config    需鉴权，修改 appName 等配置（后台系统设置页调用）
-import { getAllConfig, getAppName, setAppName, setRenewalThreshold, setBackupKeepDays, setBackupCron, setBackupMaxCount, setTrustProxy, setCdnProvider } from '../_lib/config-file.js'
+import { getAllConfig, getAppName, setAppName, setRenewalThreshold, setBackupKeepDays, setBackupCron, setBackupMaxCount } from '../_lib/config-file.js'
 import { requirePermission } from '../_lib/auth.js'
 import { json } from '../_lib/store.js'
 
@@ -41,11 +41,10 @@ async function handlePut(context) {
     } catch {
       // 忽略解析失败
     }
-    const { appName, renewalThreshold, backupKeepDays, backupCron, backupMaxCount, trustProxy, cdnProvider } = body
+    const { appName, renewalThreshold, backupKeepDays, backupCron, backupMaxCount } = body
 
     if (appName === undefined && renewalThreshold === undefined && backupKeepDays === undefined
-        && backupCron === undefined && backupMaxCount === undefined
-        && trustProxy === undefined && cdnProvider === undefined) {
+        && backupCron === undefined && backupMaxCount === undefined) {
       return json({ code: 1, message: '未提供需要更新的配置项', data: null }, 400)
     }
 
@@ -68,12 +67,6 @@ async function handlePut(context) {
     }
     if (backupMaxCount !== undefined) {
       updated.backupMaxCount = setBackupMaxCount(backupMaxCount)
-    }
-    if (trustProxy !== undefined) {
-      updated.trustProxy = setTrustProxy(trustProxy)
-    }
-    if (cdnProvider !== undefined) {
-      updated.cdnProvider = setCdnProvider(cdnProvider)
     }
 
     return json({
