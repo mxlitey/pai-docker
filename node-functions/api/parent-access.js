@@ -69,9 +69,9 @@ export async function onRequestPost(context) {
     return json({ code: 1, message: '缺少学员参数', data: null }, 400)
   }
 
-  // 速率限制：防手机号后4位暴力枚举（每 IP/每学员 每分钟 5 次）
+  // 速率限制：防手机号后4位暴力枚举，每 IP 每分钟 5 次
   const ip = getClientIp(context)
-  const rl = checkParentAccessRateLimit(ip, studentId)
+  const rl = checkParentAccessRateLimit(ip)
   if (!rl.ok) {
     return json({ code: 1, message: `验证尝试过于频繁，请 ${Math.ceil(rl.retryAfterMs / 1000)} 秒后再试`, data: null }, 429)
   }
