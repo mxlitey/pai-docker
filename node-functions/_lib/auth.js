@@ -461,8 +461,8 @@ export async function requirePermission(context, permission) {
 // IP 用于限流（每 IP 每分钟 5 次）与审计记录，读取头部的伪造风险可接受。
 //
 // 读取优先级：
-//   1. CDN 专用头（自动探测 cf-connecting-ip / true-client-ip / ali-cdn-real-ip /
-//      ali-real-client-ip，这些头由 CDN POP 写入，客户端无法伪造）
+//   1. CDN 专用头（自动探测 cf-connecting-ip / eo-connecting-ip / true-client-ip /
+//      ali-cdn-real-ip / ali-real-client-ip，这些头由 CDN POP 写入，客户端无法伪造）
 //   2. X-Forwarded-For 链最左值（最老的客户端，多数反代/CDN 都会写入）
 //   3. X-Real-IP（部分反代如 Nginx 会写入）
 //   4. TCP 远端地址（直连场景兜底）
@@ -491,6 +491,7 @@ export function getClientIp(context) {
 // 自动探测，无需用户配置厂商：只要请求里带了其中任一个，就用它
 const CDN_REAL_IP_HEADERS = [
   'cf-connecting-ip',     // Cloudflare（默认开启）
+  'eo-connecting-ip',     // 腾讯云 EdgeOne（默认开启）
   'true-client-ip',       // 通用标准头（阿里云 ESA / Cloudflare Enterprise / Akamai 等）
   'ali-cdn-real-ip',      // 阿里云 CDN/DCDN（默认开启）
   'ali-real-client-ip',   // 阿里云 ESA（Managed Transform 或修改请求头规则写入）
