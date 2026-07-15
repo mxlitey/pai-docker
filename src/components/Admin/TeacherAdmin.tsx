@@ -212,6 +212,7 @@ function FeedbackPanel() {
         <section className="card p-3 space-y-2">
           {/* 表头：字段名在一行 */}
           <div className="flex items-center gap-2 text-xs text-muted-foreground/70 font-medium border-b border-border pb-1.5">
+            <span className="w-5 flex-shrink-0"></span>
             <span className="w-16 flex-shrink-0">日期</span>
             <span className="w-16 flex-shrink-0">学员</span>
             <span className="w-16 flex-shrink-0">班级</span>
@@ -226,25 +227,28 @@ function FeedbackPanel() {
             const hasDetail = hasContent || hasImages
             return (
               <div key={fb.id} className="border border-border rounded-md p-2 text-xs">
-                {/* 数据行：字段值在一行 */}
+                {/* 数据行：展开按钮 + 字段值在一行 */}
                 <div className="flex items-center gap-2">
+                  {/* 展开按钮：仅有反馈内容或图片时显示 */}
+                  {hasDetail ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleExpand(fb.id)}
+                      className="w-5 flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label={expanded ? '收起反馈' : '展开反馈'}
+                    >
+                      {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                  ) : (
+                    <span className="w-5 flex-shrink-0" />
+                  )}
                   <span className="w-16 flex-shrink-0 text-muted-foreground whitespace-nowrap truncate">{fb.date || '—'}</span>
                   <span className="w-16 flex-shrink-0 text-foreground font-medium whitespace-nowrap truncate">{fb.studentName || '—'}</span>
                   <span className="w-16 flex-shrink-0 text-muted-foreground whitespace-nowrap truncate">{fb.className || '—'}</span>
                   <span className="w-16 flex-shrink-0 text-muted-foreground whitespace-nowrap truncate">{fb.courseName || '—'}</span>
                   <span className="w-16 flex-shrink-0 text-muted-foreground whitespace-nowrap truncate">{fb.teacherName || '—'}</span>
-                  {/* 操作：展开按钮 + 编辑/删除 */}
+                  {/* 操作：编辑/删除 */}
                   <span className="ml-auto flex items-center gap-2 whitespace-nowrap">
-                    {hasDetail && (
-                      <button
-                        type="button"
-                        onClick={() => toggleExpand(fb.id)}
-                        className="text-muted-foreground hover:text-foreground transition-colors"
-                        aria-label={expanded ? '收起反馈' : '展开反馈'}
-                      >
-                        {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                      </button>
-                    )}
                     <button
                       onClick={() => openEdit(fb)}
                       className="text-primary text-xs"
