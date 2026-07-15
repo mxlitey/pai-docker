@@ -144,18 +144,21 @@ export async function deleteClass(classId) {
   if (!cls) return { deleted: false, notFound: true }
   const memberCount = db.prepare('SELECT COUNT(*) AS c FROM class_members WHERE class_id=?').get(classId).c
   const before = rowToClass(cls, memberCount)
+  // 删除前提：班级内没有成员（有成员时提示先移除成员）
+  if (memberCount > 0) {
+    return { deleted: false, blocked: true, memberCount, message: `班级内仍有 ${memberCount} 名成员，请先移除全部成员后再删除` }
+  }
   // 引用检查：仍有排课引用该班级则拒绝删除
   const scheduleCount = db.prepare("SELECT COUNT(*) AS c FROM schedules WHERE class_id=?").get(classId).c
   if (scheduleCount > 0) {
     return { deleted: false, inUse: true, scheduleCount }
   }
-  // 事务内一并清理成员关联并删除班级（前端已对有成员的情况做了二次确认）
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM class_members WHERE class_id=?').run(classId)
     db.prepare('DELETE FROM classes WHERE id=?').run(classId)
   })
   tx()
-  return { deleted: true, notFound: false, before, memberCount }
+  return { deleted: true, notFound: false, before }
 }
 
 // ========== 班级成员管理 ==========

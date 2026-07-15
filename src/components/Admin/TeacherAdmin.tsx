@@ -27,7 +27,8 @@ import {
   confirmDialog,
 } from '@/components/ui'
 import { cn } from '@/utils/cn'
-import { Plus, Check, ImagePlus, X, Loader2 } from 'lucide-react'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { Plus, Check, ImagePlus, X, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface TeacherAdminProps {
   onBack: () => void
@@ -104,6 +105,18 @@ function FeedbackPanel() {
   const [editImages, setEditImages] = useState<string[]>([])
   const [editUploading, setEditUploading] = useState(false)
   const [previewImage, setPreviewImage] = useState<string>('')
+  // 移动端：反馈展开状态（折叠时隐藏反馈内容与图片，展开后显示）
+  const isMobile = useIsMobile()
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const totalPages = Math.max(1, Math.ceil(list.length / FEEDBACK_PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -197,7 +210,91 @@ function FeedbackPanel() {
         <LoadingBlock />
       ) : list.length === 0 ? (
         <EmptyState title={'暂无课后反馈'} description="点击右上角「新增反馈」提交课后反馈" />
+      ) : isMobile ? (
+        // 移动端：卡片列表，前方展开按钮，折叠时隐藏反馈内容与图片
+        <section className="card p-3 space-y-2">
+          {pageItems.map((fb) => {
+            const expanded = expandedIds.has(fb.id)
+            const hasContent = !!(fb.content && fb.content.trim())
+            const hasImages = !!(fb.images && fb.images.length > 0)
+            const hasDetail = hasContent || hasImages
+            return (
+              <div key={fb.id} className="border border-border rounded-md p-3">
+                <div className="flex items-start gap-2">
+                  {/* 展开按钮：仅有反馈内容或图片时显示 */}
+                  {hasDetail ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleExpand(fb.id)}
+                      className="mt-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label={expanded ? '收起反馈' : '展开反馈'}
+                    >
+                      {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                  ) : (
+                    <span className="w-4" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">{fb.date || '—'}</span>
+                      <span className="text-amber-500 text-xs">{renderStars(fb.rating)}</span>
+                    </div>
+                    <div className="text-sm text-foreground font-medium mt-0.5">{fb.studentName || '—'}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-x-2">
+                      <span>{fb.courseName || '—'}</span>
+                      <span>{fb.className || '—'}</span>
+                      <span>{fb.teacherName || '—'}</span>
+                    </div>
+                    {/* 反馈内容与图片：折叠时不显示，展开时显示 */}
+                    {expanded && hasDetail && (
+                      <div className="mt-2 pt-2 border-t border-border/60">
+                        {hasContent && (
+                          <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{fb.content}</p>
+                        )}
+                        {hasImages && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {fb.images.map((url, idx) => (
+                              <img
+                                key={idx}
+                                src={url}
+                                alt={`图片${idx + 1}`}
+                                className="w-12 h-12 object-cover rounded border border-border cursor-pointer hover:opacity-80 transition-opacity"
+                                onClick={() => setPreviewImage(url)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex gap-3 mt-2">
+                      <button
+                        onClick={() => openEdit(fb)}
+                        className="text-primary hover:text-primary text-xs"
+                      >
+                        {'编辑'}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(fb)}
+                        className="text-destructive hover:text-destructive text-xs"
+                      >
+                        {'删除'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+          <Pagination
+            page={safePage}
+            totalPages={totalPages}
+            total={list.length}
+            pageSize={FEEDBACK_PAGE_SIZE}
+            onPageChange={setPage}
+          />
+        </section>
       ) : (
+        // 电脑端：表格（保持原效果）
         <section className="card p-5">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

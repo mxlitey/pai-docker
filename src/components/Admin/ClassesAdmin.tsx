@@ -78,26 +78,6 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
   }, [classes, search])
 
   const handleDelete = async (cls: ClassInfo) => {
-    // 先加载成员，有成员时先提示再确认
-    setLocalBusy(true)
-    let memberCount = 0
-    try {
-      const members = await getClassMembers(cls.id)
-      memberCount = members.length
-    } catch {
-      // 加载失败不阻塞，交给后端兜底
-    }
-    setLocalBusy(false)
-
-    if (memberCount > 0) {
-      const ok1 = await confirmDialog({
-        title: '班级有成员',
-        message: `班级「${cls.name}」现有 ${memberCount} 名成员，删除班级将一并移除成员关联（排课不受影响）。\n是否继续？`,
-        danger: true,
-      })
-      if (!ok1) return
-    }
-
     const ok = await confirmDialog({
       title: '删除班级',
       message: `确认删除班级「${cls.name}」？\n该操作不可恢复，请输入班级名以确认。`,
@@ -111,6 +91,9 @@ export function ClassesAdmin({ courses, grades, students, busy, onBack, showToas
       if (result.code === 0) {
         toast.success(result.message || '已删除')
         loadClasses()
+      } else if (result.data?.blocked) {
+        // 有成员：提示先移除成员，不能删除
+        showToast('error', result.data?.message || `班级内仍有 ${result.data?.memberCount ?? 0} 名成员，请先移除全部成员后再删除`)
       } else if (result.data?.inUse) {
         showToast('error', `仍有 ${result.data?.scheduleCount ?? 0} 条排课引用，无法删除`)
       } else {

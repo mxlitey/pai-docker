@@ -20,7 +20,7 @@ import { WeekView } from '../Calendar/WeekView'
 import { DayView } from '../Calendar/DayView'
 import { ScheduleDetail } from '../ScheduleDetail'
 import type { Schedule, Feedback, ViewMode } from '@/types'
-import { AlertTriangle, Lock, Loader2, Star, Megaphone, X, ChevronDown, ChevronUp } from 'lucide-react'
+import { AlertTriangle, Lock, Loader2, Star, Megaphone, X } from 'lucide-react'
 
 type Phase = 'loading' | 'verify' | 'verified' | 'error'
 
@@ -85,8 +85,6 @@ export function ParentH5({ appName }: { appName: string }) {
   const [currentDate, setCurrentDate] = useState(new Date())
   // 图片预览（点击反馈缩略图放大查看）
   const [previewImage, setPreviewImage] = useState<string>('')
-  // 反馈展开状态：默认折叠反馈内容与图片，点击展开按钮后显示
-  const [expandedFeedback, setExpandedFeedback] = useState<Set<string>>(new Set())
 
   // 从 URL 读取 s 参数（学员 ID）
   const params = new URLSearchParams(window.location.search)
@@ -185,14 +183,6 @@ export function ParentH5({ appName }: { appName: string }) {
     () => (data ? data.enrollments.filter((e) => e.remainingHours > 0) : []),
     [data],
   )
-  const toggleFeedback = (id: string) => {
-    setExpandedFeedback((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
 
   // ===== 错误页 =====
   if (phase === 'error') {
@@ -367,54 +357,31 @@ export function ParentH5({ appName }: { appName: string }) {
               教师课后反馈（{viewLabel(view)} · {visibleFeedback.length}）
             </h2>
             <div className="space-y-3">
-              {visibleFeedback.map((fb: Feedback) => {
-                const expanded = expandedFeedback.has(fb.id)
-                const hasContent = !!(fb.content && fb.content.trim())
-                const hasImages = !!(fb.images && fb.images.length > 0)
-                const hasDetail = hasContent || hasImages
-                return (
-                  <div key={fb.id} className="border-b border-slate-50 last:border-0 pb-3 last:pb-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        {/* 展开按钮：仅有反馈内容或图片时显示 */}
-                        {hasDetail && (
-                          <button
-                            type="button"
-                            onClick={() => toggleFeedback(fb.id)}
-                            className="text-muted-foreground hover:text-foreground transition-colors p-0.5 -ml-0.5"
-                            aria-label={expanded ? '收起反馈' : '展开反馈'}
-                          >
-                            {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                          </button>
-                        )}
-                        <span className="text-xs text-muted-foreground">{fb.date || '—'}</span>
-                      </div>
-                      <span className="text-amber-500 text-xs">{renderStars(fb.rating)}</span>
-                    </div>
-                    {/* 反馈内容与图片：折叠时不显示，展开时显示 */}
-                    {expanded && hasDetail && (
-                      <div className="mt-1 pl-6">
-                        {hasContent && (
-                          <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{fb.content}</p>
-                        )}
-                        {hasImages && (
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {fb.images.map((img, idx) => (
-                              <img
-                                key={idx}
-                                src={img}
-                                alt={`反馈图片${idx + 1}`}
-                                onClick={() => setPreviewImage(img)}
-                                className="w-16 h-16 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
+              {visibleFeedback.map((fb: Feedback) => (
+                <div key={fb.id} className="border-b border-slate-50 last:border-0 pb-3 last:pb-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-muted-foreground">{fb.date || '—'}</span>
+                    <span className="text-amber-500 text-xs">{renderStars(fb.rating)}</span>
                   </div>
-                )
-              })}
+                  {fb.content && (
+                    <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{fb.content}</p>
+                  )}
+                  {/* 反馈图片缩略图（点击放大） */}
+                  {fb.images && fb.images.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {fb.images.map((img, idx) => (
+                        <img
+                          key={idx}
+                          src={img}
+                          alt={`反馈图片${idx + 1}`}
+                          onClick={() => setPreviewImage(img)}
+                          className="w-16 h-16 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </section>
         )}

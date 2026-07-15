@@ -242,7 +242,7 @@ export function EnrollmentAdmin({
                         <td className="py-2.5 px-2">
                           <StatusBadge status={effectiveStatus(e)} />
                         </td>
-                        <td className="py-2.5 px-2 text-destructive whitespace-nowrap font-medium">
+                        <td className="py-2.5 px-2 whitespace-nowrap font-medium">
                           {renderMergedHours(e)}
                         </td>
                         <td className="py-2.5 px-2 text-right text-muted-foreground whitespace-nowrap">
@@ -337,12 +337,14 @@ function StatusBadge({ status }: { status: EnrollmentStatus }) {
   )
 }
 
-// 合并课时展示：[剩余付费(剩余赠课)]/[购课(赠课)]，整体红色显示
+// 合并课时展示：[剩余付费(剩余赠课)]/[购课(赠课)]，仅已用完（剩余=0）时红色显示
 function renderMergedHours(e: Enrollment) {
+  const remaining = e.remainingPaidHours + e.remainingGiftHours
+  const usedUp = remaining <= 0
   const giftPart = e.giftHours > 0 ? `(${e.giftHours})` : ''
   const remGiftPart = e.remainingGiftHours > 0 ? `(${e.remainingGiftHours})` : ''
   return (
-    <span>
+    <span className={usedUp ? 'text-destructive' : 'text-foreground'}>
       [{e.remainingPaidHours}{remGiftPart}]/{e.purchasedHours}{giftPart}
     </span>
   )
