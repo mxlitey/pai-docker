@@ -158,22 +158,22 @@ const FIELD_LABELS: Record<string, Record<string, string>> = {
     name: '年级名', sortOrder: '排序', status: '状态', description: '描述',
   },
   transfers: {
-    studentId: '学员', fromEnrollmentId: '源报名',
+    studentId: '学员', fromEnrollmentId: '课程',
     refundAmount: '退课金额', giftMode: '赠课处理', note: '备注', reason: '原因',
   },
   accounts: {
-    type: '流水类型', amount: '金额', balanceAfter: '变动后余额',
+    type: '变动类型', amount: '金额', balanceAfter: '变动后余额',
     note: '备注', refType: '关联类型', refId: '关联ID',
   },
 }
 
 // 枚举值的中文展示
 const VALUE_LABELS: Record<string, Record<string, string>> = {
-  status: { active: '进行中', inactive: '停用', settled: '已结转', finished: '已完结', expired: '已过期', scheduled: '已排课' },
+  status: { active: '在报', inactive: '停用', settled: '已退课', finished: '已完结', expired: '已过期', scheduled: '已排课' },
   billingType: { per_lesson: '按课时', per_term: '按学期', per_month: '按月' },
   gender: { male: '男', female: '女' },
-  giftMode: { discard: '赠课作废', refund: '赠课折算' },
-  type: { refund: '退课转入', enroll_deduct: '报名抵扣' },
+  giftMode: { discard: '赠课不退', refund: '赠课一起退' },
+  type: { refund: '退课转入余额', enroll_deduct: '报名用余额抵扣' },
 }
 
 function valueLabel(field: string, val: unknown): string {

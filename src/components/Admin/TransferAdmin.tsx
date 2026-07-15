@@ -25,8 +25,8 @@ interface TransferAdminProps {
 }
 
 const TX_TYPE_LABEL: Record<string, string> = {
-  refund: '退课转入',
-  enroll_deduct: '报名抵扣',
+  refund: '退课转入余额',
+  enroll_deduct: '报名用余额抵扣',
 }
 
 export function TransferAdmin({
@@ -216,7 +216,7 @@ function TransferTab({ students, busy, showToast, onAuthError, onStudentsChanged
         note: refundNote.trim() || undefined,
       })
       if (r.code === 0) {
-        showToast('success', `已退课，折算 ${formatMoney(r.data.refundAmount)} 入账户，余额 ${formatMoney(r.data.balanceAfter)}`)
+        showToast('success', `已退课，${formatMoney(r.data.refundAmount)} 转入账户，余额 ${formatMoney(r.data.balanceAfter)}`)
         setRefundEnrollmentId('')
         setRefundNote('')
         await reload()
@@ -277,7 +277,7 @@ function TransferTab({ students, busy, showToast, onAuthError, onStudentsChanged
       </section>
 
       {!studentId ? (
-        <EmptyState title={'请先搜索学员'} description="选择学员后可进行退课操作，并查看账户流水" />
+        <EmptyState title={'请先搜索学员'} description="选择学员后可进行退课，并查看账户余额变动记录" />
       ) : loading ? (
         <LoadingBlock />
       ) : (
@@ -286,7 +286,7 @@ function TransferTab({ students, busy, showToast, onAuthError, onStudentsChanged
           <section className="card p-5">
             <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
               <span className="w-1 h-4 bg-amber-500 rounded"></span>
-              退课（剩余课时折算入账户）
+              退课（剩余课时转为账户余额）
             </h2>
             <div className="space-y-3">
               <div>
@@ -295,7 +295,7 @@ function TransferTab({ students, busy, showToast, onAuthError, onStudentsChanged
                 </label>
                 {refundableEnrollments.length === 0 ? (
                   <p className="text-xs text-muted-foreground/70 py-2 px-3 border border-dashed border-border rounded-md">
-                    该学员无可退课的报名记录（需有剩余课时的进行中报名）
+                    该学员没有可退的报名（需要有剩余课时的在报课程）
                   </p>
                 ) : (
                   <select
@@ -306,7 +306,7 @@ function TransferTab({ students, busy, showToast, onAuthError, onStudentsChanged
                     <option value="">请选择报名记录</option>
                     {refundableEnrollments.map((e) => (
                       <option key={e.id} value={e.id}>
-                        {courseNameByEnrollment(e.id)}（剩余 付费{e.remainingPaidHours}+赠课{e.remainingGiftHours}，单价 {formatMoney(e.unitPrice)}）
+                        {courseNameByEnrollment(e.id)}（剩付费{e.remainingPaidHours}+赠{e.remainingGiftHours}，单价 {formatMoney(e.unitPrice)}）
                       </option>
                     ))}
                   </select>
@@ -314,7 +314,7 @@ function TransferTab({ students, busy, showToast, onAuthError, onStudentsChanged
               </div>
 
               <div>
-                <label className="block text-sm text-muted-foreground mb-1.5">赠课处理方式</label>
+                <label className="block text-sm text-muted-foreground mb-1.5">赠课怎么处理</label>
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -326,7 +326,7 @@ function TransferTab({ students, busy, showToast, onAuthError, onStudentsChanged
                         : 'border-border text-muted-foreground hover:border-border',
                     )}
                   >
-                    {'赠课作废（仅退付费课时）'}
+                    {'赠课不退（只退付费课时）'}
                   </button>
                   <button
                     type="button"
@@ -338,7 +338,7 @@ function TransferTab({ students, busy, showToast, onAuthError, onStudentsChanged
                         : 'border-border text-muted-foreground hover:border-border',
                     )}
                   >
-                    {'赠课也折算'}
+                    {'赠课也一起退'}
                   </button>
                 </div>
               </div>
@@ -347,8 +347,8 @@ function TransferTab({ students, busy, showToast, onAuthError, onStudentsChanged
                 <div className="bg-amber-50 border border-amber-100 rounded-md px-4 py-3">
                   <div className="text-xs text-amber-700 font-medium mb-1">退课预览</div>
                   <div className="text-sm text-foreground">
-                    剩余 付费 {refundPreview.paid} + 赠课 {refundPreview.gift}（单价 {formatMoney(refundPreview.unitPrice)}）→
-                    折算 {refundPreview.refundHours} 课时 = <span className="font-semibold">{formatMoney(refundPreview.amount)}</span> 入账户
+                    剩付费 {refundPreview.paid} + 赠课 {refundPreview.gift}（单价 {formatMoney(refundPreview.unitPrice)}）→
+                    退 {refundPreview.refundHours} 课时 = <span className="font-semibold">{formatMoney(refundPreview.amount)}</span> 转入账户
                   </div>
                 </div>
               )}
@@ -365,7 +365,7 @@ function TransferTab({ students, busy, showToast, onAuthError, onStudentsChanged
               </div>
 
               <div className="text-xs text-muted-foreground/70">
-                退课后源报名标记为已结算，剩余课时清零；折算金额进入账户余额，可在新报名时用「余额抵扣」消耗。
+                退课后这条报名会标记为已退，剩余课时清零；退的钱进入账户余额，下次报名可以直接用余额抵扣。
               </div>
 
               <Button variant="primary" loading={refunding} disabled={busy || !refundEnrollmentId} onClick={handleRefund}>
@@ -374,14 +374,14 @@ function TransferTab({ students, busy, showToast, onAuthError, onStudentsChanged
             </div>
           </section>
 
-          {/* 账户流水 */}
+          {/* 账户余额变动 */}
           <section className="card p-5">
             <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
               <span className="w-1 h-4 bg-slate-400 rounded"></span>
-              账户流水
+              账户余额变动
             </h2>
             {transactions.length === 0 ? (
-              <EmptyState title={'暂无账户流水'} />
+              <EmptyState title={'暂无余额变动记录'} />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -427,7 +427,7 @@ function TransferTab({ students, busy, showToast, onAuthError, onStudentsChanged
                   <thead>
                     <tr className="border-b border-border text-muted-foreground text-xs">
                       <th className="text-left py-2 px-2 font-medium">{'时间'}</th>
-                      <th className="text-left py-2 px-2 font-medium">{'源报名'}</th>
+                      <th className="text-left py-2 px-2 font-medium">{'课程'}</th>
                       <th className="text-left py-2 px-2 font-medium">{'赠课处理'}</th>
                       <th className="text-right py-2 px-2 font-medium">{'退课金额'}</th>
                       <th className="text-left py-2 px-2 font-medium">{'备注'}</th>
@@ -438,7 +438,7 @@ function TransferTab({ students, busy, showToast, onAuthError, onStudentsChanged
                       <tr key={t.id} className="border-b border-border hover:bg-muted/50 transition-colors">
                         <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap text-xs">{fmtDateTime(t.createdAt)}</td>
                         <td className="py-2.5 px-2 text-muted-foreground">{courseNameByEnrollment(t.fromEnrollmentId)}</td>
-                        <td className="py-2.5 px-2 text-muted-foreground">{t.giftMode === 'refund' ? '赠课折算' : '赠课作废'}</td>
+                        <td className="py-2.5 px-2 text-muted-foreground">{t.giftMode === 'refund' ? '赠课一起退' : '赠课不退'}</td>
                         <td className="py-2.5 px-2 text-right text-foreground font-medium">{formatMoney(t.refundAmount)}</td>
                         <td className="py-2.5 px-2 text-muted-foreground">{t.note || <span className="text-muted-foreground/40">—</span>}</td>
                       </tr>
@@ -545,9 +545,9 @@ function RefundTab({ showToast, onAuthError }: RefundTabProps) {
               <thead>
                 <tr className="border-b border-border text-muted-foreground text-xs">
                   <th className="text-left py-2 px-2 font-medium">{'姓名'}</th>
-                  <th className="text-left py-2 px-2 font-medium">{'联系电话'}</th>
-                  <th className="text-right py-2 px-2 font-medium">{'账户余额'}</th>
                   <th className="text-left py-2 px-2 font-medium">{'状态'}</th>
+                  <th className="text-right py-2 px-2 font-medium">{'账户余额'}</th>
+                  <th className="text-left py-2 px-2 font-medium">{'联系电话'}</th>
                   <th className="text-left py-2 px-2 font-medium">{'删除时间'}</th>
                 </tr>
               </thead>
@@ -561,12 +561,6 @@ function RefundTab({ showToast, onAuthError }: RefundTabProps) {
                       className="border-b border-border hover:bg-muted/50 transition-colors"
                     >
                       <td className="py-2.5 px-2 font-medium text-foreground">{s.name}</td>
-                      <td className="py-2.5 px-2 text-muted-foreground">
-                        {s.phone || <span className="text-muted-foreground/40">—</span>}
-                      </td>
-                      <td className={cn('py-2.5 px-2 text-right font-medium', needRefund ? 'text-destructive' : 'text-muted-foreground')}>
-                        {formatMoney(balance)}
-                      </td>
                       <td className="py-2.5 px-2">
                         {needRefund ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-destructive/10 text-destructive font-medium">
@@ -577,6 +571,12 @@ function RefundTab({ showToast, onAuthError }: RefundTabProps) {
                             已结清
                           </span>
                         )}
+                      </td>
+                      <td className={cn('py-2.5 px-2 text-right font-medium', needRefund ? 'text-destructive' : 'text-muted-foreground')}>
+                        {formatMoney(balance)}
+                      </td>
+                      <td className="py-2.5 px-2 text-muted-foreground">
+                        {s.phone || <span className="text-muted-foreground/40">—</span>}
                       </td>
                       <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap text-xs">
                         {fmtDateTime(s.deletedAt)}

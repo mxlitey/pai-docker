@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import type { Schedule } from '@/types'
 import { cn } from '@/utils/cn'
-import { getCourseDotClass } from '@/utils/courseColors'
+import { getCourseDotStyle } from '@/utils/courseColors'
 import { todayLocal } from '@/utils/date'
 import { Button, EmptyState, SubPageHeader, Modal, ModalFooter, inputClass } from '@/components/ui'
 
@@ -341,9 +341,10 @@ export function AttendanceAdmin({ busy, onBack, onLoad, onSave }: AttendanceAdmi
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span
+                          style={getCourseDotStyle(group.color).style}
                           className={cn(
                             'w-2.5 h-2.5 rounded-full flex-shrink-0',
-                            getCourseDotClass(group.color),
+                            getCourseDotStyle(group.color).className,
                           )}
                         />
                         <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">

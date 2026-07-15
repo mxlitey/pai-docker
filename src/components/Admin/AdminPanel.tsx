@@ -152,7 +152,7 @@ const moduleEntries = [
   { tab: 'operation', perm: 'enrollments:view', sub: 'enrollments', title: '报名管理', desc: '报名、购课赠课、课时余额', icon: 'enrollments' },
   { tab: 'operation', perm: 'schedules:view', sub: 'schedules', title: '排课管理', desc: '排课、批量排课、点名扣减', icon: 'schedules' },
   { tab: 'operation', perm: 'attendance:view', sub: 'attendance', title: '点名管理', desc: '按日期点名、批量点名、到课统计', icon: 'attendance' },
-  { tab: 'operation', perm: 'transfers:view', sub: 'transfers', title: '结转退课', desc: '退课折算入账户余额', icon: 'transfers' },
+  { tab: 'operation', perm: 'transfers:view', sub: 'transfers', title: '结转退课', desc: '退课转余额、已删除学员退费查询', icon: 'transfers' },
   // ===== 报表中心（概览 + 明细报表，合并原数据看板）=====
   { tab: 'data', perm: 'reports:view', sub: 'reports', title: '报表中心', desc: '经营概览、营收、课时、出勤、结转统计', icon: 'reports' },
   // ===== 系统管理（账号优先 → 配置 → 内容 → 工具 → 日志）=====

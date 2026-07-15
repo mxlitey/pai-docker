@@ -64,11 +64,6 @@ function cacheReadAnnouncementUpdatedAt(studentId: string, updatedAt: string) {
   }
 }
 
-function renderStars(rating: number): string {
-  const r = Math.max(0, Math.min(5, Math.round(rating)))
-  return '★'.repeat(r) + '☆'.repeat(5 - r)
-}
-
 export function ParentH5({ appName }: { appName: string }) {
   const [phase, setPhase] = useState<Phase>('loading')
   const [errorMsg, setErrorMsg] = useState('')
@@ -365,7 +360,6 @@ export function ParentH5({ appName }: { appName: string }) {
                 <div key={fb.id} className="border-b border-slate-50 last:border-0 pb-3 last:pb-0">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs text-muted-foreground">{fb.date || '—'}</span>
-                    <span className="text-amber-500 text-xs">{renderStars(fb.rating)}</span>
                   </div>
                   {fb.content && (
                     <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{fb.content}</p>

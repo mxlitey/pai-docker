@@ -208,7 +208,7 @@ function FeedbackPanel() {
       ) : list.length === 0 ? (
         <EmptyState title={'暂无课后反馈'} description="点击右上角「新增反馈」提交课后反馈" />
       ) : isMobile ? (
-        // 移动端：单行展示 日期/学员/班级/课程/操作人/编辑/删除，前方展开按钮控制反馈内容与图片
+        // 移动端：表格风格，每个字段带字段名，反馈内容与图片默认折叠
         <section className="card p-3 space-y-2">
           {pageItems.map((fb) => {
             const expanded = expandedIds.has(fb.id)
@@ -216,63 +216,82 @@ function FeedbackPanel() {
             const hasImages = !!(fb.images && fb.images.length > 0)
             const hasDetail = hasContent || hasImages
             return (
-              <div key={fb.id} className="border border-border rounded-md p-2.5">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                  {/* 展开按钮：仅有反馈内容或图片时显示 */}
-                  {hasDetail ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleExpand(fb.id)}
-                      className="text-muted-foreground hover:text-foreground transition-colors"
-                      aria-label={expanded ? '收起反馈' : '展开反馈'}
-                    >
-                      {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    </button>
-                  ) : (
-                    <span className="w-3.5" />
-                  )}
-                  <span className="text-muted-foreground whitespace-nowrap">{fb.date || '—'}</span>
-                  <span className="text-foreground font-medium whitespace-nowrap">{fb.studentName || '—'}</span>
-                  <span className="text-muted-foreground whitespace-nowrap">{fb.className || '—'}</span>
-                  <span className="text-muted-foreground whitespace-nowrap">{fb.courseName || '—'}</span>
-                  <span className="text-muted-foreground whitespace-nowrap">{fb.teacherName || '—'}</span>
-                  {/* 操作按钮靠右 */}
-                  <span className="ml-auto flex gap-3 whitespace-nowrap">
-                    <button
-                      onClick={() => openEdit(fb)}
-                      className="text-primary text-xs"
-                    >
-                      {'编辑'}
-                    </button>
-                    <button
-                      onClick={() => handleDelete(fb)}
-                      className="text-destructive text-xs"
-                    >
-                      {'删除'}
-                    </button>
-                  </span>
+              <div key={fb.id} className="border border-border rounded-md p-2.5 text-xs">
+                {/* 字段表格：日期/学员/班级/课程/教师，每行字段名 + 值 */}
+                <div className="space-y-1">
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground/70 w-14 flex-shrink-0">日期</span>
+                    <span className="text-foreground whitespace-nowrap">{fb.date || '—'}</span>
+                    {hasDetail && (
+                      <button
+                        type="button"
+                        onClick={() => toggleExpand(fb.id)}
+                        className="ml-auto text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label={expanded ? '收起反馈' : '展开反馈'}
+                      >
+                        {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground/70 w-14 flex-shrink-0">学员</span>
+                    <span className="text-foreground font-medium whitespace-nowrap">{fb.studentName || '—'}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground/70 w-14 flex-shrink-0">班级</span>
+                    <span className="text-foreground whitespace-nowrap">{fb.className || '—'}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground/70 w-14 flex-shrink-0">课程</span>
+                    <span className="text-foreground whitespace-nowrap">{fb.courseName || '—'}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground/70 w-14 flex-shrink-0">教师</span>
+                    <span className="text-foreground whitespace-nowrap">{fb.teacherName || '—'}</span>
+                  </div>
                 </div>
                 {/* 反馈内容与图片：折叠时不显示，展开时显示 */}
                 {expanded && hasDetail && (
-                  <div className="mt-2 pt-2 border-t border-border/60 pl-5">
+                  <div className="mt-2 pt-2 border-t border-border/60">
                     {hasContent && (
-                      <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{fb.content}</p>
+                      <div className="flex gap-2">
+                        <span className="text-muted-foreground/70 w-14 flex-shrink-0">反馈</span>
+                        <p className="text-foreground leading-relaxed whitespace-pre-wrap flex-1">{fb.content}</p>
+                      </div>
                     )}
                     {hasImages && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {fb.images.map((url, idx) => (
-                          <img
-                            key={idx}
-                            src={url}
-                            alt={`图片${idx + 1}`}
-                            className="w-12 h-12 object-cover rounded border border-border cursor-pointer hover:opacity-80 transition-opacity"
-                            onClick={() => setPreviewImage(url)}
-                          />
-                        ))}
+                      <div className="flex gap-2 mt-1">
+                        <span className="text-muted-foreground/70 w-14 flex-shrink-0">图片</span>
+                        <div className="flex flex-wrap gap-1.5 flex-1">
+                          {fb.images.map((url, idx) => (
+                            <img
+                              key={idx}
+                              src={url}
+                              alt={`图片${idx + 1}`}
+                              className="w-12 h-12 object-cover rounded border border-border cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => setPreviewImage(url)}
+                            />
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
                 )}
+                {/* 操作按钮 */}
+                <div className="mt-2 pt-2 border-t border-border/60 flex justify-end gap-3">
+                  <button
+                    onClick={() => openEdit(fb)}
+                    className="text-primary text-xs"
+                  >
+                    {'编辑'}
+                  </button>
+                  <button
+                    onClick={() => handleDelete(fb)}
+                    className="text-destructive text-xs"
+                  >
+                    {'删除'}
+                  </button>
+                </div>
               </div>
             )
           })}

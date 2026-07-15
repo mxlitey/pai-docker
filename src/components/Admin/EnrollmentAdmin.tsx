@@ -37,8 +37,8 @@ const PAGE_SIZE = 15
 
 const STATUS_OPTIONS: { value: '' | EnrollmentStatus; label: string }[] = [
   { value: '', label: '全部状态' },
-  { value: 'active', label: '进行中' },
-  { value: 'settled', label: '已结转' },
+  { value: 'active', label: '在报' },
+  { value: 'settled', label: '已退课' },
 ]
 
 // 报名时间按浏览器本地时区显示（后端存储 UTC）
@@ -326,14 +326,14 @@ function StatusBadge({ status }: { status: EnrollmentStatus }) {
   if (status === 'active') {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-green-50 text-green-700 border border-green-200">
-        进行中
+        在报
       </span>
     )
   }
   // settled
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-muted text-muted-foreground border border-border">
-      已结转
+      已退课
     </span>
   )
 }
@@ -848,8 +848,8 @@ function EnrollmentEditModal({
               onChange={(e) => setField('status', e.target.value as EnrollmentStatus)}
               className={cn(inputClass, 'bg-background')}
             >
-              <option value="active">进行中</option>
-              <option value="settled">已结转</option>
+              <option value="active">在报</option>
+              <option value="settled">已退课</option>
             </select>
           </div>
         )}
