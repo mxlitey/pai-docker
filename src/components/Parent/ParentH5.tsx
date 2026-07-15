@@ -3,7 +3,7 @@
 // - 仅展示该学员的排课、课时余额、教师课后反馈
 // - 支持列表/日历两种查看方式
 // - 无返回首页、无搜索学员功能
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   getParentAccessHint,
   verifyParentAccess,
@@ -11,13 +11,16 @@ import {
   type ParentAnnouncement,
 } from '@/api'
 import { inputClass } from '@/components/ui'
+import { cn } from '@/utils/cn'
+import { getCourseDotClass } from '@/utils/courseColors'
+import { formatMoney } from '@/utils/money'
 import { CalendarToolbar } from '../Calendar/CalendarToolbar'
 import { MonthView } from '../Calendar/MonthView'
 import { WeekView } from '../Calendar/WeekView'
 import { DayView } from '../Calendar/DayView'
 import { ScheduleDetail } from '../ScheduleDetail'
 import type { Schedule, Feedback, ViewMode } from '@/types'
-import { AlertTriangle, Lock, Loader2, Star, Megaphone, X } from 'lucide-react'
+import { AlertTriangle, Lock, Loader2, Star, Megaphone, X, ChevronDown, ChevronUp } from 'lucide-react'
 
 type Phase = 'loading' | 'verify' | 'verified' | 'error'
 
@@ -82,6 +85,8 @@ export function ParentH5({ appName }: { appName: string }) {
   const [currentDate, setCurrentDate] = useState(new Date())
   // 图片预览（点击反馈缩略图放大查看）
   const [previewImage, setPreviewImage] = useState<string>('')
+  // 反馈展开状态：默认折叠反馈内容与图片，点击展开按钮后显示
+  const [expandedFeedback, setExpandedFeedback] = useState<Set<string>>(new Set())
 
   // 从 URL 读取 s 参数（学员 ID）
   const params = new URLSearchParams(window.location.search)
@@ -264,6 +269,28 @@ export function ParentH5({ appName }: { appName: string }) {
   // 按当前日历视图过滤反馈：月→当月，周→当周，日→当天
   const visibleFeedback = filterFeedbackByView(data.feedback, view, currentDate)
 
+  // 当月排课数（基于当前日历视图所在月份）
+  const monthScheduleCount = useMemo(
+    () => filterSchedulesByMonth(data.schedules, currentDate).length,
+    [data.schedules, currentDate],
+  )
+  // 仍有剩余课时的报名（课程数与余额列表都只展示这些）
+  const activeEnrollments = useMemo(
+    () => data.enrollments.filter((e) => e.remainingHours > 0),
+    [data.enrollments],
+  )
+  const studentBalance = data.student.balance || 0
+
+  // 切换某条反馈的展开/折叠状态
+  const toggleFeedback = (id: string) => {
+    setExpandedFeedback((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {showAnnouncement && data?.announcement && (
@@ -287,25 +314,35 @@ export function ParentH5({ appName }: { appName: string }) {
             </div>
             {/* 统计信息：电脑端跟在姓名后面，手机端靠右 */}
             <div className="flex items-center gap-4 ml-auto">
+              {/* 账户余额：没有余额时不显示 */}
+              {studentBalance > 0 && (
+                <div className="text-right">
+                  <div className="text-xs text-muted-foreground/70">账户余额</div>
+                  <div className="text-sm font-semibold text-primary">{formatMoney(studentBalance)}</div>
+                </div>
+              )}
               <div className="text-right">
-                <div className="text-xs text-muted-foreground/70">总排课</div>
-                <div className="text-sm font-semibold text-primary">{data.schedules.length}</div>
+                <div className="text-xs text-muted-foreground/70">当月排课</div>
+                <div className="text-sm font-semibold text-primary">{monthScheduleCount}</div>
               </div>
-              {data.enrollments.length > 0 && (
+              {activeEnrollments.length > 0 && (
                 <div className="text-right">
                   <div className="text-xs text-muted-foreground/70">课程数</div>
-                  <div className="text-sm font-semibold text-primary">{data.enrollments.length}</div>
+                  <div className="text-sm font-semibold text-primary">{activeEnrollments.length}</div>
                 </div>
               )}
             </div>
           </div>
-          {/* 第二行：课时余额（横向滚动，手机端不拥挤） */}
-          {data.enrollments.length > 0 && (
+          {/* 第二行：课时余额（横向滚动，手机端不拥挤），仅展示仍有剩余课时的课程 */}
+          {activeEnrollments.length > 0 && (
             <div className="mt-2 pt-2 border-t border-border/60 flex items-center gap-4 overflow-x-auto no-scrollbar">
-              {data.enrollments.map((e, i) => (
+              {activeEnrollments.map((e, i) => (
                 <div key={`${e.courseId}-${i}`} className="flex items-center gap-1.5 text-xs whitespace-nowrap flex-shrink-0">
+                  <span
+                    className={cn('inline-block w-2 h-2 rounded-full flex-shrink-0', getCourseDotClass(e.courseColor))}
+                  />
                   <span className="text-muted-foreground">{e.courseName || `课程 ${e.courseId.slice(-6)}`}</span>
-                  <span className={`font-medium ${e.remainingHours > 0 ? 'text-primary' : 'text-muted-foreground/70'}`}>
+                  <span className="font-medium text-primary">
                     剩 {e.remainingHours} 课时
                   </span>
                 </div>
@@ -333,31 +370,54 @@ export function ParentH5({ appName }: { appName: string }) {
               教师课后反馈（{viewLabel(view)} · {visibleFeedback.length}）
             </h2>
             <div className="space-y-3">
-              {visibleFeedback.map((fb: Feedback) => (
-                <div key={fb.id} className="border-b border-slate-50 last:border-0 pb-3 last:pb-0">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-muted-foreground">{fb.date || '—'}</span>
-                    <span className="text-amber-500 text-xs">{renderStars(fb.rating)}</span>
-                  </div>
-                  {fb.content && (
-                    <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{fb.content}</p>
-                  )}
-                  {/* 反馈图片缩略图（点击放大） */}
-                  {fb.images && fb.images.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {fb.images.map((img, idx) => (
-                        <img
-                          key={idx}
-                          src={img}
-                          alt={`反馈图片${idx + 1}`}
-                          onClick={() => setPreviewImage(img)}
-                          className="w-16 h-16 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
-                        />
-                      ))}
+              {visibleFeedback.map((fb: Feedback) => {
+                const expanded = expandedFeedback.has(fb.id)
+                const hasContent = !!(fb.content && fb.content.trim())
+                const hasImages = !!(fb.images && fb.images.length > 0)
+                const hasDetail = hasContent || hasImages
+                return (
+                  <div key={fb.id} className="border-b border-slate-50 last:border-0 pb-3 last:pb-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        {/* 展开按钮：仅有反馈内容或图片时显示 */}
+                        {hasDetail && (
+                          <button
+                            type="button"
+                            onClick={() => toggleFeedback(fb.id)}
+                            className="text-muted-foreground hover:text-foreground transition-colors p-0.5 -ml-0.5"
+                            aria-label={expanded ? '收起反馈' : '展开反馈'}
+                          >
+                            {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                        <span className="text-xs text-muted-foreground">{fb.date || '—'}</span>
+                      </div>
+                      <span className="text-amber-500 text-xs">{renderStars(fb.rating)}</span>
                     </div>
-                  )}
-                </div>
-              ))}
+                    {/* 反馈内容与图片：折叠时不显示，展开时显示 */}
+                    {expanded && hasDetail && (
+                      <div className="mt-1 pl-6">
+                        {hasContent && (
+                          <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{fb.content}</p>
+                        )}
+                        {hasImages && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {fb.images.map((img, idx) => (
+                              <img
+                                key={idx}
+                                src={img}
+                                alt={`反馈图片${idx + 1}`}
+                                onClick={() => setPreviewImage(img)}
+                                className="w-16 h-16 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </section>
         )}
@@ -420,6 +480,18 @@ function filterFeedbackByView(feedback: Feedback[], view: ViewMode, currentDate:
   // 日视图：当天
   const today = fmtDate(currentDate)
   return feedback.filter((fb) => fb.date === today)
+}
+
+// 按当月过滤排课（用于"总排课"统计：显示当前日历视图所在月份的排课数）
+function filterSchedulesByMonth(schedules: Schedule[], currentDate: Date): Schedule[] {
+  if (!schedules || schedules.length === 0) return []
+  const y = currentDate.getFullYear()
+  const m = currentDate.getMonth()
+  const start = `${y}-${String(m + 1).padStart(2, '0')}-01`
+  const nextM = m === 11 ? 0 : m + 1
+  const nextY = m === 11 ? y + 1 : y
+  const end = `${nextY}-${String(nextM + 1).padStart(2, '0')}-01`
+  return schedules.filter((s) => s.date >= start && s.date < end)
 }
 
 function fmtDate(d: Date): string {
@@ -500,6 +572,8 @@ function ParentCalendar({
       <ScheduleDetail
         schedule={selectedSchedule}
         onClose={() => setSelectedSchedule(null)}
+        hideStudentName
+        showClassName
       />
     </div>
   )

@@ -118,15 +118,20 @@ export async function onRequestPost(context) {
     enrollments = await Promise.all(
       all.map(async (e) => {
         let courseName = ''
+        let courseColor = ''
         try {
           const c = await getCourseById(e.courseId)
-          if (c) courseName = c.name
+          if (c) {
+            courseName = c.name
+            courseColor = c.color || ''
+          }
         } catch {
           // 课程不存在则留空
         }
         return {
           courseId: e.courseId,
           courseName,
+          courseColor,
           status: e.status,
           purchasedHours: e.purchasedHours,
           giftHours: e.giftHours,
@@ -167,6 +172,7 @@ export async function onRequestPost(context) {
         name: student.name,
         grade: student.grade || '',
         parentName: student.parentName || '',
+        balance: typeof student.balance === 'number' ? student.balance : Number(student.balance || 0),
       },
       schedules,
       enrollments,

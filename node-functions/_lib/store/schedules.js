@@ -59,8 +59,11 @@ export async function getAllSchedulesByStudent(studentId) {
   validateStorageId(studentId, 'studentId')
   const db = getDb()
   // 加 LIMIT 防止大数据量下返回过多记录导致 OOM/超时
-  const rows = db.prepare(`SELECT * FROM schedules WHERE student_id=?
-    ORDER BY date DESC, start_time DESC LIMIT 2000`).all(studentId)
+  // LEFT JOIN classes 取班级名，供家长端排课详情展示班级字段
+  const rows = db.prepare(`SELECT s.*, c.name AS class_name FROM schedules s
+    LEFT JOIN classes c ON c.id = s.class_id
+    WHERE s.student_id=?
+    ORDER BY s.date DESC, s.start_time DESC LIMIT 2000`).all(studentId)
   return rows.map(rowToSchedule)
 }
 

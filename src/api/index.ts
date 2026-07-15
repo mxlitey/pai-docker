@@ -128,6 +128,7 @@ export interface ParentAccessHint {
 export interface ParentEnrollmentSummary {
   courseId: string
   courseName: string
+  courseColor: string
   status: string
   purchasedHours: number
   giftHours: number
@@ -143,7 +144,7 @@ export interface ParentAnnouncement {
 }
 
 export interface ParentAccessData {
-  student: { id: string; name: string; grade: string; parentName: string }
+  student: { id: string; name: string; grade: string; parentName: string; balance: number }
   schedules: Schedule[]
   enrollments: ParentEnrollmentSummary[]
   feedback: import('@/types').Feedback[]

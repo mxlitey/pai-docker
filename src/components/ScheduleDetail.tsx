@@ -8,9 +8,12 @@ import { Check, X } from 'lucide-react'
 interface ScheduleDetailProps {
   schedule: Schedule | null
   onClose: () => void
+  // 家长端隐藏学员姓名、显示班级字段（默认 false，保持管理端原效果）
+  hideStudentName?: boolean
+  showClassName?: boolean
 }
 
-export function ScheduleDetail({ schedule, onClose }: ScheduleDetailProps) {
+export function ScheduleDetail({ schedule, onClose, hideStudentName, showClassName }: ScheduleDetailProps) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -23,14 +26,19 @@ export function ScheduleDetail({ schedule, onClose }: ScheduleDetailProps) {
 
   const date = parseDate(schedule.date)
 
-  const fields = [
+  const fields: { label: string; value: string }[] = [
     { label: '课程名称', value: schedule.courseName },
     { label: '授课教师', value: schedule.teacher },
     { label: '上课地点', value: schedule.location },
     { label: '日期', value: format(date, 'yyyy年M月d日 EEEE', { locale: zhCN }) },
     { label: '时间', value: `${schedule.startTime} - ${schedule.endTime}` },
-    { label: '学员姓名', value: schedule.studentName },
   ]
+  if (showClassName) {
+    fields.push({ label: '班级', value: schedule.className || '—' })
+  }
+  if (!hideStudentName) {
+    fields.push({ label: '学员姓名', value: schedule.studentName })
+  }
 
   return (
     <div

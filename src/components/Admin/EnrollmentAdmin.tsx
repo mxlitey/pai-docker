@@ -196,9 +196,7 @@ export function EnrollmentAdmin({
                     <th className="text-left py-2 px-2 font-medium">{'学员'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'课程'}</th>
                     <th className="text-left py-2 px-2 font-medium">{'状态'}</th>
-                    <th className="text-right py-2 px-2 font-medium">购课</th>
-                    <th className="text-right py-2 px-2 font-medium">赠课</th>
-                    <th className="text-left py-2 px-2 font-medium">剩余课时</th>
+                    <th className="text-left py-2 px-2 font-medium">{'课时 [剩余付费(剩余赠课)/购课(赠课)]'}</th>
                     <th className="text-right py-2 px-2 font-medium">{'单价'}</th>
                     <th className="text-right py-2 px-2 font-medium">应付</th>
                     <th className="text-right py-2 px-2 font-medium">实付</th>
@@ -244,17 +242,9 @@ export function EnrollmentAdmin({
                         <td className="py-2.5 px-2">
                           <StatusBadge status={effectiveStatus(e)} />
                         </td>
-                        <td className="py-2.5 px-2 text-right text-foreground whitespace-nowrap font-medium">
-                          {e.purchasedHours}
+                        <td className="py-2.5 px-2 text-destructive whitespace-nowrap font-medium">
+                          {renderMergedHours(e)}
                         </td>
-                        <td className="py-2.5 px-2 text-right text-muted-foreground whitespace-nowrap">
-                          {e.giftHours > 0 ? (
-                            e.giftHours
-                          ) : (
-                            <span className="text-muted-foreground/40">0</span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-2">{renderRemaining(e)}</td>
                         <td className="py-2.5 px-2 text-right text-muted-foreground whitespace-nowrap">
                           {formatMoney(e.unitPrice)}
                         </td>
@@ -347,20 +337,14 @@ function StatusBadge({ status }: { status: EnrollmentStatus }) {
   )
 }
 
-// 剩余课时展示：剩余 X（付费 a + 赠课 b），为 0 时 rose 高亮并标注"已用完"
-function renderRemaining(e: Enrollment) {
-  const rem = e.remainingPaidHours + e.remainingGiftHours
-  const usedUp = rem <= 0
+// 合并课时展示：[剩余付费(剩余赠课)]/[购课(赠课)]，整体红色显示
+function renderMergedHours(e: Enrollment) {
+  const giftPart = e.giftHours > 0 ? `(${e.giftHours})` : ''
+  const remGiftPart = e.remainingGiftHours > 0 ? `(${e.remainingGiftHours})` : ''
   return (
-    <div className="whitespace-nowrap">
-      <span className={usedUp ? 'text-destructive font-medium' : 'text-foreground font-medium'}>
-        剩余 {rem}
-      </span>
-      <span className="text-muted-foreground/70 text-xs">
-        （付费 {e.remainingPaidHours} + 赠课 {e.remainingGiftHours}）
-      </span>
-      {usedUp && <span className="ml-1 text-xs text-destructive">已用完</span>}
-    </div>
+    <span>
+      [{e.remainingPaidHours}{remGiftPart}]/{e.purchasedHours}{giftPart}
+    </span>
   )
 }
 
