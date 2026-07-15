@@ -9,6 +9,9 @@
 //                     按 TZ 环境变量计算执行时刻；TZ=Asia/Shanghai 时即北京时间 3:00
 //   backupMaxCount  - 自动备份最大保留份数（默认 500，防止高频备份撑爆磁盘）
 //   moduleEnabled   - 模块启用开关（id -> boolean，留作模块化扩展）
+//   trustProxy      - 是否信任代理转发的客户端 IP（CDN 场景下开启，默认 false）
+//   cdnProvider     - CDN 厂商（cloudflare/ali-cdn/ali-esa/tencent-cdn/tencent-eo/
+//                     huawei/upyun/qiniu/generic，决定优先读取哪个真实 IP 头部）
 //
 // 注：项目时区统一为 Asia/Shanghai（硬编码于 _lib/time.js），不再作为可配置项
 //
@@ -48,6 +51,31 @@ const DEFAULT_BACKUP_KEEP_DAYS = 30
 const DEFAULT_BACKUP_CRON = '0 3 * * *'
 // 默认自动备份最大保留份数：高频备份时防止磁盘撑爆
 const DEFAULT_BACKUP_MAX_COUNT = 500
+// 默认不信任代理转发 IP（直连场景最安全，防伪造 XFF 绕过限流）
+const DEFAULT_TRUST_PROXY = false
+// 默认 CDN 厂商为「通用代理」（兜底读 X-Forwarded-For）
+const DEFAULT_CDN_PROVIDER = 'generic'
+
+// 支持的 CDN 厂商列表（前端下拉用）
+// value 为存入 config.json 的标识，header 为该厂商真实客户端 IP 的专用头（无专用头则空，回退 XFF）
+export const CDN_PROVIDERS = [
+  { value: 'cloudflare',  label: 'Cloudflare',          header: 'cf-connecting-ip' },
+  { value: 'ali-cdn',     label: '阿里云 CDN/DCDN',     header: 'ali-cdn-real-ip' },
+  { value: 'ali-esa',     label: '阿里云 ESA 边缘安全加速', header: '' },
+  { value: 'tencent-cdn', label: '腾讯云 CDN',          header: '' },
+  { value: 'tencent-eo',  label: '腾讯云 EdgeOne (EO)', header: '' },
+  { value: 'huawei',      label: '华为云 CDN',          header: '' },
+  { value: 'upyun',       label: '又拍云 CDN',          header: 'x-real-ip' },
+  { value: 'qiniu',       label: '七牛云 CDN',          header: '' },
+  { value: 'generic',     label: '通用代理（Nginx 等）',  header: '' },
+]
+
+// 校验 cdnProvider 合法性，非法值回退 generic
+function normalizeCdnProvider(val) {
+  if (typeof val !== 'string') return DEFAULT_CDN_PROVIDER
+  const found = CDN_PROVIDERS.find((p) => p.value === val)
+  return found ? val : DEFAULT_CDN_PROVIDER
+}
 
 // 校验备份 cron 表达式合法性，非法值回退为默认
 function normalizeBackupCron(val) {
@@ -70,6 +98,8 @@ function createDefaultConfig() {
     backupCron: DEFAULT_BACKUP_CRON,
     backupMaxCount: DEFAULT_BACKUP_MAX_COUNT,
     moduleEnabled: {},
+    trustProxy: DEFAULT_TRUST_PROXY,
+    cdnProvider: DEFAULT_CDN_PROVIDER,
   }
 }
 
@@ -101,6 +131,10 @@ export function loadConfig() {
         moduleEnabled: parsed.moduleEnabled && typeof parsed.moduleEnabled === 'object'
           ? parsed.moduleEnabled
           : {},
+        trustProxy: typeof parsed.trustProxy === 'boolean'
+          ? parsed.trustProxy
+          : DEFAULT_TRUST_PROXY,
+        cdnProvider: normalizeCdnProvider(parsed.cdnProvider),
       }
       // 若文件缺失必要字段，回写修复后的配置
       if (!parsed.tokenSecret || !parsed.appName || parsed.renewalThreshold === undefined) {
@@ -170,6 +204,8 @@ export function getAllConfig() {
     backupCron: cfg.backupCron,
     backupMaxCount: cfg.backupMaxCount,
     moduleEnabled: { ...cfg.moduleEnabled },
+    trustProxy: cfg.trustProxy,
+    cdnProvider: cfg.cdnProvider,
   }
 }
 
@@ -249,4 +285,32 @@ export function setModuleEnabled(moduleId, enabled) {
   cfg.moduleEnabled[moduleId] = !!enabled
   persist()
   return cfg.moduleEnabled[moduleId]
+}
+
+// 读取是否信任代理转发 IP
+export function getTrustProxy() {
+  const cfg = loadConfig()
+  return cfg.trustProxy
+}
+
+// 修改是否信任代理转发 IP
+export function setTrustProxy(val) {
+  const cfg = loadConfig()
+  cfg.trustProxy = !!val
+  persist()
+  return cfg.trustProxy
+}
+
+// 读取 CDN 厂商
+export function getCdnProvider() {
+  const cfg = loadConfig()
+  return cfg.cdnProvider
+}
+
+// 修改 CDN 厂商
+export function setCdnProvider(val) {
+  const cfg = loadConfig()
+  cfg.cdnProvider = normalizeCdnProvider(val)
+  persist()
+  return cfg.cdnProvider
 }

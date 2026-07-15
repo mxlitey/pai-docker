@@ -14,7 +14,7 @@ import {
   getAdminById,
   createSuperAdmin,
 } from './store.js'
-import { getTokenSecret as getTokenSecretFromConfig } from './config-file.js'
+import { getTokenSecret as getTokenSecretFromConfig, getTrustProxy, getCdnProvider } from './config-file.js'
 
 // re-export，供 api 层直接从 auth.js 引入
 export { createSuperAdmin }
@@ -455,16 +455,52 @@ export async function requirePermission(context, permission) {
 }
 
 // 从请求中提取客户端 IP（限流与审计用）
-// 安全策略：优先使用 TCP 连接的真实远端地址（不可被客户端伪造），
-// 防止攻击者伪造 X-Forwarded-For 绕过登录限流。
-// 仅在 context.remoteAddress 缺失（如边缘函数环境）时回退到 XFF。
+//
+// 安全策略：
+//   - trustProxy=false（默认）：只用 TCP 连接的真实远端地址（不可被客户端伪造），
+//     防止攻击者伪造 X-Forwarded-For 绕过登录限流。
+//   - trustProxy=true：流量经过 CDN/反向代理，remoteAddress 是代理节点 IP，
+//     需要从头部取真实客户端 IP。按所选 CDN 厂商优先读专用头，回退 XFF 最左值。
+//
+// 注：trustProxy 开启后，源站应通过防火墙限制只允许 CDN 回源 IP 访问，
+// 否则攻击者可直连源站伪造 XFF。安全由网络层兜底。
 export function getClientIp(context) {
   // 支持 context 对象或裸 request（向后兼容）
   const ctx = context && context.request ? context : { request: context, remoteAddress: undefined }
-  if (ctx.remoteAddress) return ctx.remoteAddress
   const request = ctx.request
   if (!request) return ''
+
+  // 不信任代理：直接用 TCP 远端地址，忽略所有头部（最安全）
+  if (!getTrustProxy()) {
+    return ctx.remoteAddress || ''
+  }
+
+  // 信任代理：按 CDN 厂商优先级读取真实客户端 IP
+  // 1. 厂商专用头（如 Cloudflare 的 CF-Connecting-IP，单值，CDN 覆盖写入）
+  const providerHeader = CDN_PROVIDER_HEADERS[getCdnProvider()]
+  if (providerHeader) {
+    const v = request.headers.get(providerHeader)
+    if (v) return v.trim()
+  }
+  // 2. X-Forwarded-For 链最左值（最老的客户端，多数 CDN 都会写入）
   const xff = request.headers.get('x-forwarded-for')
   if (xff) return xff.split(',')[0].trim()
-  return request.headers.get('x-real-ip') || ''
+  // 3. X-Real-IP（部分代理如又拍云、Nginx 配置会写入）
+  const xri = request.headers.get('x-real-ip')
+  if (xri) return xri.trim()
+  // 4. 都没有则回退 TCP 远端地址
+  return ctx.remoteAddress || ''
+}
+
+// CDN 厂商 -> 真实客户端 IP 专用头映射
+const CDN_PROVIDER_HEADERS = {
+  cloudflare:  'cf-connecting-ip',
+  'ali-cdn':   'ali-cdn-real-ip',
+  'ali-esa':   '',  // 阿里云 ESA 无专用头，走 XFF
+  'tencent-cdn': '', // 腾讯云 CDN 无专用头，走 XFF
+  'tencent-eo': '',  // EdgeOne 无专用头，走 XFF
+  huawei:      '',   // 华为云 CDN 无专用头，走 XFF
+  upyun:       'x-real-ip',
+  qiniu:       '',   // 七牛云无专用头，走 XFF
+  generic:     '',   // 通用代理走 XFF
 }

@@ -13,6 +13,7 @@ import {
   restoreBackup,
 } from '@/api/admin'
 import { setAppName as setAppNameConfig } from '@/config'
+import { cn } from '@/utils/cn'
 import {
   Button,
   EmptyState,
@@ -67,6 +68,12 @@ export function SystemSettingsAdmin({
   // 自动备份最大保留份数
   const [backupMaxCount, setBackupMaxCount] = useState(500)
   const [originalBackupMaxCount, setOriginalBackupMaxCount] = useState(500)
+  // CDN 设置：是否信任代理转发的客户端 IP + CDN 厂商
+  const [trustProxy, setTrustProxy] = useState(false)
+  const [originalTrustProxy, setOriginalTrustProxy] = useState(false)
+  const [cdnProvider, setCdnProvider] = useState('generic')
+  const [originalCdnProvider, setOriginalCdnProvider] = useState('generic')
+  const [savingCdn, setSavingCdn] = useState(false)
   const [loading, setLoading] = useState(true)
 
   // 备份列表
@@ -111,6 +118,10 @@ export function SystemSettingsAdmin({
         setOriginalBackupCron(cfg.backupCron || '0 3 * * *')
         setBackupMaxCount(cfg.backupMaxCount)
         setOriginalBackupMaxCount(cfg.backupMaxCount)
+        setTrustProxy(!!cfg.trustProxy)
+        setOriginalTrustProxy(!!cfg.trustProxy)
+        setCdnProvider(cfg.cdnProvider || 'generic')
+        setOriginalCdnProvider(cfg.cdnProvider || 'generic')
       } else if (fullR.status === 'rejected') {
         toast.error((fullR.reason as Error)?.message || '加载配置失败')
       }
@@ -245,6 +256,36 @@ export function SystemSettingsAdmin({
     } finally {
       setBackupCreating(false)
     }
+  }
+
+  // CDN 设置变更标记
+  const cdnDirty = trustProxy !== originalTrustProxy || cdnProvider !== originalCdnProvider
+
+  // 保存 CDN 设置（需重启服务生效）
+  const handleSaveCdn = async () => {
+    setSavingCdn(true)
+    try {
+      const result = await updateSystemConfig({
+        trustProxy,
+        cdnProvider,
+      })
+      if (result.code === 0) {
+        setOriginalTrustProxy(trustProxy)
+        setOriginalCdnProvider(cdnProvider)
+        toast.success('CDN 设置已保存，重启服务后生效')
+      } else {
+        toast.error(result.message || '保存失败')
+      }
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setSavingCdn(false)
+    }
+  }
+
+  const handleResetCdn = () => {
+    setTrustProxy(originalTrustProxy)
+    setCdnProvider(originalCdnProvider)
   }
 
   // 恢复备份（恢复前自动创建当前数据快照）
@@ -516,6 +557,97 @@ export function SystemSettingsAdmin({
               </div>
             </section>
 
+            {/* CDN 设置 */}
+            <section className="card p-5">
+              <h2 className="text-base font-semibold text-foreground mb-1 flex items-center gap-2">
+                <span className="w-1 h-4 bg-cyan-500 rounded"></span>
+                CDN 设置
+              </h2>
+              <p className="text-xs text-muted-foreground/70 mb-4">
+                系统在 CDN/反向代理后面时，开启后可从请求头拿到访客真实 IP（用于审计日志和限流）。关闭时只使用直连地址，更安全。
+              </p>
+              <div className="space-y-4">
+                {/* 开关 */}
+                <div className="flex items-center justify-between gap-4 py-2">
+                  <div>
+                    <div className="text-sm font-medium text-foreground">信任代理转发 IP</div>
+                    <div className="text-xs text-muted-foreground/70 mt-0.5">开启后从请求头读取真实访客 IP</div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={trustProxy}
+                    onClick={() => setTrustProxy(!trustProxy)}
+                    className={cn(
+                      'relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0',
+                      trustProxy ? 'bg-primary' : 'bg-muted',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                        trustProxy ? 'translate-x-6' : 'translate-x-1',
+                      )}
+                    />
+                  </button>
+                </div>
+
+                {/* 厂商选择：仅开启时可操作 */}
+                <div>
+                  <label className="block text-sm text-muted-foreground mb-1.5">CDN 厂商</label>
+                  <select
+                    value={cdnProvider}
+                    onChange={(e) => setCdnProvider(e.target.value)}
+                    disabled={!trustProxy}
+                    className={cn(inputClass, 'bg-background', !trustProxy && 'opacity-50 cursor-not-allowed')}
+                  >
+                    <option value="cloudflare">Cloudflare</option>
+                    <option value="ali-cdn">阿里云 CDN/DCDN</option>
+                    <option value="ali-esa">阿里云 ESA 边缘安全加速</option>
+                    <option value="tencent-cdn">腾讯云 CDN</option>
+                    <option value="tencent-eo">腾讯云 EdgeOne (EO)</option>
+                    <option value="huawei">华为云 CDN</option>
+                    <option value="upyun">又拍云 CDN</option>
+                    <option value="qiniu">七牛云 CDN</option>
+                    <option value="generic">通用代理（Nginx 等）</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground/70 mt-1.5">
+                    选择你实际使用的 CDN 厂商，系统会优先读取该厂商的真实 IP 请求头
+                  </p>
+                </div>
+
+                {/* 安全提示 */}
+                {trustProxy && (
+                  <div className="flex gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
+                    <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <div>
+                      开启后请确保源站（本服务）只允许 CDN 回源 IP 访问，否则攻击者可直连源站伪造请求头绕过限流。建议在服务器防火墙限制 8788 端口来源。
+                    </div>
+                  </div>
+                )}
+
+                {/* 保存按钮 */}
+                <div className="flex items-center gap-3 pt-2">
+                  <Button
+                    variant="primary"
+                    loading={savingCdn}
+                    disabled={busy || !cdnDirty}
+                    onClick={handleSaveCdn}
+                  >
+                    {'保存'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    disabled={!cdnDirty}
+                    onClick={handleResetCdn}
+                  >
+                    {'取消'}
+                  </Button>
+                  <span className="text-xs text-muted-foreground/70 ml-auto">保存后需重启服务生效</span>
+                </div>
+              </div>
+            </section>
+
             {/* 说明 */}
             <section className="card p-5 bg-background border-border">
               <div className="flex gap-2.5 text-sm text-muted-foreground">
@@ -525,7 +657,7 @@ export function SystemSettingsAdmin({
                   <ul className="space-y-0.5 text-muted-foreground">
                     <li>· 所有配置存储在 SQLite 数据库中，容器重建后仍保留</li>
                     <li>· 项目名称修改后，已打开的页面需刷新才能看到更新</li>
-                    <li>· 后续将支持更多系统配置项（如主题色、时区等）</li>
+                    <li>· CDN 设置保存后需重启服务才会生效</li>
                   </ul>
                 </div>
               </div>
