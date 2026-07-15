@@ -44,11 +44,6 @@ async function handleLogin(context) {
   try {
     const { request } = context
     const ip = getClientIp(context)
-    // 速率限制：防暴力破解（每 IP 每分钟 10 次）
-    const rl = checkLoginRateLimit(ip)
-    if (!rl.ok) {
-      return json({ code: 1, message: `尝试过于频繁，请 ${Math.ceil(rl.retryAfterMs / 1000)} 秒后再试`, data: null }, 429)
-    }
     const body = await readBody(request)
     const { username, password } = body
 
@@ -57,6 +52,12 @@ async function handleLogin(context) {
     }
     if (!password) {
       return json({ code: 1, message: '请输入密码', data: null }, 400)
+    }
+    // 速率限制：防暴力破解（主维度 username 每分钟 10 次，辅维度 ip 每分钟 60 次）
+    // 放在读取 body 之后，以便用 username 作为主限流维度
+    const rl = checkLoginRateLimit(ip, username)
+    if (!rl.ok) {
+      return json({ code: 1, message: `尝试过于频繁，请 ${Math.ceil(rl.retryAfterMs / 1000)} 秒后再试`, data: null }, 429)
     }
 
     if (await isBootstrapMode()) {
