@@ -40,12 +40,14 @@ function clearNavState() {
 }
 
 // 写入 #admin hash（进入后台时调用，子页面由 AdminPanel 内部管理）
+// 使用 pushState 新增历史条目，确保浏览器返回按钮能退回上一页
+// AdminPanel 内部切换子页面仍用 replaceState（避免后退逐个切换子页面）
 function setAdminHash() {
   try {
     const url = new URL(window.location.href)
     if (url.hash !== '#admin' && !url.hash.startsWith('#admin/')) {
       url.hash = 'admin'
-      window.history.replaceState({}, '', url.toString())
+      window.history.pushState({}, '', url.toString())
     }
   } catch {
     // 忽略
@@ -53,12 +55,13 @@ function setAdminHash() {
 }
 
 // 写入 #search hash（进入公开搜索页时调用）
+// 使用 pushState 新增历史条目，确保浏览器返回按钮能退回上一页
 function setSearchHash() {
   try {
     const url = new URL(window.location.href)
     if (url.hash !== '#search') {
       url.hash = 'search'
-      window.history.replaceState({}, '', url.toString())
+      window.history.pushState({}, '', url.toString())
     }
   } catch {
     // 忽略

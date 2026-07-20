@@ -63,6 +63,11 @@ COPY server.js ./
 COPY node-functions ./node-functions
 COPY --from=builder /build/dist ./dist
 
+# 复制默认品牌图片到 /app/default-brand（不在 /app/data volume 挂载路径下）
+# server.js 启动时若 /app/data/brand/login.png 不存在，会从这里复制默认图
+# 用户可通过替换 /app/data/brand/login.png 覆盖默认图（持久化在 volume 中）
+COPY assets/brand ./default-brand
+
 # 数据持久化目录
 RUN mkdir -p /app/data
 VOLUME /app/data

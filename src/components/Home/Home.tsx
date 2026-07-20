@@ -200,7 +200,7 @@ export function Home({ appName, onEnterAdmin, onEnterSearch }: HomeProps) {
         )}
 
         {/* 页脚 */}
-        <div className="mt-4 text-center text-xs text-muted-foreground">
+        <footer className="border-t border-border py-4 text-center text-xs text-muted-foreground">
           <span>{appName}</span>
           {GITHUB_URL && (
             <>
@@ -209,13 +209,21 @@ export function Home({ appName, onEnterAdmin, onEnterSearch }: HomeProps) {
                 href={GITHUB_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-muted-foreground hover:text-primary transition-colors"
+                className="text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1 align-middle"
               >
+                <svg
+                  className="w-3.5 h-3.5"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.21 3.44 9.63 8.21 11.19.6.11.82-.26.82-.58 0-.29-.01-1.04-.02-2.05-3.34.72-4.04-1.59-4.04-1.59-.55-1.38-1.34-1.75-1.34-1.75-1.09-.74.08-.73.08-.73 1.21.09 1.85 1.23 1.85 1.23 1.07 1.8 2.81 1.28 3.5.98.11-.77.42-1.28.76-1.58-2.67-.3-5.47-1.31-5.47-5.83 0-1.29.47-2.34 1.23-3.17-.12-.3-.53-1.52.12-3.17 0 0 1-.32 3.3 1.21a11.6 11.6 0 016 0c2.3-1.53 3.3-1.21 3.3-1.21.65 1.65.24 2.87.12 3.17.77.83 1.23 1.88 1.23 3.17 0 4.53-2.81 5.52-5.49 5.81.43.36.81 1.08.81 2.18 0 1.58-.01 2.85-.01 3.24 0 .32.21.7.82.58A12.04 12.04 0 0024 12.29C24 5.78 18.63.5 12 .5z" />
+                </svg>
                 GitHub
               </a>
             </>
           )}
-        </div>
+        </footer>
       </div>
     </div>
   )

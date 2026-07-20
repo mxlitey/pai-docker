@@ -22,7 +22,7 @@ import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { readFile, stat } from 'node:fs/promises'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, copyFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, extname, normalize } from 'node:path'
 import {
@@ -43,9 +43,28 @@ const UPLOADS_DIR = join(ROOT, 'data', 'uploads')
 // 品牌图片目录：data/brand/{文件}
 // 用于登录页右侧品牌图等可由用户自行替换的静态图片（无需重新构建镜像）
 const BRAND_DIR = join(ROOT, 'data', 'brand')
+// 默认品牌图片目录（镜像内置，不在 volume 挂载路径下）
+// 启动时若 data/brand/login.png 不存在，从这里复制默认图到 volume
+// 用户可通过替换 data/brand/login.png 覆盖默认图（持久化在 volume 中）
+const DEFAULT_BRAND_DIR = join(ROOT, 'default-brand')
 // 启动时确保上传目录与品牌图片目录存在
 mkdirSync(UPLOADS_DIR, { recursive: true })
 mkdirSync(BRAND_DIR, { recursive: true })
+
+// 初始化默认品牌图片：若 data/brand/login.png 不存在且镜像内置了默认图，则复制
+// 幂等：仅当目标文件不存在时才复制，用户替换后不会被覆盖
+;(function initDefaultBrandImages() {
+  const defaultLoginPng = join(DEFAULT_BRAND_DIR, 'login.png')
+  const targetLoginPng = join(BRAND_DIR, 'login.png')
+  if (existsSync(defaultLoginPng) && !existsSync(targetLoginPng)) {
+    try {
+      copyFileSync(defaultLoginPng, targetLoginPng)
+      console.log('[启动] 已复制默认品牌图片到 data/brand/login.png')
+    } catch (e) {
+      console.warn('[启动] 复制默认品牌图片失败:', e?.message || String(e))
+    }
+  }
+})()
 
 // 动态加载所有 API 处理器：/api/students -> node-functions/api/students.js
 const apiModules = {}
@@ -472,10 +491,35 @@ async function main() {
     }, delay)
   }
   scheduleNextBackup()
+
+  // 7. 独立的月末审计日志归档调度（不依附 backupCron）
+  //    固定每日 04:00 触发 runArchiveCheck（仅月末当天实际执行归档）
+  //    与备份（03:00）错开，避免同时写入数据库；幂等，重复触发安全
+  //    启动时立即检查一次：防止启动当天就是月末但已过 04:00 被错过
+  try { runArchiveCheck() } catch (e) { console.error('[定时] 启动归档检查失败:', e?.message) }
+  let archiveTimer = null
+  const ARCHIVE_CRON = '0 4 * * *' // 每日 04:00
+  const scheduleNextArchiveCheck = () => {
+    if (archiveTimer) clearTimeout(archiveTimer)
+    const next = nextCronTime(ARCHIVE_CRON, new Date())
+    if (!next) {
+      archiveTimer = setTimeout(scheduleNextArchiveCheck, 3600000)
+      return
+    }
+    const delay = next.getTime() - Date.now()
+    console.log(`[定时] 审计日志归档检查：每日 04:00（下次：${next.toLocaleString()}）`)
+    archiveTimer = setTimeout(() => {
+      runArchiveCheck()
+      scheduleNextArchiveCheck()
+    }, delay)
+  }
+  scheduleNextArchiveCheck()
 }
 
 // 自动维护：备份 → 清理旧备份（按天数+份数）→ 过期处理
 // 按 backupCron 配置的 cron 表达式调度执行
+// 注意：月末审计日志归档已独立到 runArchiveCheck，不再依附 backupCron
+//       避免用户把 backupCron 改成非每日（如每周一）时错过月末归档
 function runDailyMaintenance() {
   try {
     const result = createBackup()
@@ -495,17 +539,22 @@ function runDailyMaintenance() {
   } catch (e) {
     console.error('[定时] 课时过期处理失败:', e?.message || String(e))
   }
-  // 月末自动归档上个月审计日志：若明天是下月第 1 天，说明今天是月末
+}
+
+// 月末审计日志归档：若今天是一月最后一天（即明天是下月 1 号），归档上个月日志
+// 独立调度（每日 04:00 触发 + 启动时立即检查一次），不依附 backupCron
+// 幂等性：archiveAuditLogs 覆盖已存在的归档文件 + DELETE 已归档记录，重复触发安全
+function runArchiveCheck() {
+  // 月末判断：若明天是下月第 1 天，说明今天是月末
+  const now = new Date()
+  const tomorrow = new Date(now)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  if (tomorrow.getDate() !== 1) return
   try {
-    const now = new Date()
-    const tomorrow = new Date(now)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    if (tomorrow.getDate() === 1) {
-      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      const monthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`
-      const result = archiveAuditLogs(monthStr)
-      console.log(`[定时] 审计日志归档完成：${monthStr}，${result.archived} 条，文件 ${result.filename}`)
-    }
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const monthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`
+    const result = archiveAuditLogs(monthStr)
+    console.log(`[定时] 审计日志归档完成：${monthStr}，${result.archived} 条，文件 ${result.filename}`)
   } catch (e) {
     console.error('[定时] 审计日志归档失败:', e?.message || String(e))
   }
