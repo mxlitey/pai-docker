@@ -1,5 +1,5 @@
 // 项目首页 —— 基于 shadcn/ui login-04 布局
-// 左侧登录表单 + 右侧项目介绍卡片（移动端单列）
+// 左侧登录表单 + 右侧品牌图片（移动端单列；无图片时右侧空白）
 import { useState, useEffect } from 'react'
 import { login, getToken, verifyAuth, getBootstrapStatus } from '@/api/admin'
 import { Card, CardContent } from '@/components/ui/shadcn/card'
@@ -7,19 +7,29 @@ import { Input } from '@/components/ui/shadcn/input'
 import { Label } from '@/components/ui/shadcn/label'
 import { Button } from '@/components/ui'
 import { GITHUB_URL } from '@/config'
-import { Calendar, ClipboardCheck, BarChart3, GalleryVerticalEnd, Loader2 } from 'lucide-react'
+import { GalleryVerticalEnd, Loader2 } from 'lucide-react'
 
 interface HomeProps {
   appName: string
   onEnterAdmin: () => void
+  // 进入公开搜索页（#search）：供家长/老师通过学员姓名查找排课入口
+  onEnterSearch: () => void
 }
 
-export function Home({ appName, onEnterAdmin }: HomeProps) {
+export function Home({ appName, onEnterAdmin, onEnterSearch }: HomeProps) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [checking, setChecking] = useState(true)
+  // 品牌图片加载状态：null=加载中，true=加载成功，false=全部候选均加载失败/不存在
+  // 加载失败时右侧不渲染任何内容（保持 Card 两列布局，右侧空白）
+  const [brandImgOk, setBrandImgOk] = useState<boolean | null>(null)
+  // 品牌图片候选列表：按优先级依次尝试，任一加载成功即显示
+  // 用户可将 login.png 或 login.jpg 放入 /app/data/brand/ 目录，无需重新构建镜像
+  const brandImgCandidates = ['/brand/login.png', '/brand/login.jpg']
+  const [brandImgIdx, setBrandImgIdx] = useState(0)
+  const brandImgUrl = brandImgCandidates[brandImgIdx]
 
   // 检测已有登录态：若 token 有效则直接进入后台
   useEffect(() => {
@@ -81,24 +91,8 @@ export function Home({ appName, onEnterAdmin }: HomeProps) {
     }
   }
 
-  // 右侧介绍卡片内容
-  const features = [
-    {
-      title: '排课点名',
-      desc: '批量排课、日历视图、一键点名扣减课时',
-      icon: <Calendar className="size-4" strokeWidth={1.8} />,
-    },
-    {
-      title: '报名课时',
-      desc: '购课赠课、剩余课时、续费预警一目了然',
-      icon: <ClipboardCheck className="size-4" strokeWidth={1.8} />,
-    },
-    {
-      title: '数据报表',
-      desc: '营收、课时、出勤、教师绩效多维统计',
-      icon: <BarChart3 className="size-4" strokeWidth={1.8} />,
-    },
-  ]
+  // 右侧品牌图片由 server.js 的 /brand/* 路由映射到 data/brand/ 目录
+  // 依次尝试 login.png → login.jpg，任一加载成功即显示；全部失败则右侧不渲染
 
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-muted p-6 md:p-10">
@@ -167,40 +161,39 @@ export function Home({ appName, onEnterAdmin }: HomeProps) {
                   </Button>
 
                   <p className="text-center text-xs text-muted-foreground">
-                    家长请通过老师发送的专属链接查看排课
+                    {'家长查看排课请 '}
+                    <button
+                      type="button"
+                      onClick={onEnterSearch}
+                      className="text-primary hover:underline align-middle"
+                    >
+                      搜索学员姓名
+                    </button>
                   </p>
                 </div>
               </form>
 
-              {/* 右侧：项目介绍（移动端隐藏） */}
-              <div className="relative hidden bg-muted md:block">
-                <div className="absolute inset-0 flex flex-col justify-center p-8">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                      <Calendar className="size-4" />
-                    </div>
-                    <span className="font-semibold text-foreground">{appName}</span>
-                  </div>
-                  <h2 className="text-2xl font-bold text-foreground tracking-tight mb-3">
-                    面向培训机构的排课与教务管理系统
-                  </h2>
-                  <p className="text-sm text-muted-foreground leading-relaxed mb-6">
-                    覆盖排课点名、报名课时、结转与数据报表，支持细粒度权限分配与家长端专属查询。
-                  </p>
-                  <div className="grid grid-cols-1 gap-3">
-                    {features.map((f) => (
-                      <div key={f.title} className="flex items-start gap-3 rounded-lg border border-border bg-background p-3">
-                        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                          {f.icon}
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium text-foreground">{f.title}</div>
-                          <div className="text-xs text-muted-foreground leading-relaxed">{f.desc}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              {/* 右侧：品牌图片（移动端隐藏；加载失败/无图片时不渲染任何内容） */}
+              <div className="relative hidden bg-muted md:block overflow-hidden">
+                {brandImgOk !== false && (
+                  <img
+                    key={brandImgUrl}
+                    src={brandImgUrl}
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+                    style={{ opacity: brandImgOk === true ? 1 : 0 }}
+                    onLoad={() => setBrandImgOk(true)}
+                    onError={() => {
+                      // 当前候选失败：若仍有后续候选则尝试下一个，否则标记为全部失败
+                      if (brandImgIdx < brandImgCandidates.length - 1) {
+                        setBrandImgIdx(brandImgIdx + 1)
+                      } else {
+                        setBrandImgOk(false)
+                      }
+                    }}
+                  />
+                )}
               </div>
             </CardContent>
           </Card>

@@ -40,8 +40,12 @@ const STATIC_DIR = join(ROOT, 'dist')
 // 上传文件存储根目录：data/uploads/{学员姓名}-{studentId}/{年}/{月-日}-{feedbackId}/{file}
 // 放在 data 目录下，便于备份和数据迁移；按学员姓名+ID 分门别类
 const UPLOADS_DIR = join(ROOT, 'data', 'uploads')
-// 启动时确保上传目录存在
+// 品牌图片目录：data/brand/{文件}
+// 用于登录页右侧品牌图等可由用户自行替换的静态图片（无需重新构建镜像）
+const BRAND_DIR = join(ROOT, 'data', 'brand')
+// 启动时确保上传目录与品牌图片目录存在
 mkdirSync(UPLOADS_DIR, { recursive: true })
+mkdirSync(BRAND_DIR, { recursive: true })
 
 // 动态加载所有 API 处理器：/api/students -> node-functions/api/students.js
 const apiModules = {}
@@ -203,6 +207,53 @@ async function serveUploads(req, res) {
   }
 }
 
+// 品牌图片静态访问：/brand/* → BRAND_DIR/*（data/brand）
+// 用于登录页右侧品牌图等可由用户自行替换的静态图片（无需重新构建镜像）
+// 仅允许图片扩展名（.jpg/.jpeg/.png/.gif/.webp），其他一律 404
+// 防止上传的 HTML/SVG 等被浏览器当页面执行（XSS）
+async function serveBrand(req, res) {
+  let pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname)
+  pathname = normalize(pathname).replace(/^(\.\.[\/\\])+/, '')
+
+  // 去掉 /brand/ 前缀，拼接到 BRAND_DIR
+  const rel = pathname.replace(/^\/brand\//, '')
+  const filePath = join(BRAND_DIR, rel)
+
+  // 安全：防止路径遍历（必须落在 BRAND_DIR 内）
+  if (!filePath.startsWith(BRAND_DIR)) {
+    res.statusCode = 403
+    res.end('Forbidden')
+    return
+  }
+
+  const ext = extname(filePath).toLowerCase()
+  const allowedExt = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+  if (!allowedExt.includes(ext)) {
+    res.statusCode = 404
+    res.end('Not Found')
+    return
+  }
+
+  try {
+    const s = await stat(filePath)
+    if (s.isDirectory()) {
+      res.statusCode = 404
+      res.end('Not Found')
+      return
+    }
+    const data = await readFile(filePath)
+    res.setHeader('Content-Type', MIME[ext] || 'application/octet-stream')
+    // 缓存 1 天（用户可能随时替换图片，缓存时间不宜过长）
+    res.setHeader('Cache-Control', 'public, max-age=86400')
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.statusCode = 200
+    res.end(data)
+  } catch {
+    res.statusCode = 404
+    res.end('Not Found')
+  }
+}
+
 // 把 Node 原生 IncomingMessage 转成 Web Request（Edge Function 标准）
 function toWebRequest(req) {
   const host = req.headers.host || `localhost:${PORT}`
@@ -276,6 +327,13 @@ async function handleRequest(req, res) {
   // 图片在 data/uploads/{学员姓名}-{studentId}/{年}/{月-日}-{feedbackId}/ 下
   if (pathname.startsWith('/uploads/')) {
     await serveUploads(req, res)
+    return
+  }
+
+  // 品牌图片静态访问：/brand/* → BRAND_DIR/*（data/brand）
+  // 用于登录页右侧品牌图等可由用户自行替换的静态图片
+  if (pathname.startsWith('/brand/')) {
+    await serveBrand(req, res)
     return
   }
 
