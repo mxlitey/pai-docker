@@ -46,10 +46,19 @@ async function request<T>(
   return json.data as T
 }
 
-// 学员搜索（精确+模糊）
+// 学员搜索（精确+模糊，需鉴权 students:view）
 export async function searchStudents(q: string): Promise<Student[]> {
   const data = await request<{ students: Student[] }>(
     `${API_BASE}/students?q=${encodeURIComponent(q)}`,
+  )
+  return data.students
+}
+
+// 公开学员搜索（无需鉴权，供 #search 公开搜索页使用）
+// 仅返回 id/name/grade，不含手机号等敏感信息
+export async function searchStudentsPublic(q: string): Promise<Student[]> {
+  const data = await request<{ students: Student[] }>(
+    `${API_BASE}/public-students?q=${encodeURIComponent(q)}`,
   )
   return data.students
 }

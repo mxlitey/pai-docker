@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react'
 import { SearchBar } from '@/components/SearchBar'
 import { Announcement } from '@/components/Announcement/Announcement'
 import { GITHUB_URL } from '@/config'
-import { searchStudents, getAnnouncement, type AnnouncementInfo } from '@/api'
+import { searchStudentsPublic, getAnnouncement, type AnnouncementInfo } from '@/api'
 import type { Student } from '@/types'
 import { Spinner } from '@/components/ui'
 
@@ -26,17 +26,17 @@ export function PublicSearch({ appName, onViewSchedule }: PublicSearchProps) {
   const [loading, setLoading] = useState(true)
 
   // 加载学员列表（供 SearchBar 本地过滤）+ 公告
-  // 用 allSettled 独立处理：学员列表需鉴权，未登录时会 401 失败，不应阻塞公告显示
+  // 用公开端点 /api/public-students（无需鉴权），未登录也能搜索
+  // 用 allSettled 独立处理：学员列表失败不应阻塞公告显示
   useEffect(() => {
     let cancelled = false
     async function load() {
       const [listRes, infoRes] = await Promise.allSettled([
-        searchStudents(''),
+        searchStudentsPublic(''),
         getAnnouncement(),
       ])
       if (cancelled) return
       if (listRes.status === 'fulfilled') setStudents(listRes.value)
-      // 学员列表加载失败（如 401）不阻塞，搜索框仍可用（只是无候选）
       if (infoRes.status === 'fulfilled') setAnnouncement(infoRes.value)
       setLoading(false)
     }
