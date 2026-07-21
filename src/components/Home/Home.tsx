@@ -95,136 +95,139 @@ export function Home({ appName, onEnterAdmin, onEnterSearch }: HomeProps) {
   // 依次尝试 login.png → login.jpg，任一加载成功即显示；全部失败则右侧不渲染
 
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-muted p-6 md:p-10">
-      <div className="w-full max-w-sm md:max-w-4xl">
-        {checking ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <Loader2 className="size-8 animate-spin text-primary mb-3" />
-            <p className="text-sm text-muted-foreground">正在检查登录状态…</p>
-          </div>
-        ) : (
-          <Card className="overflow-hidden p-0">
-            <CardContent className="grid p-0 md:grid-cols-2">
-              {/* 左侧：登录表单 */}
-              <form onSubmit={handleSubmit} className="p-6 md:p-8">
-                <div className="flex flex-col gap-6">
-                  {/* 头部 */}
-                  <div className="flex flex-col items-center gap-2 text-center">
-                    <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                      <GalleryVerticalEnd className="size-4" />
+    <div className="flex min-h-svh flex-col bg-muted">
+      {/* 主体内容：垂直水平居中 */}
+      <div className="flex flex-1 flex-col items-center justify-center p-6 md:p-10">
+        <div className="w-full max-w-sm md:max-w-4xl">
+          {checking ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 className="size-8 animate-spin text-primary mb-3" />
+              <p className="text-sm text-muted-foreground">正在检查登录状态…</p>
+            </div>
+          ) : (
+            <Card className="overflow-hidden p-0">
+              <CardContent className="grid p-0 md:grid-cols-2">
+                {/* 左侧：登录表单 */}
+                <form onSubmit={handleSubmit} className="p-6 md:p-8">
+                  <div className="flex flex-col gap-6">
+                    {/* 头部 */}
+                    <div className="flex flex-col items-center gap-2 text-center">
+                      <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                        <GalleryVerticalEnd className="size-4" />
+                      </div>
+                      <h1 className="text-xl font-bold">管理员登录</h1>
+                      <p className="text-balance text-sm text-muted-foreground">
+                        登录以进入 {appName} 后台管理系统
+                      </p>
                     </div>
-                    <h1 className="text-xl font-bold">管理员登录</h1>
-                    <p className="text-balance text-sm text-muted-foreground">
-                      登录以进入 {appName} 后台管理系统
+
+                    {/* 用户名 */}
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="username">用户名</Label>
+                      <Input
+                        id="username"
+                        type="text"
+                        value={username}
+                        onChange={(e) => { setUsername(e.target.value); setError('') }}
+                        placeholder="请输入用户名"
+                        autoFocus
+                        required
+                      />
+                    </div>
+
+                    {/* 密码 */}
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center">
+                        <Label htmlFor="password">密码</Label>
+                      </div>
+                      <Input
+                        id="password"
+                        type="password"
+                        value={password}
+                        onChange={(e) => { setPassword(e.target.value); setError('') }}
+                        placeholder="请输入密码"
+                        required
+                      />
+                    </div>
+
+                    {/* 错误提示 */}
+                    {error && (
+                      <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                        {error}
+                      </div>
+                    )}
+
+                    {/* 登录按钮 */}
+                    <Button type="submit" variant="primary" loading={loading} className="w-full">
+                      {loading ? '登录中…' : '登录'}
+                    </Button>
+
+                    <p className="text-center text-xs text-muted-foreground">
+                      {'家长查看排课请 '}
+                      <button
+                        type="button"
+                        onClick={onEnterSearch}
+                        className="text-primary hover:underline align-middle"
+                      >
+                        搜索学员姓名
+                      </button>
                     </p>
                   </div>
+                </form>
 
-                  {/* 用户名 */}
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="username">用户名</Label>
-                    <Input
-                      id="username"
-                      type="text"
-                      value={username}
-                      onChange={(e) => { setUsername(e.target.value); setError('') }}
-                      placeholder="请输入用户名"
-                      autoFocus
-                      required
+                {/* 右侧：品牌图片（移动端隐藏；加载失败/无图片时不渲染任何内容） */}
+                <div className="relative hidden bg-muted md:block overflow-hidden">
+                  {brandImgOk !== false && (
+                    <img
+                      key={brandImgUrl}
+                      src={brandImgUrl}
+                      alt=""
+                      aria-hidden="true"
+                      className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+                      style={{ opacity: brandImgOk === true ? 1 : 0 }}
+                      onLoad={() => setBrandImgOk(true)}
+                      onError={() => {
+                        // 当前候选失败：若仍有后续候选则尝试下一个，否则标记为全部失败
+                        if (brandImgIdx < brandImgCandidates.length - 1) {
+                          setBrandImgIdx(brandImgIdx + 1)
+                        } else {
+                          setBrandImgOk(false)
+                        }
+                      }}
                     />
-                  </div>
-
-                  {/* 密码 */}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center">
-                      <Label htmlFor="password">密码</Label>
-                    </div>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={password}
-                      onChange={(e) => { setPassword(e.target.value); setError('') }}
-                      placeholder="请输入密码"
-                      required
-                    />
-                  </div>
-
-                  {/* 错误提示 */}
-                  {error && (
-                    <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                      {error}
-                    </div>
                   )}
-
-                  {/* 登录按钮 */}
-                  <Button type="submit" variant="primary" loading={loading} className="w-full">
-                    {loading ? '登录中…' : '登录'}
-                  </Button>
-
-                  <p className="text-center text-xs text-muted-foreground">
-                    {'家长查看排课请 '}
-                    <button
-                      type="button"
-                      onClick={onEnterSearch}
-                      className="text-primary hover:underline align-middle"
-                    >
-                      搜索学员姓名
-                    </button>
-                  </p>
                 </div>
-              </form>
-
-              {/* 右侧：品牌图片（移动端隐藏；加载失败/无图片时不渲染任何内容） */}
-              <div className="relative hidden bg-muted md:block overflow-hidden">
-                {brandImgOk !== false && (
-                  <img
-                    key={brandImgUrl}
-                    src={brandImgUrl}
-                    alt=""
-                    aria-hidden="true"
-                    className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
-                    style={{ opacity: brandImgOk === true ? 1 : 0 }}
-                    onLoad={() => setBrandImgOk(true)}
-                    onError={() => {
-                      // 当前候选失败：若仍有后续候选则尝试下一个，否则标记为全部失败
-                      if (brandImgIdx < brandImgCandidates.length - 1) {
-                        setBrandImgIdx(brandImgIdx + 1)
-                      } else {
-                        setBrandImgOk(false)
-                      }
-                    }}
-                  />
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* 页脚 */}
-        <footer className="border-t border-border py-4 text-center text-xs text-muted-foreground">
-          <span>{appName}</span>
-          {GITHUB_URL && (
-            <>
-              <span className="mx-2">·</span>
-              <a
-                href={GITHUB_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1 align-middle"
-              >
-                <svg
-                  className="w-3.5 h-3.5"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.21 3.44 9.63 8.21 11.19.6.11.82-.26.82-.58 0-.29-.01-1.04-.02-2.05-3.34.72-4.04-1.59-4.04-1.59-.55-1.38-1.34-1.75-1.34-1.75-1.09-.74.08-.73.08-.73 1.21.09 1.85 1.23 1.85 1.23 1.07 1.8 2.81 1.28 3.5.98.11-.77.42-1.28.76-1.58-2.67-.3-5.47-1.31-5.47-5.83 0-1.29.47-2.34 1.23-3.17-.12-.3-.53-1.52.12-3.17 0 0 1-.32 3.3 1.21a11.6 11.6 0 016 0c2.3-1.53 3.3-1.21 3.3-1.21.65 1.65.24 2.87.12 3.17.77.83 1.23 1.88 1.23 3.17 0 4.53-2.81 5.52-5.49 5.81.43.36.81 1.08.81 2.18 0 1.58-.01 2.85-.01 3.24 0 .32.21.7.82.58A12.04 12.04 0 0024 12.29C24 5.78 18.63.5 12 .5z" />
-                </svg>
-                GitHub
-              </a>
-            </>
+              </CardContent>
+            </Card>
           )}
-        </footer>
+        </div>
       </div>
+
+      {/* 页脚：全宽，贴底（与 PublicSearch.tsx 结构一致） */}
+      <footer className="border-t border-border py-4 text-center text-xs text-muted-foreground">
+        <span>{appName}</span>
+        {GITHUB_URL && (
+          <>
+            <span className="mx-2">·</span>
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1 align-middle"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.21 3.44 9.63 8.21 11.19.6.11.82-.26.82-.58 0-.29-.01-1.04-.02-2.05-3.34.72-4.04-1.59-4.04-1.59-.55-1.38-1.34-1.75-1.34-1.75-1.09-.74.08-.73.08-.73 1.21.09 1.85 1.23 1.85 1.23 1.07 1.8 2.81 1.28 3.5.98.11-.77.42-1.28.76-1.58-2.67-.3-5.47-1.31-5.47-5.83 0-1.29.47-2.34 1.23-3.17-.12-.3-.53-1.52.12-3.17 0 0 1-.32 3.3 1.21a11.6 11.6 0 016 0c2.3-1.53 3.3-1.21 3.3-1.21.65 1.65.24 2.87.12 3.17.77.83 1.23 1.88 1.23 3.17 0 4.53-2.81 5.52-5.49 5.81.43.36.81 1.08.81 2.18 0 1.58-.01 2.85-.01 3.24 0 .32.21.7.82.58A12.04 12.04 0 0024 12.29C24 5.78 18.63.5 12 .5z" />
+              </svg>
+              GitHub
+            </a>
+          </>
+        )}
+      </footer>
     </div>
   )
 }

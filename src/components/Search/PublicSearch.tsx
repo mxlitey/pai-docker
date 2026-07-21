@@ -52,7 +52,7 @@ export function PublicSearch({ appName, onViewSchedule }: PublicSearchProps) {
   return (
     <div className="min-h-screen flex flex-col bg-background relative">
       {/* 主体内容：垂直水平居中 */}
-      <main className="flex-1 flex flex-col items-center justify-center px-4 py-10">
+      <main className="flex-1 flex flex-col items-center justify-start md:justify-center px-4 py-10">
         {/* 项目名称 */}
         <div className="text-center mb-8 select-none">
           <h1 className="text-4xl sm:text-5xl font-bold text-foreground tracking-tight">
