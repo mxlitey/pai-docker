@@ -47,9 +47,9 @@ export function PublicSearch({ appName, onViewSchedule }: PublicSearchProps) {
   const canView = !!selectedStudent
 
   return (
-    <div className="min-h-screen flex flex-col bg-background relative">
-      {/* 主体内容：垂直水平居中 */}
-      <main className="flex-1 flex flex-col items-center justify-center px-4 py-10">
+    <div className="h-svh flex flex-col bg-background overflow-hidden">
+      {/* 主体内容：垂直水平居中；溢出隐藏，禁止整页滚动 */}
+      <main className="flex-1 flex flex-col items-center justify-center px-4 py-10 overflow-hidden">
         {/* 项目名称 */}
         <div className="text-center mb-8 select-none">
           <h1 className="text-4xl sm:text-5xl font-bold text-foreground tracking-tight">
